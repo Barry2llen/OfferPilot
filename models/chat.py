@@ -18,7 +18,7 @@ def load_chat_models(providers: list[ModelProvider]) -> dict[str, BaseChatModel]
         "Anthropic": "anthropic",
     }
 
-    @lru_cache(maxsize=None, typed=True)
+    @lru_cache(maxsize=10, typed=True)
     def load_chat_model(provider: ModelProvider) -> BaseChatModel:
         try:
             return init_chat_model(
