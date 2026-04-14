@@ -11,3 +11,9 @@ wheels/
 
 # vscode settings
 .vscode
+
+# Data directory
+data
+
+# configuration file
+config.yaml

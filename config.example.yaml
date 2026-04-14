@@ -1,0 +1,4 @@
+offer_pilot:
+  database:
+    type: "sqlite"
+    path: "./data/offer_pilot.db"
