@@ -69,12 +69,61 @@ def test_initialize_tables_creates_expected_tables(
             for row in session.execute(
                 text(
                     "SELECT name FROM sqlite_master "
-                    "WHERE type = 'table' AND name IN ('tb_model_providers', 'tb_chats')"
+                    "WHERE type = 'table' AND name IN "
+                    "('tb_model_provider', 'tb_model_selection', 'tb_chat')"
                 )
             )
         }
 
-    assert tables == {"tb_model_providers", "tb_chats"}
+    assert tables == {"tb_model_provider", "tb_model_selection", "tb_chat"}
+
+
+def test_initialize_tables_creates_expected_chat_columns(
+    temporary_database_manager: DatabaseManager,
+) -> None:
+    temporary_database_manager.initialize_tables()
+
+    with temporary_database_manager.session_scope() as session:
+        columns = {
+            row[1]
+            for row in session.execute(text("PRAGMA table_info('tb_chat')"))
+        }
+
+    assert {"id", "title", "messages", "created_at", "updated_at"} <= columns
+
+
+def test_initialize_tables_creates_expected_model_selection_constraints(
+    temporary_database_manager: DatabaseManager,
+) -> None:
+    temporary_database_manager.initialize_tables()
+
+    with temporary_database_manager.session_scope() as session:
+        columns = {
+            row[1]
+            for row in session.execute(text("PRAGMA table_info('tb_model_selection')"))
+        }
+        foreign_keys = list(
+            session.execute(text("PRAGMA foreign_key_list('tb_model_selection')"))
+        )
+        unique_indexes = [
+            row[1]
+            for row in session.execute(text("PRAGMA index_list('tb_model_selection')"))
+            if row[2] == 1
+        ]
+        unique_index_columns = {
+            row[2]
+            for index_name in unique_indexes
+            for row in session.execute(text(f"PRAGMA index_info('{index_name}')"))
+        }
+
+    assert {"id", "provider_name", "model_name"} <= columns
+    assert any(
+        row[2] == "tb_model_provider"
+        and row[3] == "provider_name"
+        and row[4] == "name"
+        for row in foreign_keys
+    )
+    assert unique_index_columns == {"provider_name", "model_name"}
 
 
 def test_database_manager_dispose_reinitializes_engine(

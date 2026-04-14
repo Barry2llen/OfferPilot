@@ -1,12 +1,15 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.event import listen
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
+from db.models import Base
 from schemas.config import load_config
 from schemas.config.database import (
     DatabaseConfig,
@@ -75,6 +78,8 @@ class DatabaseManager:
                 build_database_url(self.config),
                 **self._build_engine_kwargs(),
             )
+            if isinstance(self.config, SQLiteDatabaseConfig):
+                listen(self._engine, "connect", _enable_sqlite_foreign_keys)
 
         return self._engine
 
@@ -105,25 +110,8 @@ class DatabaseManager:
             return connection.execute(text("SELECT 1")).scalar_one() == 1
 
     def initialize_tables(self, sql_path: str = "sql/tables.sql") -> None:
-        sql_file = Path(sql_path)
-        if not sql_file.exists():
-            raise FileNotFoundError(f"SQL schema file not found: {sql_file}")
-
-        statements = [
-            statement.strip()
-            for statement in sql_file.read_text(encoding="utf-8").split(";")
-            if statement.strip()
-        ]
-
-        if not statements:
-            logger.warning(f"No SQL statements found in schema file: {sql_file}")
-            return
-
-        with self.get_engine().begin() as connection:
-            for statement in statements:
-                connection.exec_driver_sql(statement)
-
-        logger.info(f"Initialized database tables from {sql_file}")
+        Base.metadata.create_all(self.get_engine())
+        logger.info(f"Initialized database tables from ORM metadata; schema snapshot: {sql_path}")
 
     def dispose(self) -> None:
         if self._engine is not None:
@@ -167,6 +155,14 @@ def dispose_database_manager() -> None:
     if _database_manager is not None:
         _database_manager.dispose()
         _database_manager = None
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection: Any, _: object) -> None:
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
 
 
 __all__ = [

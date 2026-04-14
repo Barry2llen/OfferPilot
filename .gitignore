@@ -23,3 +23,6 @@ config.yaml
 
 # dev files
 dev
+
+# runtime logs
+runtime.log
