@@ -9,6 +9,7 @@ from schemas.config import load_config
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.database = configure_database_manager(load_config().database)
+    app.state.database.initialize_tables()
     yield
     dispose_database_manager()
 

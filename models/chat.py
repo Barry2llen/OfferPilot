@@ -6,7 +6,7 @@ from langchain.chat_models import (
     BaseChatModel
 )
 
-from schemas.config import ModelProvider
+from db.models import ModelProvider
 from utils.logger import logger
 
 @lru_cache(maxsize=1)

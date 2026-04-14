@@ -1,0 +1,3 @@
+2026-04-14 17:28:35.260 | INFO     | db.engine.manager:initialize_tables:126 - Initialized database tables from sql\tables.sql
+2026-04-14 17:28:39.930 | INFO     | db.engine.manager:initialize_tables:126 - Initialized database tables from sql\tables.sql
+2026-04-14 17:31:27.388 | INFO     | db.engine.manager:initialize_tables:126 - Initialized database tables from sql\tables.sql

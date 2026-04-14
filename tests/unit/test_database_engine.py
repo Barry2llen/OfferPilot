@@ -58,6 +58,25 @@ def test_database_manager_session_scope_and_connection_check(
     assert result == 1
 
 
+def test_initialize_tables_creates_expected_tables(
+    temporary_database_manager: DatabaseManager,
+) -> None:
+    temporary_database_manager.initialize_tables()
+
+    with temporary_database_manager.session_scope() as session:
+        tables = {
+            row[0]
+            for row in session.execute(
+                text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name IN ('tb_model_providers', 'tb_chats')"
+                )
+            )
+        }
+
+    assert tables == {"tb_model_providers", "tb_chats"}
+
+
 def test_database_manager_dispose_reinitializes_engine(
     temporary_sqlite_config: SQLiteDatabaseConfig,
 ) -> None:

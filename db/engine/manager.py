@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -12,6 +13,7 @@ from schemas.config.database import (
     PostgreSQLDatabaseConfig,
     SQLiteDatabaseConfig,
 )
+from utils.logger import logger
 
 
 def build_database_url(config: DatabaseConfig) -> str:
@@ -56,8 +58,19 @@ class DatabaseManager:
 
         return engine_kwargs
 
+    def _ensure_sqlite_parent_dir(self) -> None:
+        if not isinstance(self.config, SQLiteDatabaseConfig):
+            return
+        if self.config.path == ":memory:":
+            return
+
+        database_path = Path(self.config.path)
+        if database_path.parent and not database_path.parent.exists():
+            database_path.parent.mkdir(parents=True, exist_ok=True)
+
     def get_engine(self) -> Engine:
         if self._engine is None:
+            self._ensure_sqlite_parent_dir()
             self._engine = create_engine(
                 build_database_url(self.config),
                 **self._build_engine_kwargs(),
@@ -90,6 +103,27 @@ class DatabaseManager:
     def check_connection(self) -> bool:
         with self.get_engine().connect() as connection:
             return connection.execute(text("SELECT 1")).scalar_one() == 1
+
+    def initialize_tables(self, sql_path: str = "sql/tables.sql") -> None:
+        sql_file = Path(sql_path)
+        if not sql_file.exists():
+            raise FileNotFoundError(f"SQL schema file not found: {sql_file}")
+
+        statements = [
+            statement.strip()
+            for statement in sql_file.read_text(encoding="utf-8").split(";")
+            if statement.strip()
+        ]
+
+        if not statements:
+            logger.warning(f"No SQL statements found in schema file: {sql_file}")
+            return
+
+        with self.get_engine().begin() as connection:
+            for statement in statements:
+                connection.exec_driver_sql(statement)
+
+        logger.info(f"Initialized database tables from {sql_file}")
 
     def dispose(self) -> None:
         if self._engine is not None:
