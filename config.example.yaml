@@ -1,4 +1,15 @@
-offer_pilot:
-  database:
-    type: "sqlite"
-    path: "./data/offer_pilot.db"
+database:
+  type: "sqlite"
+  path: "./data/offer_pilot.db"
+  echo: false
+
+# PostgreSQL example:
+# database:
+#   type: "postgresql"
+#   host: "127.0.0.1"
+#   port: 5432
+#   database: "offer_pilot"
+#   user: "postgres"
+#   password: "postgres"
+#   driver: "psycopg"
+#   echo: false
