@@ -70,12 +70,12 @@ def test_initialize_tables_creates_expected_tables(
                 text(
                     "SELECT name FROM sqlite_master "
                     "WHERE type = 'table' AND name IN "
-                    "('tb_model_provider', 'tb_model_selection', 'tb_chat')"
+                    "('tb_model_provider', 'tb_model_selection', 'tb_chat', 'tb_resume')"
                 )
             )
         }
 
-    assert tables == {"tb_model_provider", "tb_model_selection", "tb_chat"}
+    assert tables == {"tb_model_provider", "tb_model_selection", "tb_chat", "tb_resume"}
 
 
 def test_initialize_tables_creates_expected_chat_columns(
@@ -124,6 +124,27 @@ def test_initialize_tables_creates_expected_model_selection_constraints(
         for row in foreign_keys
     )
     assert unique_index_columns == {"provider_name", "model_name"}
+
+
+def test_initialize_tables_creates_expected_resume_columns(
+    temporary_database_manager: DatabaseManager,
+) -> None:
+    temporary_database_manager.initialize_tables()
+
+    with temporary_database_manager.session_scope() as session:
+        columns = {
+            row[1]
+            for row in session.execute(text("PRAGMA table_info('tb_resume')"))
+        }
+
+    assert {
+        "id",
+        "file_path",
+        "content",
+        "upload_time",
+        "original_filename",
+        "media_type",
+    } <= columns
 
 
 def test_database_manager_dispose_reinitializes_engine(

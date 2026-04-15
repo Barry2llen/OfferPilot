@@ -1,5 +1,5 @@
 from .base import (
-    Config, 
+    Config,
     load_config,
     reload_config
 )

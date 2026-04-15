@@ -14,6 +14,8 @@ class Config(BaseModel):
 
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
 
+    resume_upload_dir: str = "./data/resumes"
+
     debug: bool = False
 
     model_call_retry_attempts: int = 3

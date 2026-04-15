@@ -24,3 +24,12 @@ CREATE TABLE IF NOT EXISTS tb_chat (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS tb_resume (
+    id INTEGER PRIMARY KEY,
+    file_path VARCHAR(512),
+    content TEXT NOT NULL,
+    upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    original_filename VARCHAR(255),
+    media_type VARCHAR(255)
+);

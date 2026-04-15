@@ -24,12 +24,14 @@ def test_default_config_uses_sqlite() -> None:
     assert isinstance(config.database, SQLiteDatabaseConfig)
     assert config.database.type == "sqlite"
     assert config.database.path == "./data/offer_pilot.db"
+    assert config.resume_upload_dir == "./data/resumes"
 
 
 def test_config_loads_example(sample_config: Config) -> None:
     assert isinstance(sample_config.database, SQLiteDatabaseConfig)
     assert sample_config.database.type == "sqlite"
     assert sample_config.database.path == "./data/offer_pilot.db"
+    assert sample_config.resume_upload_dir == "./data/resumes"
 
 
 def test_postgresql_config_parses_correctly() -> None:
@@ -75,12 +77,12 @@ def test_postgresql_config_parses_correctly() -> None:
     ],
 )
 def test_load_config_supports_root_and_legacy_shapes(
-    tmp_path: Path,
+    workspace_tmp_dir: Path,
     yaml_loader: YAML,
     filename: str,
     payload: dict,
 ) -> None:
-    config_path = tmp_path / filename
+    config_path = workspace_tmp_dir / filename
     with config_path.open("w", encoding="utf-8") as file:
         yaml_loader.dump(payload, file)
 

@@ -3,6 +3,8 @@ database:
   path: "./data/offer_pilot.db"
   echo: false
 
+resume_upload_dir: "./data/resumes"
+
 # PostgreSQL example:
 # database:
 #   type: "postgresql"
