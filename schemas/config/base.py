@@ -13,6 +13,7 @@ class Config(BaseModel):
     """Configuration for the application."""
 
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
+    debug: bool = False
 
 
 def _normalize_config_data(config_data: dict[str, Any] | None) -> dict[str, Any]:
@@ -29,7 +30,7 @@ def _normalize_config_data(config_data: dict[str, Any] | None) -> dict[str, Any]
     return normalized
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=1)
 def load_config(config_path: str = "config.yaml") -> Config:
     """Load configuration from a YAML file."""
 
@@ -49,5 +50,9 @@ def load_config(config_path: str = "config.yaml") -> Config:
         logger.error(f"Error loading config: {error}")
         return Config()
 
+def reload_config(config_path: str = "config.yaml") -> Config:
+    """Clear the config cache to force reloading on next access."""
+    load_config.cache_clear()
+    return load_config(config_path)
 
-__all__ = ["Config", "load_config"]
+__all__ = ["Config", "load_config", "reload_config"]

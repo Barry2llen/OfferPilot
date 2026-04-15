@@ -1,4 +1,8 @@
-from .base import Config, load_config
+from .base import (
+    Config, 
+    load_config,
+    reload_config
+)
 from .database import DatabaseConfig, PostgreSQLDatabaseConfig, SQLiteDatabaseConfig
 
 __all__ = [
@@ -7,4 +11,5 @@ __all__ = [
     "PostgreSQLDatabaseConfig",
     "SQLiteDatabaseConfig",
     "load_config",
+    "reload_config"
 ]
