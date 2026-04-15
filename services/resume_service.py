@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from db.models import ResumeDocumentORM
 from db.repositories import ResumeDocumentRepository
-from schemas.resume_document import ResumeDocument
+from schemas.resume_document import ResumeDetail, ResumeListItem
 from services.document_parser_service import (
     DocumentParserService,
     UnsupportedResumeFileError,
@@ -22,6 +22,13 @@ class UploadedResumeFile:
     content: bytes
 
 
+@dataclass(slots=True)
+class StoredResumeFile:
+    path: Path
+    media_type: str | None
+    filename: str | None
+
+
 class ResumeService:
     """Service for creating resume records from text or uploaded files."""
 
@@ -35,7 +42,13 @@ class ResumeService:
         self._parser = parser
         self._upload_dir = Path(upload_dir)
 
-    def create_from_text(self, content: str) -> ResumeDocument:
+    def list_resumes(self) -> list[ResumeListItem]:
+        return [self._to_list_item(document) for document in self._repository.list_all()]
+
+    def get_resume(self, resume_id: int) -> ResumeDetail:
+        return self._to_detail(self._require_resume(resume_id))
+
+    def create_from_text(self, content: str) -> ResumeDetail:
         normalized_content = self._normalize_content(content)
         try:
             created = self._repository.create(
@@ -51,9 +64,9 @@ class ResumeService:
             self._repository.rollback()
             raise
 
-        return self._to_schema(created)
+        return self._to_detail(created)
 
-    def create_from_file(self, uploaded_file: UploadedResumeFile) -> ResumeDocument:
+    def create_from_file(self, uploaded_file: UploadedResumeFile) -> ResumeDetail:
         filename = Path(uploaded_file.filename).name
         if not filename:
             raise ValueError("Uploaded file name is required.")
@@ -85,7 +98,93 @@ class ResumeService:
             saved_path.unlink(missing_ok=True)
             raise
 
-        return self._to_schema(created)
+        return self._to_detail(created)
+
+    def update_resume_text(self, resume_id: int, content: str) -> ResumeDetail:
+        document = self._require_resume(resume_id)
+        document.content = self._normalize_content(content)
+
+        try:
+            updated = self._repository.update(document)
+            self._repository.commit()
+        except Exception:
+            self._repository.rollback()
+            raise
+
+        return self._to_detail(updated)
+
+    def replace_resume_file(
+        self,
+        resume_id: int,
+        uploaded_file: UploadedResumeFile,
+    ) -> ResumeDetail:
+        document = self._require_resume(resume_id)
+        previous_file_path = document.file_path
+        previous_resolved_path: Path | None = None
+        if previous_file_path is not None:
+            previous_resolved_path = self._resolve_storage_path(
+                previous_file_path,
+                require_exists=False,
+            )
+
+        filename = Path(uploaded_file.filename).name
+        if not filename:
+            raise ValueError("Uploaded file name is required.")
+        if not uploaded_file.content:
+            raise EmptyResumeContentError("Uploaded file is empty.")
+
+        suffix = Path(filename).suffix.lower()
+        self._validate_suffix(suffix)
+
+        saved_path = self._build_target_path(suffix)
+        saved_path.parent.mkdir(parents=True, exist_ok=True)
+        saved_path.write_bytes(uploaded_file.content)
+
+        try:
+            document.file_path = self._to_storage_path(saved_path)
+            document.content = self._normalize_content(self._parser.extract_text(saved_path))
+            document.original_filename = filename
+            document.media_type = uploaded_file.content_type
+            updated = self._repository.update(document)
+            self._repository.commit()
+        except Exception:
+            self._repository.rollback()
+            saved_path.unlink(missing_ok=True)
+            raise
+
+        if previous_resolved_path is not None and previous_resolved_path != saved_path.resolve():
+            self._delete_file_quietly(previous_resolved_path)
+
+        return self._to_detail(updated)
+
+    def delete_resume(self, resume_id: int) -> None:
+        document = self._require_resume(resume_id)
+        file_path = document.file_path
+
+        try:
+            deleted = self._repository.delete(resume_id)
+            if not deleted:
+                raise LookupError(f"Resume not found: {resume_id}")
+            self._repository.commit()
+        except Exception:
+            self._repository.rollback()
+            raise
+
+        if file_path is not None:
+            self._delete_file_quietly(
+                self._resolve_storage_path(file_path, require_exists=False)
+            )
+
+    def get_resume_file(self, resume_id: int) -> StoredResumeFile:
+        document = self._require_resume(resume_id)
+        if document.file_path is None:
+            raise LookupError(f"Resume file not found: {resume_id}")
+
+        return StoredResumeFile(
+            path=self._resolve_storage_path(document.file_path),
+            media_type=document.media_type,
+            filename=document.original_filename,
+        )
 
     def _build_target_path(self, suffix: str) -> Path:
         return self._upload_dir / f"{uuid4().hex}{suffix}"
@@ -112,12 +211,65 @@ class ResumeService:
         except ValueError:
             return resolved_path.as_posix()
 
-    def _to_schema(self, document: ResumeDocumentORM) -> ResumeDocument:
-        return ResumeDocument(
+    def _to_detail(self, document: ResumeDocumentORM) -> ResumeDetail:
+        has_file = document.file_path is not None
+        return ResumeDetail(
             id=document.id,
             file_path=document.file_path,
             content=document.content,
             upload_time=document.upload_time,
             original_filename=document.original_filename,
             media_type=document.media_type,
+            has_file=has_file,
+            preview_url=self._build_preview_url(document.id) if has_file else None,
         )
+
+    def _to_list_item(self, document: ResumeDocumentORM) -> ResumeListItem:
+        has_file = document.file_path is not None
+        return ResumeListItem(
+            id=document.id,
+            file_path=document.file_path,
+            upload_time=document.upload_time,
+            original_filename=document.original_filename,
+            media_type=document.media_type,
+            content_preview=document.content[:200],
+            has_file=has_file,
+            preview_url=self._build_preview_url(document.id) if has_file else None,
+        )
+
+    def _require_resume(self, resume_id: int) -> ResumeDocumentORM:
+        document = self._repository.get_by_id(resume_id)
+        if document is None:
+            raise LookupError(f"Resume not found: {resume_id}")
+        return document
+
+    def _build_preview_url(self, resume_id: int) -> str:
+        return f"/resumes/{resume_id}/file"
+
+    def _resolve_storage_path(
+        self,
+        file_path: str,
+        *,
+        require_exists: bool = True,
+    ) -> Path:
+        candidate = Path(file_path)
+        resolved = candidate.resolve() if candidate.is_absolute() else (Path.cwd() / candidate).resolve()
+        allowed_roots = (Path.cwd().resolve(), self._upload_dir.resolve())
+        if not any(self._is_relative_to(resolved, root) for root in allowed_roots):
+            raise LookupError("Resume file not found.")
+        if require_exists and not resolved.is_file():
+            raise LookupError("Resume file not found.")
+        return resolved
+
+    def _is_relative_to(self, path: Path, root: Path) -> bool:
+        try:
+            path.relative_to(root)
+        except ValueError:
+            return False
+        return True
+
+    def _delete_file_quietly(self, path: Path) -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            return

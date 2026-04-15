@@ -1,10 +1,17 @@
 from collections.abc import Generator
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from db.repositories import ResumeDocumentRepository
-from schemas.resume_document import ResumeDocument, ResumeTextCreateRequest
+from schemas.resume_document import (
+    ResumeDetail,
+    ResumeListItem,
+    ResumeTextCreateRequest,
+    ResumeTextUpdateRequest,
+)
 from services import (
     DocumentParserService,
     EmptyResumeContentError,
@@ -33,12 +40,41 @@ def _build_resume_service(request: Request, session: Session) -> ResumeService:
     )
 
 
-@router.post("/text", response_model=ResumeDocument)
+async def _read_upload_file(file: UploadFile) -> bytes:
+    try:
+        return await file.read()
+    finally:
+        await file.close()
+
+
+@router.get("", response_model=list[ResumeListItem])
+async def list_resumes(
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> list[ResumeListItem]:
+    service = _build_resume_service(request, session)
+    return service.list_resumes()
+
+
+@router.get("/{resume_id}", response_model=ResumeDetail)
+async def get_resume(
+    resume_id: int,
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> ResumeDetail:
+    service = _build_resume_service(request, session)
+    try:
+        return service.get_resume(resume_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/text", response_model=ResumeDetail)
 async def upload_resume_text(
     payload: ResumeTextCreateRequest,
     request: Request,
     session: Session = Depends(_get_request_db_session),
-) -> ResumeDocument:
+) -> ResumeDetail:
     service = _build_resume_service(request, session)
     try:
         return service.create_from_text(payload.content)
@@ -46,18 +82,14 @@ async def upload_resume_text(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
-@router.post("/files", response_model=ResumeDocument)
+@router.post("/files", response_model=ResumeDetail)
 async def upload_resume_file(
     request: Request,
     file: UploadFile = File(...),
     session: Session = Depends(_get_request_db_session),
-) -> ResumeDocument:
+) -> ResumeDetail:
     service = _build_resume_service(request, session)
-
-    try:
-        payload = await file.read()
-    finally:
-        await file.close()
+    payload = await _read_upload_file(file)
 
     try:
         return service.create_from_file(
@@ -71,3 +103,85 @@ async def upload_resume_file(
         raise HTTPException(status_code=415, detail=str(error)) from error
     except (EmptyResumeContentError, ResumeParsingError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.patch("/{resume_id}/text", response_model=ResumeDetail)
+async def update_resume_text(
+    resume_id: int,
+    payload: ResumeTextUpdateRequest,
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> ResumeDetail:
+    service = _build_resume_service(request, session)
+    try:
+        return service.update_resume_text(resume_id, payload.content)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except EmptyResumeContentError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.put("/{resume_id}/file", response_model=ResumeDetail)
+async def replace_resume_file(
+    resume_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    session: Session = Depends(_get_request_db_session),
+) -> ResumeDetail:
+    service = _build_resume_service(request, session)
+    payload = await _read_upload_file(file)
+
+    try:
+        return service.replace_resume_file(
+            resume_id,
+            UploadedResumeFile(
+                filename=file.filename or "",
+                content_type=file.content_type,
+                content=payload,
+            ),
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except UnsupportedResumeFileError as error:
+        raise HTTPException(status_code=415, detail=str(error)) from error
+    except (EmptyResumeContentError, ResumeParsingError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.delete("/{resume_id}", status_code=204)
+async def delete_resume(
+    resume_id: int,
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> Response:
+    service = _build_resume_service(request, session)
+    try:
+        service.delete_resume(resume_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    return Response(status_code=204)
+
+
+@router.get("/{resume_id}/file")
+async def preview_resume_file(
+    resume_id: int,
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> FileResponse:
+    service = _build_resume_service(request, session)
+    try:
+        stored_file = service.get_resume_file(resume_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    headers: dict[str, str] = {"Content-Disposition": "inline"}
+    if stored_file.filename:
+        encoded_filename = quote(stored_file.filename)
+        headers["Content-Disposition"] = f"inline; filename*=UTF-8''{encoded_filename}"
+
+    return FileResponse(
+        path=stored_file.path,
+        media_type=stored_file.media_type,
+        headers=headers,
+    )
