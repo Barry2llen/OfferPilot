@@ -1,26 +1,66 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-`main.py` exposes the FastAPI app and wires application startup. Core database code lives under `db/`, with engine management in `db/engine/` and ORM models in `db/models/`. Typed configuration schemas live in `schemas/config/`. Domain models and shared helpers are in `models/` and `utils/`. SQL bootstrap scripts live in `sql/`, sample data and local SQLite files belong in `data/`, and design notes belong in `docs/`. Tests are organized under `tests/unit/`; add new fixtures to `tests/conftest.py`.
+## 项目结构与模块职责
+仓库当前以 Python 单体应用为主，入口是 `main.py`，负责创建 FastAPI 应用并在生命周期内初始化数据库。核心目录按职责拆分如下：
 
-## Build, Test, and Development Commands
-Use `uv` for environment and command execution.
+- `agent/`：Agent 相关代码，包含输入校验、状态定义、图编排、模型装载与工作流占位实现。
+- `api/`：预留接口层目录，当前尚未放入正式路由模块。
+- `db/`：数据库层，`db/engine/` 管理引擎与会话，`db/models/` 定义 ORM，`db/repositories/` 封装数据访问。
+- `schemas/`：Pydantic 数据结构，`schemas/config/` 负责配置解析，其余 schema 用于服务层与 Agent 层输入输出。
+- `services/`：面向业务的服务封装，当前主要包含模型提供商与模型选择服务。
+- `utils/`：通用工具，当前包含日志封装。
+- `sql/`：数据库结构快照或初始化 SQL。
+- `data/`：SQLite 文件等本地运行数据。
+- `tests/unit/`：单元测试；共享夹具放在 `tests/conftest.py`。
+- `docs/`：设计说明与技术文档。
 
-- `uv sync` installs and locks project dependencies from `pyproject.toml` and `uv.lock`.
-- `uv run uvicorn main:app --reload` starts the local API server with auto-reload.
-- `uv run pytest` runs the full test suite.
-- `uv run pytest tests/unit/test_config.py` runs a focused test module during iteration.
+新增代码时优先保持这一层次：配置解析不要混入服务逻辑，数据库访问不要直接泄漏到 API 或 Agent 节点。
 
-Run commands from the repository root so relative paths like `config.yaml` and `sql/tables.sql` resolve correctly.
+## 构建、测试与开发命令
+统一使用 `uv` 管理依赖和执行命令，并始终在仓库根目录运行：
 
-## Coding Style & Naming Conventions
-Target Python `>=3.13` and keep code type-annotated. Follow PEP 8 with 4-space indentation, `snake_case` for modules/functions, `PascalCase` for classes, and explicit, descriptive names such as `build_database_url`. Keep config schemas and database utilities separated by responsibility. Prefer small functions, early validation, and `Path` for filesystem work. Match the existing style of short docstrings and straightforward control flow.
+- `uv sync`：安装并锁定依赖。
+- `uv run uvicorn main:app --reload`：启动本地 FastAPI 服务。
+- `uv run pytest`：运行全部测试。
+- `uv run pytest tests/unit/test_model_call_graph.py`：聚焦 Agent 图逻辑。
+- `uv run pytest tests/unit/test_database_engine.py`：聚焦数据库引擎与建表逻辑。
 
-## Testing Guidelines
-Tests use `pytest`. Name files `test_*.py`, keep unit tests under `tests/unit/`, and prefer fixtures over inline setup for temporary databases or config payloads. Cover both SQLite defaults and optional PostgreSQL behavior when touching database code. For config changes, test both root-level and legacy `offer_pilot` YAML shapes.
+如果修改了配置加载、数据库兼容性或模型装载逻辑，提交前至少运行对应的定向测试。
 
-## Commit & Pull Request Guidelines
-Current history uses short prefix-based messages such as `feat:初始化数据源`, `feat:多数据源`, and `init:初始化项目结构`. Keep that pattern: `<type>:<summary>`, with concise Chinese summaries and a single focus per commit. Pull requests should include purpose, affected modules, test results, and any config or schema changes. Add request/response examples when API behavior changes.
+## 编码风格与命名
+目标 Python 版本为 `>=3.13`，默认要求完整类型标注。遵循 PEP 8，使用 4 空格缩进，模块/函数使用 `snake_case`，类使用 `PascalCase`。保持现有风格：
 
-## Configuration & Security Tips
-Do not commit real secrets in `config.yaml`; use `config.example.yaml` as the template. PostgreSQL integration tests depend on `TEST_POSTGRES_*` environment variables, so document any new variables in the example config or PR description.
+- Pydantic 使用 v2 风格校验器与类型定义。
+- SQLAlchemy 使用 2.x ORM 写法与显式 `Mapped` 标注。
+- Agent 状态优先使用 `TypedDict`，节点函数保持单一职责。
+- 优先写小函数和早校验，避免把多层职责揉进一个模块。
+- 文件系统路径优先使用 `Path`。
+
+注释保持简洁，只解释非直观约束、状态流转或兼容性原因，不写重复代码字面的注释。
+
+## 测试约定
+测试框架是 `pytest`。新测试文件命名为 `test_*.py`，放在 `tests/unit/` 下。修改以下能力时需要补充对应测试：
+
+- 配置解析：覆盖根级 `database` 结构与兼容旧版 `offer_pilot.database` 结构。
+- 数据库：同时考虑 SQLite 默认路径与 PostgreSQL 可选配置。
+- Agent 图：覆盖工具调用、重试、异常分支与可调用模型选择器。
+- 服务层：覆盖 schema 与 ORM 之间的双向转换及异常分支。
+
+PostgreSQL 相关测试依赖 `TEST_POSTGRES_*` 环境变量；缺失时允许跳过，但不要删除这类兼容性测试。
+
+## 提交与合并请求
+提交信息延续当前历史风格，使用 `<type>:<中文摘要>`，例如 `feat:补充模型选择服务测试`、`fix:修正模型提供商映射`。一次提交只做一件事，避免把重构、功能和文档混在一起。
+
+Pull Request 描述至少说明：
+
+- 变更目的
+- 影响模块
+- 测试结果
+- 是否涉及配置、数据库结构或模型接入方式调整
+
+如果接口行为、配置格式或数据表结构发生变化，需要附上示例或迁移说明。
+
+## 配置与安全
+不要提交真实密钥到 `config.yaml` 或其他示例文件。默认配置模板使用 `config.example.yaml`，模型提供商的 `api_key`、第三方 `base_url` 等敏感信息只应出现在本地环境或受控部署配置中。
+
+当前数据库默认使用 SQLite，本地文件路径为 `./data/offer_pilot.db`；如果切换到 PostgreSQL，确保在文档或 PR 中同步说明新增字段与依赖。任何会影响启动行为的配置项，都应在示例配置与测试中一并更新。
