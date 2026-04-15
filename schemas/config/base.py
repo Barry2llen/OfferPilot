@@ -13,7 +13,10 @@ class Config(BaseModel):
     """Configuration for the application."""
 
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
+
     debug: bool = False
+
+    model_call_retry_attempts: int = 3
 
 
 def _normalize_config_data(config_data: dict[str, Any] | None) -> dict[str, Any]:

@@ -2,7 +2,8 @@
 from typing import (
     TypedDict,
     Sequence,
-    Annotated
+    Annotated,
+    Callable
 )
 
 from langgraph.graph import add_messages
@@ -14,5 +15,5 @@ class BaseAgentState(TypedDict):
     """
     Base class for agent state. All agent states should inherit from this class.
     """
-    model: ModelSelection
+    model: ModelSelection | Callable[..., ModelSelection]
     messages: Annotated[Sequence[BaseMessage], add_messages]
