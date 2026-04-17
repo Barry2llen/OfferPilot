@@ -26,29 +26,6 @@ def _resolve_saved_path(path_value: str) -> Path:
     return path if path.is_absolute() else Path.cwd() / path
 
 
-def test_create_resume_from_text(
-    initialized_database_manager: DatabaseManager,
-    temporary_resume_upload_dir: Path,
-) -> None:
-    with initialized_database_manager.session_scope() as session:
-        service = ResumeService(
-            repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
-            upload_dir=temporary_resume_upload_dir,
-        )
-        created = service.create_from_text("  Jane Doe Resume  ")
-        stored = session.execute(
-            text("SELECT file_path, content FROM tb_resume WHERE id = :id"),
-            {"id": created.id},
-        ).one()
-
-    assert created.file_path is None
-    assert created.content == "Jane Doe Resume"
-    assert created.has_file is False
-    assert created.preview_url is None
-    assert stored == (None, "Jane Doe Resume")
-
-
 def test_create_resume_from_file_persists_metadata(
     initialized_database_manager: DatabaseManager,
     temporary_resume_upload_dir: Path,
@@ -95,14 +72,26 @@ def test_list_resumes_returns_summary_in_descending_order(
     temporary_resume_upload_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    parsed_values = iter(["A" * 250, "Second"])
+    monkeypatch.setattr(
+        DocumentParserService,
+        "extract_text",
+        lambda self, _: next(parsed_values),
+    )
+
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
             parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
-        first = service.create_from_text("A" * 250)
-        monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Second")
+        first = service.create_from_file(
+            UploadedResumeFile(
+                filename="resume.png",
+                content_type="image/png",
+                content=b"image-bytes",
+            )
+        )
         second = service.create_from_file(
             UploadedResumeFile(
                 filename="resume.pdf",
@@ -117,46 +106,7 @@ def test_list_resumes_returns_summary_in_descending_order(
     assert listed[0].content_preview == "Second"
     assert listed[0].preview_url == f"/resumes/{second.id}/file"
     assert listed[1].content_preview == "A" * 200
-    assert listed[1].preview_url is None
-
-
-def test_update_resume_text_keeps_file_metadata(
-    initialized_database_manager: DatabaseManager,
-    temporary_resume_upload_dir: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with initialized_database_manager.session_scope() as session:
-        service = ResumeService(
-            repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
-            upload_dir=temporary_resume_upload_dir,
-        )
-        monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Original")
-        created = service.create_from_file(
-            UploadedResumeFile(
-                filename="resume.pdf",
-                content_type="application/pdf",
-                content=b"%PDF-1.4",
-            )
-        )
-
-        updated = service.update_resume_text(created.id, " Updated content ")
-        stored = session.execute(
-            text(
-                "SELECT file_path, original_filename, media_type, content "
-                "FROM tb_resume WHERE id = :id"
-            ),
-            {"id": created.id},
-        ).one()
-
-    assert updated.content == "Updated content"
-    assert updated.file_path == created.file_path
-    assert stored == (
-        created.file_path,
-        "resume.pdf",
-        "application/pdf",
-        "Updated content",
-    )
+    assert listed[1].preview_url == f"/resumes/{first.id}/file"
 
 
 def test_replace_resume_file_updates_record_and_removes_old_file(
@@ -307,9 +257,10 @@ def test_get_resume_file_returns_saved_file(
     assert stored_file.path.exists()
 
 
-def test_create_resume_rejects_blank_text(
+def test_create_resume_from_file_rejects_empty_extracted_text(
     initialized_database_manager: DatabaseManager,
     temporary_resume_upload_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
@@ -317,22 +268,15 @@ def test_create_resume_rejects_blank_text(
             parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
+        monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "   \n  ")
 
         with pytest.raises(EmptyResumeContentError, match="Resume content is empty"):
-            service.create_from_text("   \n  ")
+            service.create_from_file(
+                UploadedResumeFile(
+                    filename="resume.pdf",
+                    content_type="application/pdf",
+                    content=b"%PDF-1.4",
+                )
+            )
 
-
-def test_get_resume_file_for_text_resume_raises_lookup_error(
-    initialized_database_manager: DatabaseManager,
-    temporary_resume_upload_dir: Path,
-) -> None:
-    with initialized_database_manager.session_scope() as session:
-        service = ResumeService(
-            repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
-            upload_dir=temporary_resume_upload_dir,
-        )
-        created = service.create_from_text("Plain text resume")
-
-        with pytest.raises(LookupError, match=f"Resume file not found: {created.id}"):
-            service.get_resume_file(created.id)
+    assert list(temporary_resume_upload_dir.glob("*")) == []

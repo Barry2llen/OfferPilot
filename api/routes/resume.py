@@ -9,8 +9,6 @@ from db.repositories import ResumeDocumentRepository
 from schemas.resume_document import (
     ResumeDetail,
     ResumeListItem,
-    ResumeTextCreateRequest,
-    ResumeTextUpdateRequest,
 )
 from services import (
     DocumentParserService,
@@ -69,19 +67,6 @@ async def get_resume(
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
-@router.post("/text", response_model=ResumeDetail)
-async def upload_resume_text(
-    payload: ResumeTextCreateRequest,
-    request: Request,
-    session: Session = Depends(_get_request_db_session),
-) -> ResumeDetail:
-    service = _build_resume_service(request, session)
-    try:
-        return service.create_from_text(payload.content)
-    except EmptyResumeContentError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-
-
 @router.post("/files", response_model=ResumeDetail)
 async def upload_resume_file(
     request: Request,
@@ -102,22 +87,6 @@ async def upload_resume_file(
     except UnsupportedResumeFileError as error:
         raise HTTPException(status_code=415, detail=str(error)) from error
     except (EmptyResumeContentError, ResumeParsingError, ValueError) as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-
-
-@router.patch("/{resume_id}/text", response_model=ResumeDetail)
-async def update_resume_text(
-    resume_id: int,
-    payload: ResumeTextUpdateRequest,
-    request: Request,
-    session: Session = Depends(_get_request_db_session),
-) -> ResumeDetail:
-    service = _build_resume_service(request, session)
-    try:
-        return service.update_resume_text(resume_id, payload.content)
-    except LookupError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except EmptyResumeContentError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 

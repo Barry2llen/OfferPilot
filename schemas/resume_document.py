@@ -3,14 +3,6 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class ResumeTextCreateRequest(BaseModel):
-    content: str
-
-
-class ResumeTextUpdateRequest(BaseModel):
-    content: str
-
-
 class ResumeDetail(BaseModel):
     id: int
     file_path: str | None = None

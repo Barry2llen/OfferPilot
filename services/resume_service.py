@@ -30,7 +30,7 @@ class StoredResumeFile:
 
 
 class ResumeService:
-    """Service for creating resume records from text or uploaded files."""
+    """Service for creating and managing uploaded resume files."""
 
     def __init__(
         self,
@@ -47,24 +47,6 @@ class ResumeService:
 
     def get_resume(self, resume_id: int) -> ResumeDetail:
         return self._to_detail(self._require_resume(resume_id))
-
-    def create_from_text(self, content: str) -> ResumeDetail:
-        normalized_content = self._normalize_content(content)
-        try:
-            created = self._repository.create(
-                ResumeDocumentORM(
-                    file_path=None,
-                    content=normalized_content,
-                    original_filename=None,
-                    media_type=None,
-                )
-            )
-            self._repository.commit()
-        except Exception:
-            self._repository.rollback()
-            raise
-
-        return self._to_detail(created)
 
     def create_from_file(self, uploaded_file: UploadedResumeFile) -> ResumeDetail:
         filename = Path(uploaded_file.filename).name
@@ -99,19 +81,6 @@ class ResumeService:
             raise
 
         return self._to_detail(created)
-
-    def update_resume_text(self, resume_id: int, content: str) -> ResumeDetail:
-        document = self._require_resume(resume_id)
-        document.content = self._normalize_content(content)
-
-        try:
-            updated = self._repository.update(document)
-            self._repository.commit()
-        except Exception:
-            self._repository.rollback()
-            raise
-
-        return self._to_detail(updated)
 
     def replace_resume_file(
         self,
