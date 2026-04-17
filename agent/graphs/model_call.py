@@ -23,12 +23,13 @@ class ModelCallGraph(BaseGraph):
 
     def __init__(
             self,
-            *,
+            *args,
             config: Config | None = None,
-            tools: Sequence[BaseTool] | None = None
+            tools: Sequence[BaseTool] | None = None,
+            **kwargs
         ):
         
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.config = load_config() if config is None else config
         self.tools = tuple(tools or ())
         self.tools_dict = {tool.name: tool for tool in self.tools}

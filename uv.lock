@@ -37,6 +37,18 @@ wheels = [
 ]
 
 [[package]]
+name = "aspose-words"
+version = "26.4.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/4e/85666ef2578190ff343a571cf7dfe6592f643d91ef5debf1ba86c9215bbc/aspose_words-26.4.0-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:785bad7bb4ae1ae47ac752dc1e657dbe1b9ead4072c4fc13e43fe72713e5d032", size = 86483950, upload-time = "2026-04-12T10:22:47.88Z" },
+    { url = "https://files.pythonhosted.org/packages/87/97/9a99a100bef7c3773de64a2649cb2faebee52e00207f026442f798fb7628/aspose_words-26.4.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:6f971f7531eab9a8b416af115759b44c293b9346657c760dd7a350cde3a98aa6", size = 72686860, upload-time = "2026-04-12T10:22:51.64Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/55/e3c9c36cc8c2bb197bc4a685e46fbbd7ce22317280512f2111391689a82e/aspose_words-26.4.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:f149fc3331f6f940746c579dd1da62884d5da5f40871f9eb4ff1d28c83283cdc", size = 90383192, upload-time = "2026-04-12T10:22:55.802Z" },
+    { url = "https://files.pythonhosted.org/packages/53/33/7567c540d5e6261ce3b71b5092ce86d3e478d5543e882ab9b26253841de7/aspose_words-26.4.0-py3-none-win32.whl", hash = "sha256:7db02af071aa08f68a1b88c784b2136da18fb770f35ce26c46a270bcf319b64d", size = 59696387, upload-time = "2026-04-12T10:22:59.754Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/1c/c362e3b10b278de619b29513d889aa7d8e621aa786c57053e2979f1b5541/aspose_words-26.4.0-py3-none-win_amd64.whl", hash = "sha256:76e95b42364f63a545c1deafb87e80ad83d8e0ee00b70e8d182501f83d0a08f8", size = 67867610, upload-time = "2026-04-12T10:23:03.553Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.2.25"
 source = { registry = "https://pypi.org/simple" }
@@ -676,6 +688,7 @@ name = "offerpilot"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aspose-words" },
     { name = "fastapi", extra = ["standard"] },
     { name = "langchain" },
     { name = "langgraph" },
@@ -692,6 +705,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aspose-words" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.135.3" },
     { name = "langchain", specifier = ">=1.2.15" },
     { name = "langgraph", specifier = ">=1.1.6" },
