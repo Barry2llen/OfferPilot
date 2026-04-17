@@ -26,12 +26,13 @@ def test_create_and_get_model_selection(
             ModelSelectionORM(
                 provider_name="default-openai",
                 model_name="gpt-4o-mini",
+                supports_image_input=True,
             )
         )
         fetched = repository.get_by_id(created.id)
         stored_row = session.execute(
             text(
-                "SELECT provider_name, model_name FROM tb_model_selection "
+                "SELECT provider_name, model_name, supports_image_input FROM tb_model_selection "
                 "WHERE id = :id"
             ),
             {"id": created.id},
@@ -42,8 +43,9 @@ def test_create_and_get_model_selection(
     assert created.provider.name == "default-openai"
     assert fetched is not None
     assert fetched.model_name == "gpt-4o-mini"
+    assert fetched.supports_image_input is True
     assert fetched.provider.provider == "openai"
-    assert stored_row == ("default-openai", "gpt-4o-mini")
+    assert stored_row == ("default-openai", "gpt-4o-mini", 1)
 
 
 def test_list_all_returns_provider_and_model_sorted_records(
@@ -63,6 +65,7 @@ def test_list_all_returns_provider_and_model_sorted_records(
             ModelSelectionORM(
                 provider_name="b-provider",
                 model_name="gemini-2.5-pro",
+                supports_image_input=True,
             )
         )
         repository.create(
@@ -75,11 +78,15 @@ def test_list_all_returns_provider_and_model_sorted_records(
         selections = repository.list_all()
 
     assert [
-        (selection.provider_name, selection.model_name)
+        (
+            selection.provider_name,
+            selection.model_name,
+            selection.supports_image_input,
+        )
         for selection in selections
     ] == [
-        ("a-provider", "claude-3-7-sonnet"),
-        ("b-provider", "gemini-2.5-pro"),
+        ("a-provider", "claude-3-7-sonnet", False),
+        ("b-provider", "gemini-2.5-pro", True),
     ]
 
 
@@ -147,11 +154,12 @@ def test_update_model_selection_updates_provider_and_model_name(
                 id=created.id,
                 provider_name="anthropic-default",
                 model_name="claude-3-7-sonnet",
+                supports_image_input=True,
             )
         )
         stored_row = session.execute(
             text(
-                "SELECT provider_name, model_name FROM tb_model_selection "
+                "SELECT provider_name, model_name, supports_image_input FROM tb_model_selection "
                 "WHERE id = :id"
             ),
             {"id": created.id},
@@ -161,7 +169,8 @@ def test_update_model_selection_updates_provider_and_model_name(
     assert updated.provider_name == "anthropic-default"
     assert updated.provider.name == "anthropic-default"
     assert updated.model_name == "claude-3-7-sonnet"
-    assert stored_row == ("anthropic-default", "claude-3-7-sonnet")
+    assert updated.supports_image_input is True
+    assert stored_row == ("anthropic-default", "claude-3-7-sonnet", 1)
 
 
 def test_update_missing_model_selection_raises_lookup_error(

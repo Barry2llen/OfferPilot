@@ -32,12 +32,13 @@ def test_create_and_get_model_selection_schema(
                     name="default-openai",
                 ),
                 model_name="gpt-4o-mini",
+                supports_image_input=True,
             )
         )
         fetched = service.get_by_id(created.id or 0)
         stored_row = session.execute(
             text(
-                "SELECT provider_name, model_name FROM tb_model_selection "
+                "SELECT provider_name, model_name, supports_image_input FROM tb_model_selection "
                 "WHERE id = :id"
             ),
             {"id": created.id},
@@ -50,7 +51,8 @@ def test_create_and_get_model_selection_schema(
     assert fetched.provider.name == "default-openai"
     assert fetched.provider.provider == "OpenAI"
     assert fetched.model_name == "gpt-4o-mini"
-    assert stored_row == ("default-openai", "gpt-4o-mini")
+    assert fetched.supports_image_input is True
+    assert stored_row == ("default-openai", "gpt-4o-mini", 1)
 
 
 def test_list_all_hydrates_provider_schema_values(
@@ -73,6 +75,7 @@ def test_list_all_hydrates_provider_schema_values(
                     name="google-main",
                 ),
                 model_name="gemini-2.5-pro",
+                supports_image_input=True,
             )
         )
         service.create(
@@ -88,11 +91,16 @@ def test_list_all_hydrates_provider_schema_values(
         selections = service.list_all()
 
     assert [
-        (selection.provider.name, selection.provider.provider, selection.model_name)
+        (
+            selection.provider.name,
+            selection.provider.provider,
+            selection.model_name,
+            selection.supports_image_input,
+        )
         for selection in selections
     ] == [
-        ("anthropic-main", "Anthropic", "claude-3-7-sonnet"),
-        ("google-main", "Google", "gemini-2.5-pro"),
+        ("anthropic-main", "Anthropic", "claude-3-7-sonnet", False),
+        ("google-main", "Google", "gemini-2.5-pro", True),
     ]
 
 
@@ -129,11 +137,12 @@ def test_update_model_selection_keeps_schema_boundary(
                     api_key="secret-key",
                 ),
                 model_name="custom-model",
+                supports_image_input=True,
             )
         )
         stored_row = session.execute(
             text(
-                "SELECT provider_name, model_name FROM tb_model_selection "
+                "SELECT provider_name, model_name, supports_image_input FROM tb_model_selection "
                 "WHERE id = :id"
             ),
             {"id": created.id},
@@ -143,7 +152,8 @@ def test_update_model_selection_keeps_schema_boundary(
     assert updated.provider.name == "compatible-main"
     assert updated.provider.provider == "OpenAI Compatible"
     assert updated.model_name == "custom-model"
-    assert stored_row == ("compatible-main", "custom-model")
+    assert updated.supports_image_input is True
+    assert stored_row == ("compatible-main", "custom-model", 1)
 
 
 def test_update_without_id_raises_value_error(

@@ -53,6 +53,7 @@ class ModelSelectionRepository:
 
         orm_selection.provider_name = selection.provider_name
         orm_selection.model_name = selection.model_name
+        orm_selection.supports_image_input = selection.supports_image_input
         self._session.flush()
         self._session.refresh(orm_selection)
         return self.get_by_id(orm_selection.id) or orm_selection

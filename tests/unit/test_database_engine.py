@@ -116,7 +116,7 @@ def test_initialize_tables_creates_expected_model_selection_constraints(
             for row in session.execute(text(f"PRAGMA index_info('{index_name}')"))
         }
 
-    assert {"id", "provider_name", "model_name"} <= columns
+    assert {"id", "provider_name", "model_name", "supports_image_input"} <= columns
     assert any(
         row[2] == "tb_model_provider"
         and row[3] == "provider_name"

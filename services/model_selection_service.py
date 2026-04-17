@@ -42,6 +42,7 @@ class ModelSelectionService:
             id=selection.id,
             provider=self._to_provider_schema(selection.provider),
             model_name=selection.model_name,
+            supports_image_input=selection.supports_image_input,
         )
 
     def _to_orm(self, selection: ModelSelection) -> ModelSelectionORM:
@@ -50,6 +51,7 @@ class ModelSelectionService:
             id=selection.id,
             provider_name=selection.provider.name,
             model_name=selection.model_name,
+            supports_image_input=selection.supports_image_input,
         )
 
     def _to_provider_schema(self, provider: ModelProviderORM) -> ModelProvider:

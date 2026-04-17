@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -24,6 +24,11 @@ class ModelSelectionORM(Base):
         nullable=False,
     )
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    supports_image_input: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
 
     provider: Mapped[ModelProviderORM] = relationship(
         back_populates="model_selections",
