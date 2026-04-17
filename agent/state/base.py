@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import (
     TypedDict,
-    Sequence,
     Annotated,
     Callable
 )
@@ -11,13 +10,15 @@ from langgraph.graph import add_messages
 from langchain_core.messages import BaseMessage
 
 from schemas.model_selection import ModelSelection
+from .type import Displace, MaybeCallable
 
 class BaseAgentState(TypedDict):
     """
     Base class for agent state. All agent states should inherit from this class.
     """
-    model: ModelSelection | Callable[..., ModelSelection]
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+
+    model: Displace[MaybeCallable[ModelSelection]]
+    messages: Annotated[list[BaseMessage], add_messages]
 
     def _to_base(self) -> BaseAgentState:
         """

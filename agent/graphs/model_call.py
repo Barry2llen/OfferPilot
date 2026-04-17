@@ -7,7 +7,7 @@ from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
-from langchain_core.messages import ToolMessage, ToolCall
+from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
 
 from exceptions import AgentStateError, ModelCallExecutionError
 from ..models import load_chat_model
@@ -25,6 +25,7 @@ class ModelCallGraph(BaseGraph):
     def __init__(
             self,
             *args,
+            system_prompts: list[BaseMessage] | None = None,
             config: Config | None = None,
             tools: Sequence[BaseTool] | None = None,
             **kwargs
@@ -32,8 +33,9 @@ class ModelCallGraph(BaseGraph):
         
         super().__init__(*args, **kwargs)
         self.config = load_config() if config is None else config
-        self.tools = tuple(tools or ())
+        self.tools = tools or tuple[BaseTool]()
         self.tools_dict = {tool.name: tool for tool in self.tools}
+        self.system_prompts = system_prompts or []
 
     # TODO: Later we can excute tool calls in parallel if there are multiple tool calls in the same message.
     def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
@@ -116,7 +118,7 @@ class ModelCallGraph(BaseGraph):
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
                 try:
-                    response = model.invoke(state['messages'])
+                    response = model.invoke(self.system_prompts + state['messages'])
                     return BaseAgentState(messages=[response])
                 except Exception as e:
                     logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
