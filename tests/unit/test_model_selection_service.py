@@ -4,6 +4,12 @@ from sqlalchemy import text
 from db.engine import DatabaseManager
 from db.models import ModelProviderORM
 from db.repositories import ModelSelectionRepository
+from exceptions import (
+    ModelProviderNotFoundError,
+    ModelSelectionAlreadyExistsError,
+    ModelSelectionValidationError,
+    UnsupportedModelProviderError,
+)
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
 from services import ModelSelectionService
@@ -156,7 +162,7 @@ def test_update_model_selection_keeps_schema_boundary(
     assert stored_row == ("compatible-main", "custom-model", 1)
 
 
-def test_update_without_id_raises_value_error(
+def test_update_without_id_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
@@ -165,7 +171,10 @@ def test_update_without_id_raises_value_error(
 
         service = ModelSelectionService(ModelSelectionRepository(session))
 
-        with pytest.raises(ValueError, match="Model selection id is required"):
+        with pytest.raises(
+            ModelSelectionValidationError,
+            match="Model selection id is required",
+        ):
             service.update(
                 ModelSelection(
                     provider=ModelProvider(
@@ -177,13 +186,13 @@ def test_update_without_id_raises_value_error(
             )
 
 
-def test_create_missing_provider_raises_lookup_error(
+def test_create_missing_provider_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
         service = ModelSelectionService(ModelSelectionRepository(session))
 
-        with pytest.raises(LookupError, match="Model provider not found"):
+        with pytest.raises(ModelProviderNotFoundError, match="Model provider not found"):
             service.create(
                 ModelSelection(
                     provider=ModelProvider(
@@ -195,7 +204,7 @@ def test_create_missing_provider_raises_lookup_error(
             )
 
 
-def test_create_duplicate_model_selection_raises_value_error(
+def test_create_duplicate_model_selection_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
@@ -212,11 +221,14 @@ def test_create_duplicate_model_selection_raises_value_error(
         )
         service.create(selection)
 
-        with pytest.raises(ValueError, match="Model selection already exists"):
+        with pytest.raises(
+            ModelSelectionAlreadyExistsError,
+            match="Model selection already exists",
+        ):
             service.create(selection)
 
 
-def test_create_with_unsupported_provider_raises_value_error(
+def test_create_with_unsupported_provider_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
@@ -225,7 +237,10 @@ def test_create_with_unsupported_provider_raises_value_error(
 
         service = ModelSelectionService(ModelSelectionRepository(session))
 
-        with pytest.raises(ValueError, match="Unsupported provider value"):
+        with pytest.raises(
+            UnsupportedModelProviderError,
+            match="Unsupported provider value",
+        ):
             service.create(
                 ModelSelection.model_construct(
                     provider=ModelProvider.model_construct(

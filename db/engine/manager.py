@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from db.models import Base
+from exceptions import DatabaseConfigurationError
 from schemas.config import load_config
 from schemas.config.database import (
     DatabaseConfig,
@@ -35,7 +36,9 @@ def build_database_url(config: DatabaseConfig) -> str:
             f"{config.user}:{config.password}@{config.host}:{config.port}/{config.database}"
         )
 
-    raise TypeError(f"Unsupported database config type: {type(config)!r}")
+    raise DatabaseConfigurationError(
+        f"Unsupported database config type: {type(config)!r}"
+    )
 
 
 class DatabaseManager:

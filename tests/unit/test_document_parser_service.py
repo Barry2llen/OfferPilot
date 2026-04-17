@@ -6,10 +6,8 @@ from zipfile import ZipFile
 import fitz
 import pytest
 
-from services.document_parser_service import (
-    DocumentParserService,
-    UnsupportedResumeFileError,
-)
+from exceptions import UnsupportedResumeFileError
+from services.document_parser_service import DocumentParserService
 
 
 def _create_pdf(path: Path, text: str) -> None:

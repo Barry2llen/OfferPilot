@@ -4,6 +4,10 @@ from sqlalchemy import text
 from db.models import ModelProviderORM
 from db.engine import DatabaseManager
 from db.repositories import ModelProviderRepository
+from exceptions import (
+    ModelProviderAlreadyExistsError,
+    ModelProviderNotFoundError,
+)
 
 
 @pytest.fixture
@@ -74,7 +78,7 @@ def test_list_all_returns_name_sorted_records(
     assert providers[1].api_key is None
 
 
-def test_create_duplicate_model_provider_raises_value_error(
+def test_create_duplicate_model_provider_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
@@ -86,7 +90,10 @@ def test_create_duplicate_model_provider_raises_value_error(
         )
         repository.create(provider)
 
-        with pytest.raises(ValueError, match="Model provider already exists"):
+        with pytest.raises(
+            ModelProviderAlreadyExistsError,
+            match="Model provider already exists",
+        ):
             repository.create(provider)
 
 
@@ -129,13 +136,13 @@ def test_update_model_provider_updates_non_primary_fields(
     )
 
 
-def test_update_missing_model_provider_raises_lookup_error(
+def test_update_missing_model_provider_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
         repository = ModelProviderRepository(session)
 
-        with pytest.raises(LookupError, match="Model provider not found"):
+        with pytest.raises(ModelProviderNotFoundError, match="Model provider not found"):
             repository.update(
                 ModelProviderORM(
                     name="missing-provider",

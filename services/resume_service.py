@@ -4,15 +4,15 @@ from uuid import uuid4
 
 from db.models import ResumeDocumentORM
 from db.repositories import ResumeDocumentRepository
-from schemas.resume_document import ResumeDetail, ResumeListItem
-from services.document_parser_service import (
-    DocumentParserService,
+from exceptions import (
+    EmptyResumeContentError,
+    ResumeFileNotFoundError,
+    ResumeNotFoundError,
+    ResumeValidationError,
     UnsupportedResumeFileError,
 )
-
-
-class EmptyResumeContentError(ValueError):
-    """Raised when the provided resume content is blank."""
+from schemas.resume_document import ResumeDetail, ResumeListItem
+from services.document_parser_service import DocumentParserService
 
 
 @dataclass(slots=True)
@@ -51,7 +51,7 @@ class ResumeService:
     def create_from_file(self, uploaded_file: UploadedResumeFile) -> ResumeDetail:
         filename = Path(uploaded_file.filename).name
         if not filename:
-            raise ValueError("Uploaded file name is required.")
+            raise ResumeValidationError("Uploaded file name is required.")
         if not uploaded_file.content:
             raise EmptyResumeContentError("Uploaded file is empty.")
 
@@ -98,7 +98,7 @@ class ResumeService:
 
         filename = Path(uploaded_file.filename).name
         if not filename:
-            raise ValueError("Uploaded file name is required.")
+            raise ResumeValidationError("Uploaded file name is required.")
         if not uploaded_file.content:
             raise EmptyResumeContentError("Uploaded file is empty.")
 
@@ -133,7 +133,7 @@ class ResumeService:
         try:
             deleted = self._repository.delete(resume_id)
             if not deleted:
-                raise LookupError(f"Resume not found: {resume_id}")
+                raise ResumeNotFoundError(f"Resume not found: {resume_id}")
             self._repository.commit()
         except Exception:
             self._repository.rollback()
@@ -147,7 +147,7 @@ class ResumeService:
     def get_resume_file(self, resume_id: int) -> StoredResumeFile:
         document = self._require_resume(resume_id)
         if document.file_path is None:
-            raise LookupError(f"Resume file not found: {resume_id}")
+            raise ResumeFileNotFoundError(f"Resume file not found: {resume_id}")
 
         return StoredResumeFile(
             path=self._resolve_storage_path(document.file_path),
@@ -209,7 +209,7 @@ class ResumeService:
     def _require_resume(self, resume_id: int) -> ResumeDocumentORM:
         document = self._repository.get_by_id(resume_id)
         if document is None:
-            raise LookupError(f"Resume not found: {resume_id}")
+            raise ResumeNotFoundError(f"Resume not found: {resume_id}")
         return document
 
     def _build_preview_url(self, resume_id: int) -> str:
@@ -225,9 +225,9 @@ class ResumeService:
         resolved = candidate.resolve() if candidate.is_absolute() else (Path.cwd() / candidate).resolve()
         allowed_roots = (Path.cwd().resolve(), self._upload_dir.resolve())
         if not any(self._is_relative_to(resolved, root) for root in allowed_roots):
-            raise LookupError("Resume file not found.")
+            raise ResumeFileNotFoundError("Resume file not found.")
         if require_exists and not resolved.is_file():
-            raise LookupError("Resume file not found.")
+            raise ResumeFileNotFoundError("Resume file not found.")
         return resolved
 
     def _is_relative_to(self, path: Path, root: Path) -> bool:

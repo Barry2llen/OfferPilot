@@ -1,5 +1,9 @@
 from db.models import ModelProviderORM, ModelSelectionORM
 from db.repositories import ModelSelectionRepository
+from exceptions import (
+    ModelSelectionValidationError,
+    UnsupportedModelProviderError,
+)
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
 from services.model_provider_service import (
@@ -29,7 +33,9 @@ class ModelSelectionService:
 
     def update(self, selection: ModelSelection) -> ModelSelection:
         if selection.id is None:
-            raise ValueError("Model selection id is required for update")
+            raise ModelSelectionValidationError(
+                "Model selection id is required for update"
+            )
 
         updated = self._repository.update(self._to_orm(selection))
         return self._to_schema(updated)
@@ -58,7 +64,9 @@ class ModelSelectionService:
         provider_name = provider.provider
         domain_provider = _DATABASE_TO_DOMAIN_PROVIDER.get(provider_name)
         if domain_provider is None:
-            raise ValueError(f"Unsupported provider value: {provider_name}")
+            raise UnsupportedModelProviderError(
+                f"Unsupported provider value: {provider_name}"
+            )
 
         return ModelProvider(
             provider=domain_provider,
@@ -70,4 +78,6 @@ class ModelSelectionService:
     def _require_supported_provider(self, provider: ModelProvider) -> None:
         database_provider = _DOMAIN_TO_DATABASE_PROVIDER.get(provider.provider)
         if database_provider is None:
-            raise ValueError(f"Unsupported provider value: {provider.provider}")
+            raise UnsupportedModelProviderError(
+                f"Unsupported provider value: {provider.provider}"
+            )

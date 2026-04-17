@@ -5,12 +5,9 @@ from sqlalchemy import text
 
 from db.engine import DatabaseManager
 from db.repositories import ResumeDocumentRepository
-from services.document_parser_service import DocumentParserService, ResumeParsingError
-from services.resume_service import (
-    EmptyResumeContentError,
-    ResumeService,
-    UploadedResumeFile,
-)
+from exceptions import EmptyResumeContentError, ResumeParsingError
+from services.document_parser_service import DocumentParserService
+from services.resume_service import ResumeService, UploadedResumeFile
 
 
 @pytest.fixture

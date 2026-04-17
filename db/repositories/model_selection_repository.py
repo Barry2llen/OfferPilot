@@ -2,6 +2,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from db.models import ModelProviderORM, ModelSelectionORM
+from exceptions import (
+    ModelProviderNotFoundError,
+    ModelSelectionAlreadyExistsError,
+    ModelSelectionNotFoundError,
+)
 
 
 class ModelSelectionRepository:
@@ -42,7 +47,9 @@ class ModelSelectionRepository:
     def update(self, selection: ModelSelectionORM) -> ModelSelectionORM:
         orm_selection = self._session.get(ModelSelectionORM, selection.id)
         if orm_selection is None:
-            raise LookupError(f"Model selection not found: {selection.id}")
+            raise ModelSelectionNotFoundError(
+                f"Model selection not found: {selection.id}"
+            )
 
         self._ensure_provider_exists(selection.provider_name)
         self._ensure_unique(
@@ -69,7 +76,9 @@ class ModelSelectionRepository:
 
     def _ensure_provider_exists(self, provider_name: str) -> None:
         if self._session.get(ModelProviderORM, provider_name) is None:
-            raise LookupError(f"Model provider not found: {provider_name}")
+            raise ModelProviderNotFoundError(
+                f"Model provider not found: {provider_name}"
+            )
 
     def _ensure_unique(
         self,
@@ -87,7 +96,7 @@ class ModelSelectionRepository:
         if exclude_id is not None and existing.id == exclude_id:
             return
 
-        raise ValueError(
+        raise ModelSelectionAlreadyExistsError(
             "Model selection already exists: "
             f"{provider_name}/{model_name}"
         )

@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db.models import ResumeDocumentORM
+from exceptions import ResumeNotFoundError
 
 
 class ResumeDocumentRepository:
@@ -29,7 +30,7 @@ class ResumeDocumentRepository:
     def update(self, document: ResumeDocumentORM) -> ResumeDocumentORM:
         orm_document = self._session.get(ResumeDocumentORM, document.id)
         if orm_document is None:
-            raise LookupError(f"Resume not found: {document.id}")
+            raise ResumeNotFoundError(f"Resume not found: {document.id}")
 
         orm_document.file_path = document.file_path
         orm_document.content = document.content

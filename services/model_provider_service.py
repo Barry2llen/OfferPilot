@@ -1,5 +1,6 @@
 from db.models import ModelProviderORM
 from db.repositories import ModelProviderRepository
+from exceptions import UnsupportedModelProviderError
 from schemas.model_provider import ModelProvider
 
 _DOMAIN_TO_DATABASE_PROVIDER = {
@@ -43,7 +44,9 @@ class ModelProviderService:
     def _to_schema(self, provider: ModelProviderORM) -> ModelProvider:
         domain_provider = _DATABASE_TO_DOMAIN_PROVIDER.get(provider.provider)
         if domain_provider is None:
-            raise ValueError(f"Unsupported provider value: {provider.provider}")
+            raise UnsupportedModelProviderError(
+                f"Unsupported provider value: {provider.provider}"
+            )
 
         return ModelProvider(
             provider=domain_provider,
@@ -55,7 +58,9 @@ class ModelProviderService:
     def _to_orm(self, provider: ModelProvider) -> ModelProviderORM:
         database_provider = _DOMAIN_TO_DATABASE_PROVIDER.get(provider.provider)
         if database_provider is None:
-            raise ValueError(f"Unsupported provider value: {provider.provider}")
+            raise UnsupportedModelProviderError(
+                f"Unsupported provider value: {provider.provider}"
+            )
 
         return ModelProviderORM(
             name=provider.name,

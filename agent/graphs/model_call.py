@@ -9,6 +9,7 @@ from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, ToolCall
 
+from exceptions import AgentStateError, ModelCallExecutionError
 from ..models import load_chat_model
 from ..state import BaseAgentState
 from ..types.interupt import BaseInterupt
@@ -127,7 +128,11 @@ class ModelCallGraph(BaseGraph):
             if resp['type'] == 'retry':
                 continue
             else:
-                raise Exception(f"Model call failed after {max_retries} retries and code received interrupt with type {resp['type']} and message {resp.get('prompt', '')}")
+                raise ModelCallExecutionError(
+                    "Model call failed after "
+                    f"{max_retries} retries and code received interrupt with type "
+                    f"{resp['type']} and message {resp.get('prompt', '')}"
+                )
             
     def _dicide_next_action(self, state: BaseAgentState) -> str:
         """
@@ -138,11 +143,11 @@ class ModelCallGraph(BaseGraph):
 
         if not messages:
             logger.error("No messages in state, this should not happen.")
-            raise Exception("No messages in state, this should not happen.")
+            raise AgentStateError("No messages in state, this should not happen.")
         
         if messages[-1].type != 'ai':
             logger.error("Last message is not from AI, this should not happen.")
-            raise Exception("Last message is not from AI, this should not happen.")
+            raise AgentStateError("Last message is not from AI, this should not happen.")
         
         return 'end' if not hasattr(messages[-1], 'tool_calls') or not messages[-1].tool_calls else 'tool'
             

@@ -6,18 +6,19 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from db.repositories import ResumeDocumentRepository
+from exceptions import (
+    EmptyResumeContentError,
+    ResumeFileNotFoundError,
+    ResumeNotFoundError,
+    ResumeParsingError,
+    ResumeValidationError,
+    UnsupportedResumeFileError,
+)
 from schemas.resume_document import (
     ResumeDetail,
     ResumeListItem,
 )
-from services import (
-    DocumentParserService,
-    EmptyResumeContentError,
-    ResumeParsingError,
-    ResumeService,
-    UnsupportedResumeFileError,
-    UploadedResumeFile,
-)
+from services import DocumentParserService, ResumeService, UploadedResumeFile
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -63,7 +64,7 @@ async def get_resume(
     service = _build_resume_service(request, session)
     try:
         return service.get_resume(resume_id)
-    except LookupError as error:
+    except ResumeNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
@@ -86,7 +87,11 @@ async def upload_resume_file(
         )
     except UnsupportedResumeFileError as error:
         raise HTTPException(status_code=415, detail=str(error)) from error
-    except (EmptyResumeContentError, ResumeParsingError, ValueError) as error:
+    except (
+        EmptyResumeContentError,
+        ResumeParsingError,
+        ResumeValidationError,
+    ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
@@ -109,11 +114,15 @@ async def replace_resume_file(
                 content=payload,
             ),
         )
-    except LookupError as error:
+    except ResumeNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except UnsupportedResumeFileError as error:
         raise HTTPException(status_code=415, detail=str(error)) from error
-    except (EmptyResumeContentError, ResumeParsingError, ValueError) as error:
+    except (
+        EmptyResumeContentError,
+        ResumeParsingError,
+        ResumeValidationError,
+    ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
@@ -126,7 +135,7 @@ async def delete_resume(
     service = _build_resume_service(request, session)
     try:
         service.delete_resume(resume_id)
-    except LookupError as error:
+    except ResumeNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
     return Response(status_code=204)
@@ -141,7 +150,7 @@ async def preview_resume_file(
     service = _build_resume_service(request, session)
     try:
         stored_file = service.get_resume_file(resume_id)
-    except LookupError as error:
+    except (ResumeNotFoundError, ResumeFileNotFoundError) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
     headers: dict[str, str] = {"Content-Disposition": "inline"}

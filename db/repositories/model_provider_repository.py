@@ -2,6 +2,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db.models import ModelProviderORM
+from exceptions import (
+    ModelProviderAlreadyExistsError,
+    ModelProviderNotFoundError,
+)
 
 
 class ModelProviderRepository:
@@ -19,7 +23,9 @@ class ModelProviderRepository:
 
     def create(self, provider: ModelProviderORM) -> ModelProviderORM:
         if self.get_by_name(provider.name) is not None:
-            raise ValueError(f"Model provider already exists: {provider.name}")
+            raise ModelProviderAlreadyExistsError(
+                f"Model provider already exists: {provider.name}"
+            )
 
         self._session.add(provider)
         self._session.flush()
@@ -28,7 +34,9 @@ class ModelProviderRepository:
     def update(self, provider: ModelProviderORM) -> ModelProviderORM:
         orm_provider = self._session.get(ModelProviderORM, provider.name)
         if orm_provider is None:
-            raise LookupError(f"Model provider not found: {provider.name}")
+            raise ModelProviderNotFoundError(
+                f"Model provider not found: {provider.name}"
+            )
 
         orm_provider.provider = provider.provider
         orm_provider.base_url = provider.base_url

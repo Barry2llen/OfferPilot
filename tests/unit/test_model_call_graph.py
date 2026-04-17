@@ -3,6 +3,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
 from agent.graphs.model_call import ModelCallGraph
+from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 
 
@@ -155,7 +156,7 @@ def test_dicide_next_action_returns_tool_with_tool_calls() -> None:
 def test_dicide_next_action_raises_for_invalid_state(state: dict) -> None:
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
 
-    with pytest.raises(Exception):
+    with pytest.raises(AgentStateError):
         graph._dicide_next_action(state)
 
 
@@ -257,3 +258,28 @@ def test_model_call_node_resolves_callable_model_selection(
     assert seen_states == [state]
     assert loaded_models == [resolved_model]
     assert result["messages"] == [response]
+
+
+def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            return self
+
+        def invoke(self, messages: object) -> AIMessage:
+            raise RuntimeError("permanent failure")
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+    monkeypatch.setattr(
+        "agent.graphs.model_call.interrupt",
+        lambda payload: {"type": "abort", "prompt": "stop"},
+    )
+
+    graph = ModelCallGraph(config=Config(model_call_retry_attempts=2), tools=[echo_value])
+
+    with pytest.raises(ModelCallExecutionError, match="Model call failed after 2 retries"):
+        graph._model_call_node(make_state([HumanMessage(content="hello")]))

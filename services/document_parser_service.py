@@ -4,14 +4,7 @@ from xml.etree import ElementTree
 from zipfile import ZipFile
 
 import fitz
-
-
-class ResumeParsingError(ValueError):
-    """Raised when resume content cannot be extracted."""
-
-
-class UnsupportedResumeFileError(ValueError):
-    """Raised when the uploaded resume file type is not supported."""
+from exceptions import ResumeParsingError, UnsupportedResumeFileError
 
 
 class DocumentParserService:

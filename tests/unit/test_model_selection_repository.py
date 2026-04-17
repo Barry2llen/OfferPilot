@@ -4,6 +4,11 @@ from sqlalchemy import text
 from db.engine import DatabaseManager
 from db.models import ModelProviderORM, ModelSelectionORM
 from db.repositories import ModelSelectionRepository
+from exceptions import (
+    ModelProviderNotFoundError,
+    ModelSelectionAlreadyExistsError,
+    ModelSelectionNotFoundError,
+)
 
 
 @pytest.fixture
@@ -90,7 +95,7 @@ def test_list_all_returns_provider_and_model_sorted_records(
     ]
 
 
-def test_create_duplicate_model_selection_raises_value_error(
+def test_create_duplicate_model_selection_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
@@ -105,7 +110,10 @@ def test_create_duplicate_model_selection_raises_value_error(
             )
         )
 
-        with pytest.raises(ValueError, match="Model selection already exists"):
+        with pytest.raises(
+            ModelSelectionAlreadyExistsError,
+            match="Model selection already exists",
+        ):
             repository.create(
                 ModelSelectionORM(
                     provider_name="shared-provider",
@@ -114,13 +122,13 @@ def test_create_duplicate_model_selection_raises_value_error(
             )
 
 
-def test_create_missing_provider_raises_lookup_error(
+def test_create_missing_provider_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
         repository = ModelSelectionRepository(session)
 
-        with pytest.raises(LookupError, match="Model provider not found"):
+        with pytest.raises(ModelProviderNotFoundError, match="Model provider not found"):
             repository.create(
                 ModelSelectionORM(
                     provider_name="missing-provider",
@@ -173,7 +181,7 @@ def test_update_model_selection_updates_provider_and_model_name(
     assert stored_row == ("anthropic-default", "claude-3-7-sonnet", 1)
 
 
-def test_update_missing_model_selection_raises_lookup_error(
+def test_update_missing_model_selection_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
@@ -182,7 +190,10 @@ def test_update_missing_model_selection_raises_lookup_error(
 
         repository = ModelSelectionRepository(session)
 
-        with pytest.raises(LookupError, match="Model selection not found"):
+        with pytest.raises(
+            ModelSelectionNotFoundError,
+            match="Model selection not found",
+        ):
             repository.update(
                 ModelSelectionORM(
                     id=999,

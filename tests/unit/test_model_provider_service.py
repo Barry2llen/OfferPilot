@@ -3,6 +3,7 @@ from sqlalchemy import text
 
 from db.engine import DatabaseManager
 from db.repositories import ModelProviderRepository
+from exceptions import UnsupportedModelProviderError
 from schemas.model_provider import ModelProvider
 from services import ModelProviderService
 
@@ -127,13 +128,16 @@ def test_delete_model_provider_returns_expected_flag(
     assert fetched is None
 
 
-def test_create_with_unsupported_provider_raises_value_error(
+def test_create_with_unsupported_provider_raises_domain_error(
     initialized_database_manager: DatabaseManager,
 ) -> None:
     with initialized_database_manager.session_scope() as session:
         service = ModelProviderService(ModelProviderRepository(session))
 
-        with pytest.raises(ValueError, match="Unsupported provider value"):
+        with pytest.raises(
+            UnsupportedModelProviderError,
+            match="Unsupported provider value",
+        ):
             service.create(
                 ModelProvider.model_construct(
                     provider="Unsupported Provider",

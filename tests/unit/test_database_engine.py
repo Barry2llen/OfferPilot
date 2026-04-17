@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from db.engine import DatabaseManager, build_database_url
+from exceptions import DatabaseConfigurationError
 from schemas.config import PostgreSQLDatabaseConfig, SQLiteDatabaseConfig
 
 
@@ -28,6 +29,11 @@ def test_build_database_url_for_postgresql() -> None:
         build_database_url(config)
         == "postgresql+psycopg://postgres:secret@db.example.com:5432/offer_pilot"
     )
+
+
+def test_build_database_url_rejects_unsupported_config_type() -> None:
+    with pytest.raises(DatabaseConfigurationError, match="Unsupported database config"):
+        build_database_url(object())  # type: ignore[arg-type]
 
 
 def test_database_manager_is_lazy_and_reuses_factory(
