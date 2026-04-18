@@ -24,6 +24,12 @@ def _load_chat_model_cached(
     base_url: str | None,
     api_key: str | None,
 ) -> BaseChatModel:
+    
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+
+    required_base_and_key = False
+
     match provider_name:
         case "OpenAI":
             model_provider = "openai"
@@ -33,6 +39,7 @@ def _load_chat_model_cached(
             model_provider = "google_genai"
         case "OpenAI Compatible":
             model_provider = "openai"
+            required_base_and_key = True
         case _:
             logger.error(f"Unsupported model provider: {provider_name}")
             raise UnsupportedModelProviderError(
@@ -45,6 +52,9 @@ def _load_chat_model_cached(
             model=model_name,
             base_url=base_url,
             api_key=api_key,
+        ) if required_base_and_key else init_chat_model(
+            model_provider=model_provider,
+            model=model_name,
         )
     except Exception as e:
         logger.error(f"Error loading chat model for provider {provider_name}: {e}")

@@ -18,4 +18,5 @@ dependencies = [
     "rapidocr-onnxruntime",
     "ruamel-yaml>=0.19.1",
     "sqlalchemy>=2.0.0",
+    "langchain-google-genai>=4.2.2",
 ]

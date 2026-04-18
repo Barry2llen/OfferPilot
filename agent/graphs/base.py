@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from ..state.base import BaseAgentState
 
@@ -10,6 +11,9 @@ class BaseGraph(ABC):
     @abstractmethod
     def get_graph(self) -> StateGraph[BaseAgentState]:
         pass
+
+    def get_compiled_graph(self) -> CompiledStateGraph[BaseAgentState]:
+        return self.get_graph().compile()
 
 
 __all__ = [

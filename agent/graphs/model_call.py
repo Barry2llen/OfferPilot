@@ -118,6 +118,7 @@ class ModelCallGraph(BaseGraph):
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
                 try:
+                    logger.debug(f"Invoking model with system prompts: {self.system_prompts} and messages: {state['messages']}")
                     response = model.invoke(self.system_prompts + state['messages'])
                     return BaseAgentState(messages=[response])
                 except Exception as e:

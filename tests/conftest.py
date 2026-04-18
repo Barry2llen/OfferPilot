@@ -3,10 +3,14 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from dotenv import load_dotenv
 from ruamel.yaml import YAML
 
 from db.engine import DatabaseManager
 from schemas.config import Config, SQLiteDatabaseConfig
+
+
+load_dotenv(Path.cwd() / ".env", override=False)
 
 
 @pytest.fixture
