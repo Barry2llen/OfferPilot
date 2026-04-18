@@ -2,23 +2,36 @@ from collections.abc import Generator
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from db.repositories import ResumeDocumentRepository
+from db.repositories import ModelSelectionRepository, ResumeDocumentRepository
 from exceptions import (
+    ChatModelLoadError,
     EmptyResumeContentError,
+    ModelCallExecutionError,
+    ModelSelectionNotFoundError,
+    ModelSelectionValidationError,
     ResumeFileNotFoundError,
     ResumeNotFoundError,
     ResumeParsingError,
+    ResumePreviewError,
+    ResumePreviewFileNotFoundError,
     ResumeValidationError,
     UnsupportedResumeFileError,
 )
+from schemas.resume_advice import ResumeAdviceRequest, ResumeAdviceResponse
 from schemas.resume_document import (
     ResumeDetail,
     ResumeListItem,
 )
-from services import DocumentParserService, ResumeService, UploadedResumeFile
+from services import (
+    DocumentParserService,
+    ModelSelectionService,
+    ResumeAdviceService,
+    ResumeService,
+    UploadedResumeFile,
+)
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -36,6 +49,18 @@ def _build_resume_service(request: Request, session: Session) -> ResumeService:
         repository=ResumeDocumentRepository(session),
         parser=DocumentParserService(),
         upload_dir=request.app.state.config.resume_upload_dir,
+    )
+
+
+def _build_model_selection_service(session: Session) -> ModelSelectionService:
+    return ModelSelectionService(ModelSelectionRepository(session))
+
+
+def _build_resume_advice_service(request: Request, session: Session) -> ResumeAdviceService:
+    return ResumeAdviceService(
+        resume_service=_build_resume_service(request, session),
+        model_selection_service=_build_model_selection_service(session),
+        config=request.app.state.config,
     )
 
 
@@ -162,4 +187,57 @@ async def preview_resume_file(
         path=stored_file.path,
         media_type=stored_file.media_type,
         headers=headers,
+    )
+
+
+@router.post("/{resume_id}/advice", response_model=ResumeAdviceResponse)
+async def generate_resume_advice(
+    resume_id: int,
+    payload: ResumeAdviceRequest,
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> ResumeAdviceResponse:
+    service = _build_resume_advice_service(request, session)
+
+    try:
+        generation = service.prepare_generation(resume_id=resume_id, request=payload)
+        return await service.generate_advice(generation)
+    except (ResumeNotFoundError, ModelSelectionNotFoundError) as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ResumePreviewFileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ModelSelectionValidationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except (
+        ResumePreviewError,
+        ChatModelLoadError,
+        ModelCallExecutionError,
+    ) as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.post("/{resume_id}/advice/stream")
+async def stream_resume_advice(
+    resume_id: int,
+    payload: ResumeAdviceRequest,
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> StreamingResponse:
+    service = _build_resume_advice_service(request, session)
+
+    try:
+        generation = service.prepare_generation(resume_id=resume_id, request=payload)
+    except (ResumeNotFoundError, ModelSelectionNotFoundError) as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ResumePreviewFileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ModelSelectionValidationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except ResumePreviewError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    return StreamingResponse(
+        service.stream_advice(generation),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
     )

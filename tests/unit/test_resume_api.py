@@ -2,7 +2,9 @@ from pathlib import Path
 
 import fitz
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage, AIMessageChunk
 
+from db.models import ModelProviderORM, ModelSelectionORM
 from main import create_app
 from schemas.config import Config
 from services.document_parser_service import DocumentParserService
@@ -19,6 +21,58 @@ def _create_pdf(path: Path, text: str) -> None:
 def _resolve_saved_path(path_value: str) -> Path:
     path = Path(path_value)
     return path if path.is_absolute() else Path.cwd() / path
+
+
+class _FakeResumeAdviceGraph:
+    def __init__(self, events: list[dict]) -> None:
+        self._events = events
+
+    async def astream_events(self, _: dict):
+        for event in self._events:
+            yield event
+
+
+def _create_model_selection(
+    app,
+    *,
+    selection_id: int = 1,
+    provider_name: str = "google-main",
+    supports_image_input: bool = True,
+) -> int:
+    with app.state.database.session_scope() as session:
+        session.add(ModelProviderORM(name=provider_name, provider="google"))
+        session.flush()
+        selection = ModelSelectionORM(
+            id=selection_id,
+            provider_name=provider_name,
+            model_name="gemini-2.5-pro",
+            supports_image_input=supports_image_input,
+        )
+        session.add(selection)
+        session.flush()
+        return selection.id
+
+
+def _build_resume_advice_events(
+    *,
+    tokens: list[str] | None = None,
+    final_content: str = "建议补充量化成果，并压缩项目描述。",
+) -> list[dict]:
+    events: list[dict] = []
+    for token in tokens or []:
+        events.append(
+            {
+                "event": "on_chat_model_stream",
+                "data": {"chunk": AIMessageChunk(content=token)},
+            }
+        )
+    events.append(
+        {
+            "event": "on_chain_end",
+            "data": {"output": {"messages": [AIMessage(content=final_content)]}},
+        }
+    )
+    return events
 
 
 def test_upload_resume_file_endpoint_with_pdf(
@@ -227,3 +281,171 @@ def test_upload_resume_file_endpoint_rejects_doc(temporary_app_config: Config) -
 
     assert response.status_code == 415
     assert "Legacy .doc files are not supported." in response.json()["detail"]
+
+
+def test_generate_resume_advice_endpoint_returns_completed_response(
+    temporary_app_config: Config,
+    monkeypatch,
+) -> None:
+    app = create_app(temporary_app_config)
+    monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Jane Doe Resume")
+    monkeypatch.setattr(
+        "services.resume_advice_service.resume_advice",
+        lambda **_: _FakeResumeAdviceGraph(_build_resume_advice_events()),
+    )
+
+    with TestClient(app) as client:
+        model_selection_id = _create_model_selection(app)
+        created = client.post(
+            "/resumes/files",
+            files={"file": ("resume.png", b"fake-image", "image/png")},
+        )
+        response = client.post(
+            f"/resumes/{created.json()['id']}/advice",
+            json={"model_selection_id": model_selection_id, "user_prompt": "帮我优化"},
+        )
+
+    assert created.status_code == 200
+    assert response.status_code == 200
+    assert response.json() == {
+        "resume_id": created.json()["id"],
+        "model_selection_id": model_selection_id,
+        "content": "建议补充量化成果，并压缩项目描述。",
+    }
+
+
+def test_stream_resume_advice_endpoint_returns_sse_events(
+    temporary_app_config: Config,
+    monkeypatch,
+) -> None:
+    app = create_app(temporary_app_config)
+    monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Jane Doe Resume")
+    monkeypatch.setattr(
+        "services.resume_advice_service.resume_advice",
+        lambda **_: _FakeResumeAdviceGraph(
+            _build_resume_advice_events(
+                tokens=["先补充量化成果", "，再突出岗位匹配度"],
+                final_content="先补充量化成果，再突出岗位匹配度",
+            )
+        ),
+    )
+
+    with TestClient(app) as client:
+        model_selection_id = _create_model_selection(app)
+        created = client.post(
+            "/resumes/files",
+            files={"file": ("resume.png", b"fake-image", "image/png")},
+        )
+        with client.stream(
+            "POST",
+            f"/resumes/{created.json()['id']}/advice/stream",
+            json={"model_selection_id": model_selection_id},
+        ) as response:
+            body = "".join(response.iter_text())
+            content_type = response.headers["content-type"]
+
+    assert created.status_code == 200
+    assert response.status_code == 200
+    assert content_type.startswith("text/event-stream")
+    assert 'event: token' in body
+    assert 'data: {"content": "先补充量化成果"}' in body
+    assert 'event: done' in body
+    assert '"model_selection_id": 1' in body
+    assert '"content": "先补充量化成果，再突出岗位匹配度"' in body
+
+
+def test_resume_advice_endpoints_return_404_for_missing_resume(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        model_selection_id = _create_model_selection(app)
+        sync_response = client.post(
+            "/resumes/999/advice",
+            json={"model_selection_id": model_selection_id},
+        )
+        stream_response = client.post(
+            "/resumes/999/advice/stream",
+            json={"model_selection_id": model_selection_id},
+        )
+
+    assert sync_response.status_code == 404
+    assert stream_response.status_code == 404
+
+
+def test_resume_advice_endpoints_return_404_for_missing_model_selection(
+    temporary_app_config: Config,
+    monkeypatch,
+) -> None:
+    app = create_app(temporary_app_config)
+    monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Jane Doe Resume")
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/resumes/files",
+            files={"file": ("resume.png", b"fake-image", "image/png")},
+        )
+        sync_response = client.post(
+            f"/resumes/{created.json()['id']}/advice",
+            json={"model_selection_id": 999},
+        )
+        stream_response = client.post(
+            f"/resumes/{created.json()['id']}/advice/stream",
+            json={"model_selection_id": 999},
+        )
+
+    assert created.status_code == 200
+    assert sync_response.status_code == 404
+    assert stream_response.status_code == 404
+
+
+def test_resume_advice_endpoints_reject_models_without_image_input_support(
+    temporary_app_config: Config,
+    monkeypatch,
+) -> None:
+    app = create_app(temporary_app_config)
+    monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Jane Doe Resume")
+
+    with TestClient(app) as client:
+        model_selection_id = _create_model_selection(app, supports_image_input=False)
+        created = client.post(
+            "/resumes/files",
+            files={"file": ("resume.png", b"fake-image", "image/png")},
+        )
+        sync_response = client.post(
+            f"/resumes/{created.json()['id']}/advice",
+            json={"model_selection_id": model_selection_id},
+        )
+        stream_response = client.post(
+            f"/resumes/{created.json()['id']}/advice/stream",
+            json={"model_selection_id": model_selection_id},
+        )
+
+    assert created.status_code == 200
+    assert sync_response.status_code == 422
+    assert stream_response.status_code == 422
+
+
+def test_generate_resume_advice_endpoint_returns_404_when_resume_file_is_missing(
+    temporary_app_config: Config,
+    monkeypatch,
+) -> None:
+    app = create_app(temporary_app_config)
+    monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Jane Doe Resume")
+
+    with TestClient(app) as client:
+        model_selection_id = _create_model_selection(app)
+        created = client.post(
+            "/resumes/files",
+            files={"file": ("resume.png", b"fake-image", "image/png")},
+        )
+        saved_path = _resolve_saved_path(created.json()["file_path"])
+        saved_path.unlink()
+        response = client.post(
+            f"/resumes/{created.json()['id']}/advice",
+            json={"model_selection_id": model_selection_id},
+        )
+
+    assert created.status_code == 200
+    assert response.status_code == 404

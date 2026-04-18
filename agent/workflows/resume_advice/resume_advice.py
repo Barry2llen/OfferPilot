@@ -19,6 +19,7 @@ def resume_advice(
         resume: ResumeDocument,
         model: MaybeCallable[ModelSelection],
         *,
+        resume_images: list[str] | None = None,
         user_prompt: str | None = None,
         **kwargs
     ) -> CompiledStateGraph[State]:
@@ -29,7 +30,8 @@ def resume_advice(
         """Set up the node with the resume content."""
 
         content = [
-            {"type": "image_url", "image_url": {"url": image_uri}} for image_uri in resume.convert_resume_to_image_base64()
+            {"type": "image_url", "image_url": {"url": image_uri}}
+            for image_uri in (resume_images or resume.convert_resume_to_image_base64())
         ]
 
         if user_prompt:
