@@ -449,3 +449,58 @@ def test_generate_resume_advice_endpoint_returns_404_when_resume_file_is_missing
 
     assert created.status_code == 200
     assert response.status_code == 404
+
+
+def test_openapi_json_contains_complete_resume_docs(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["info"]["title"] == "OfferPilot API"
+    assert "简历文件管理" in payload["info"]["description"]
+    assert payload["tags"][0]["name"] == "resumes"
+    assert "简历优化建议接口" in payload["tags"][0]["description"]
+
+    root_get = payload["paths"]["/"]["get"]
+    assert root_get["summary"] == "服务探活"
+    assert "服务已成功启动" in root_get["description"]
+
+    list_resumes = payload["paths"]["/resumes"]["get"]
+    assert list_resumes["summary"] == "列出已上传简历"
+    assert "摘要信息" in list_resumes["description"]
+
+    upload_resume = payload["paths"]["/resumes/files"]["post"]
+    assert upload_resume["summary"] == "上传简历文件"
+    assert "PDF、DOCX、PNG、JPG 或 JPEG" in upload_resume["description"]
+    assert upload_resume["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
+    assert "415" in upload_resume["responses"]
+    assert "422" in upload_resume["responses"]
+
+    advice = payload["paths"]["/resumes/{resume_id}/advice"]["post"]
+    assert advice["summary"] == "生成简历优化建议"
+    assert "model_selection_id" in advice["description"]
+    assert advice["parameters"][0]["name"] == "resume_id"
+    assert "简历记录 ID" in advice["parameters"][0]["description"]
+    assert "404" in advice["responses"]
+    assert "422" in advice["responses"]
+    assert "500" in advice["responses"]
+
+    stream_advice = payload["paths"]["/resumes/{resume_id}/advice/stream"]["post"]
+    assert stream_advice["summary"] == "流式生成简历优化建议"
+    assert "event: token" in stream_advice["description"]
+    assert "text/event-stream" in stream_advice["responses"]["200"]["content"]
+
+    schemas = payload["components"]["schemas"]
+    advice_request = schemas["ResumeAdviceRequest"]
+    assert "模型配置 ID" in advice_request["properties"]["model_selection_id"]["description"]
+    assert advice_request["properties"]["user_prompt"]["examples"][0].startswith("请重点")
+
+    resume_detail = schemas["ResumeDetail"]
+    assert "完整文本内容" in resume_detail["properties"]["content"]["description"]
+    assert resume_detail["properties"]["preview_url"]["examples"][0] == "/resumes/1/file"

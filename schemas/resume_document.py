@@ -13,17 +13,59 @@ from exceptions import (
     UnsupportedResumePreviewFileError,
 )
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 class ResumeDetail(BaseModel):
-    id: int
-    file_path: str | None = None
-    content: str
-    upload_time: datetime
-    original_filename: str | None = None
-    media_type: str | None = None
-    has_file: bool
-    preview_url: str | None = None
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 1,
+                    "file_path": "data/resumes/2f8f0a8e1d4047d7a1cf9fd649c95ed3.pdf",
+                    "content": "张三\n五年前端开发经验\n负责企业后台与数据可视化项目交付。",
+                    "upload_time": "2026-04-18T17:00:00",
+                    "original_filename": "zhangsan_resume.pdf",
+                    "media_type": "application/pdf",
+                    "has_file": True,
+                    "preview_url": "/resumes/1/file",
+                }
+            ]
+        }
+    )
+
+    id: int = Field(description="简历记录 ID。用于查询详情、预览原文件和生成优化建议。", examples=[1])
+    file_path: str | None = Field(
+        default=None,
+        description="服务端保存的简历文件路径。通常为相对项目根目录的存储路径。",
+        examples=["data/resumes/2f8f0a8e1d4047d7a1cf9fd649c95ed3.pdf"],
+    )
+    content: str = Field(
+        description="从简历文件中解析得到的完整文本内容。",
+        examples=["张三\n五年前端开发经验\n负责企业后台与数据可视化项目交付。"],
+    )
+    upload_time: datetime = Field(
+        description="简历上传时间，采用 ISO 8601 格式。",
+        examples=["2026-04-18T17:00:00"],
+    )
+    original_filename: str | None = Field(
+        default=None,
+        description="用户上传时的原始文件名。",
+        examples=["zhangsan_resume.pdf"],
+    )
+    media_type: str | None = Field(
+        default=None,
+        description="上传文件的媒体类型。",
+        examples=["application/pdf"],
+    )
+    has_file: bool = Field(
+        description="是否仍然保留原始简历文件，可用于预览或生成优化建议。",
+        examples=[True],
+    )
+    preview_url: str | None = Field(
+        default=None,
+        description="用于在线预览原始简历文件的接口路径。",
+        examples=["/resumes/1/file"],
+    )
 
 
 class ResumeDocument(ResumeDetail):
@@ -111,11 +153,53 @@ class ResumeDocument(ResumeDetail):
 
 
 class ResumeListItem(BaseModel):
-    id: int
-    file_path: str | None = None
-    upload_time: datetime
-    original_filename: str | None = None
-    media_type: str | None = None
-    content_preview: str
-    has_file: bool
-    preview_url: str | None = None
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 2,
+                    "file_path": "data/resumes/6b4f0e8199c54c4ab8d7e7b5c53fb242.png",
+                    "upload_time": "2026-04-18T17:05:00",
+                    "original_filename": "lisi_resume.png",
+                    "media_type": "image/png",
+                    "content_preview": "李四，三年 Java 开发经验，熟悉 Spring Boot 与微服务治理。",
+                    "has_file": True,
+                    "preview_url": "/resumes/2/file",
+                }
+            ]
+        }
+    )
+
+    id: int = Field(description="简历记录 ID。", examples=[2])
+    file_path: str | None = Field(
+        default=None,
+        description="服务端保存的简历文件路径。",
+        examples=["data/resumes/6b4f0e8199c54c4ab8d7e7b5c53fb242.png"],
+    )
+    upload_time: datetime = Field(
+        description="简历上传时间，采用 ISO 8601 格式。",
+        examples=["2026-04-18T17:05:00"],
+    )
+    original_filename: str | None = Field(
+        default=None,
+        description="用户上传时的原始文件名。",
+        examples=["lisi_resume.png"],
+    )
+    media_type: str | None = Field(
+        default=None,
+        description="上传文件的媒体类型。",
+        examples=["image/png"],
+    )
+    content_preview: str = Field(
+        description="解析文本的预览内容，最长返回前 200 个字符。",
+        examples=["李四，三年 Java 开发经验，熟悉 Spring Boot 与微服务治理。"],
+    )
+    has_file: bool = Field(
+        description="是否仍然保留原始简历文件。",
+        examples=[True],
+    )
+    preview_url: str | None = Field(
+        default=None,
+        description="用于在线预览原始简历文件的接口路径。",
+        examples=["/resumes/2/file"],
+    )
