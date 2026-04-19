@@ -1,4 +1,6 @@
 
+import asyncio
+
 from typing import (
     Sequence
 )
@@ -37,8 +39,7 @@ class ModelCallGraph(BaseGraph):
         self.tools_dict = {tool.name: tool for tool in self.tools}
         self.system_prompts = system_prompts or []
 
-    # TODO: Later we can excute tool calls in parallel if there are multiple tool calls in the same message.
-    def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
+    async def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
         """
         Tool node. This node is responsible for calling the tool and getting the response.
         It calls the tool with the state.messages and returns the response.
@@ -60,7 +61,7 @@ class ModelCallGraph(BaseGraph):
         
         tool_calls: list[ToolCall] = messages[-1].tool_calls
 
-        def _call_tool(tool_call: ToolCall) -> ToolMessage:
+        async def _call_tool(tool_call: ToolCall) -> ToolMessage:
             name = tool_call["name"]
             args = tool_call["args"]
             tool_call_id = tool_call.get("id") or ""
@@ -72,10 +73,10 @@ class ModelCallGraph(BaseGraph):
                     tool_call_id=tool_call_id,
                     name=name,
                     status="error",
-                )
+            )
             
             try:
-                result = self.tools_dict[name].invoke(tool_call)
+                result = await self.tools_dict[name].ainvoke(tool_call)
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
                 return ToolMessage(
@@ -94,7 +95,8 @@ class ModelCallGraph(BaseGraph):
                 name=name,
             )
         
-        return BaseAgentState(messages=[_call_tool(tool_call) for tool_call in tool_calls])
+        results = await asyncio.gather(*(_call_tool(tool_call) for tool_call in tool_calls))
+        return BaseAgentState(messages=list(results))
 
     def _model_call_node(self, state: BaseAgentState) -> BaseAgentState:
         """
@@ -157,13 +159,13 @@ class ModelCallGraph(BaseGraph):
     def get_graph(self) -> StateGraph[BaseAgentState]:
         
         graph = StateGraph[BaseAgentState](BaseAgentState)
-        graph.add_node('model', lambda state: self._model_call_node(state))
-        graph.add_node('tool', lambda state: self._tool_node(state))
+        graph.add_node('model', self._model_call_node)
+        graph.add_node('tool', self._tool_node)
         graph.add_edge(START, 'model')
         graph.add_edge('tool', 'model')
         graph.add_conditional_edges(
             'model',
-            lambda state: self._dicide_next_action(state),
+            self._dicide_next_action,
             {
                 'tool': 'tool',
                 'end': END

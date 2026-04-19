@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
@@ -19,6 +22,24 @@ def fail_value(value: int) -> str:
     raise RuntimeError(f"boom: {value}")
 
 
+@tool
+async def async_echo_value(value: int, delay: float = 0.0) -> str:
+    """Return the formatted value asynchronously."""
+    await asyncio.sleep(delay)
+    return f"async-value={value}"
+
+
+@tool
+async def delayed_echo_value(value: int, delay: float = 0.0) -> str:
+    """Return the formatted value after a delay."""
+    await asyncio.sleep(delay)
+    return f"delayed-value={value}"
+
+
+def run_tool_node(graph: ModelCallGraph, state: dict) -> dict:
+    return asyncio.run(graph._tool_node(state))
+
+
 def make_state(messages: list, model: object | None = None) -> dict:
     return {
         "model": object() if model is None else model,
@@ -37,28 +58,28 @@ def test_tool_node_returns_original_state_when_tools_are_missing() -> None:
     graph = ModelCallGraph(config=Config(), tools=None)
     state = make_state([AIMessage(content="hello")])
 
-    assert graph._tool_node(state) is state
+    assert run_tool_node(graph, state) is state
 
 
 def test_tool_node_returns_original_state_when_messages_are_empty() -> None:
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
     state = make_state([])
 
-    assert graph._tool_node(state) is state
+    assert run_tool_node(graph, state) is state
 
 
 def test_tool_node_returns_original_state_when_last_message_is_not_ai() -> None:
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
     state = make_state([HumanMessage(content="hello")])
 
-    assert graph._tool_node(state) is state
+    assert run_tool_node(graph, state) is state
 
 
 def test_tool_node_returns_original_state_when_ai_message_has_no_tool_calls() -> None:
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
     state = make_state([AIMessage(content="hello")])
 
-    assert graph._tool_node(state) is state
+    assert run_tool_node(graph, state) is state
 
 
 def test_tool_node_returns_error_message_when_tool_is_missing() -> None:
@@ -72,7 +93,7 @@ def test_tool_node_returns_error_message_when_tool_is_missing() -> None:
         ]
     )
 
-    result = graph._tool_node(state)
+    result = run_tool_node(graph, state)
     message = result["messages"][0]
 
     assert isinstance(message, ToolMessage)
@@ -92,7 +113,7 @@ def test_tool_node_executes_tool_calls_and_returns_tool_message() -> None:
         ]
     )
 
-    result = graph._tool_node(state)
+    result = run_tool_node(graph, state)
     message = result["messages"][0]
 
     assert isinstance(message, ToolMessage)
@@ -112,13 +133,87 @@ def test_tool_node_returns_error_message_when_tool_raises() -> None:
         ]
     )
 
-    result = graph._tool_node(state)
+    result = run_tool_node(graph, state)
     message = result["messages"][0]
 
     assert isinstance(message, ToolMessage)
     assert message.status == "error"
     assert message.tool_call_id == "call-fail"
     assert "boom: 5" in message.content
+
+
+def test_tool_node_executes_async_tool_calls_and_returns_tool_message() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[async_echo_value])
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "async_echo_value", "args": {"value": 7}, "id": "call-async"}],
+            )
+        ]
+    )
+
+    result = run_tool_node(graph, state)
+    message = result["messages"][0]
+
+    assert isinstance(message, ToolMessage)
+    assert message.tool_call_id == "call-async"
+    assert message.name == "async_echo_value"
+    assert message.content == "async-value=7"
+
+
+def test_tool_node_executes_multiple_tools_concurrently_and_preserves_order() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[delayed_echo_value])
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "delayed_echo_value", "args": {"value": 1, "delay": 0.2}, "id": "call-1"},
+                    {"name": "delayed_echo_value", "args": {"value": 2, "delay": 0.2}, "id": "call-2"},
+                ],
+            )
+        ]
+    )
+
+    start = time.perf_counter()
+    result = run_tool_node(graph, state)
+    elapsed = time.perf_counter() - start
+
+    messages = result["messages"]
+
+    assert elapsed < 0.35
+    assert [message.tool_call_id for message in messages] == ["call-1", "call-2"]
+    assert [message.content for message in messages] == [
+        "delayed-value=1",
+        "delayed-value=2",
+    ]
+
+
+def test_tool_node_isolates_errors_when_running_multiple_tools() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[async_echo_value, fail_value])
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "fail_value", "args": {"value": 5}, "id": "call-fail"},
+                    {"name": "async_echo_value", "args": {"value": 9}, "id": "call-async"},
+                ],
+            )
+        ]
+    )
+
+    result = run_tool_node(graph, state)
+    messages = result["messages"]
+
+    assert len(messages) == 2
+    assert messages[0].status == "error"
+    assert messages[0].tool_call_id == "call-fail"
+    assert "boom: 5" in messages[0].content
+    assert messages[1].status == "success"
+    assert messages[1].tool_call_id == "call-async"
+    assert messages[1].content == "async-value=9"
 
 
 def test_dicide_next_action_returns_end_without_tool_calls() -> None:
