@@ -20,6 +20,8 @@ class Config(BaseModel):
 
     model_call_retry_attempts: int = 3
 
+    exa_api_key: str | None = None
+
 
 def _normalize_config_data(config_data: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(config_data, dict):

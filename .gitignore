@@ -33,3 +33,6 @@ logs
 
 # tasks
 tasks
+
+# test file
+test.py

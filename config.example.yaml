@@ -5,6 +5,8 @@ database:
 
 resume_upload_dir: "./data/resumes"
 
+exa_api_key: "your_exa_api_key_here"
+
 # PostgreSQL example:
 # database:
 #   type: "postgresql"
