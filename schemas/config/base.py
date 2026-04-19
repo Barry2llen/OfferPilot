@@ -8,11 +8,15 @@ from ruamel.yaml import YAML
 from .database import DatabaseConfig, SQLiteDatabaseConfig
 from utils.logger import logger
 
+class WebSearchConfig(BaseModel):
+    max_characters: int = 2000
+    guiding_query: str | None = None
 
 class Config(BaseModel):
     """Configuration for the application."""
 
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
+    web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
 
     resume_upload_dir: str = "./data/resumes"
 
@@ -33,6 +37,11 @@ def _normalize_config_data(config_data: dict[str, Any] | None) -> dict[str, Any]
         database_config = legacy_config.get("database")
         if database_config is not None:
             normalized["database"] = database_config
+
+    if "web_search" not in normalized and isinstance(legacy_config, dict):
+        web_search_config = legacy_config.get("web_search")
+        if web_search_config is not None:
+            normalized["web_search"] = web_search_config
 
     return normalized
 

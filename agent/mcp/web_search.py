@@ -10,11 +10,9 @@ client = MultiServerMCPClient({
     }
 })
 
-# blobs = asyncio.run(client.get_resources("exa"))
-# web_search_tools_resources = "\n\n".join(blob.as_string() for blob in blobs if blob.mimetype.startswith("application/json"))
-web_search_tools = asyncio.run(client.get_tools())
+web_search_mcp_tools = asyncio.run(client.get_tools())
 
 
 __all__ = [
-    web_search_tools,
+    web_search_mcp_tools,
 ]
