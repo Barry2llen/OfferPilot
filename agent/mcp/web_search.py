@@ -12,7 +12,6 @@ client = MultiServerMCPClient({
 
 web_search_mcp_tools = asyncio.run(client.get_tools())
 
-
 __all__ = [
     web_search_mcp_tools,
 ]
