@@ -7,7 +7,7 @@ from schemas.config import load_config
 config = load_config()
 
 web_search_tools: list[BaseTool]
-if config.exa_api_key:
+if not config.exa_api_key:
     from ..mcp.web_search import web_search_mcp_tools
     web_search_tools = web_search_mcp_tools
 else:
@@ -71,7 +71,11 @@ else:
         exclude_domains: list[str] = Field(default=None, description="Domains to exclude from the search."),
         exclude_source_domain: bool = Field(default=False, description="Whether to exclude the source domain.")
     ) -> str:
-        
+        """
+        Find pages similar to a known URL.
+        Use when the initial search result is relevant and you want adjacent sources on the same topic.
+        Returns: Similar pages and their metadata from Exa.
+        """
         return await exa.find_similar(
             url,
             num_results = num_results,
@@ -83,5 +87,5 @@ else:
     web_search_tools = [web_search_exa, web_fetch_exa]
 
 __all__ = [
-    web_search_tools
+    "web_search_tools",
 ]

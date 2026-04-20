@@ -4,10 +4,10 @@
 仓库当前以 Python 单体应用为主，入口是 `main.py`，负责创建 FastAPI 应用并在生命周期内初始化数据库。核心目录按职责拆分如下：
 
 - `agent/`：Agent 相关代码，包含输入校验、状态定义、图编排、模型装载与工作流占位实现。
-- `api/`：FastAPI 路由层，当前主要由 `api/routes/resume.py` 提供简历文件管理、原文件预览和简历优化建议接口。
+- `api/`：FastAPI 路由层，当前主要由 `api/routes/resume.py` 提供简历文件管理与原文件预览接口。
 - `db/`：数据库层，`db/engine/` 管理引擎与会话，`db/models/` 定义 ORM，`db/repositories/` 封装数据访问。
 - `schemas/`：Pydantic 数据结构，`schemas/config/` 负责配置解析，其余 schema 用于服务层、接口层与 Agent 层输入输出。
-- `services/`：面向业务的服务封装，当前包含简历文件处理、简历优化建议编排、模型提供商与模型选择服务。
+- `services/`：面向业务的服务封装，当前包含简历文件处理、模型提供商与模型选择服务。
 - `utils/`：通用工具，当前包含日志封装。
 - `sql/`：数据库结构快照或初始化 SQL。
 - `data/`：SQLite 文件等本地运行数据。

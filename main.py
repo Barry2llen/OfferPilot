@@ -29,14 +29,14 @@ def create_app(config: Config | None = None) -> FastAPI:
     app = FastAPI(
         title="OfferPilot API",
         description=(
-            "OfferPilot 提供简历文件管理、在线预览以及基于已上传简历生成优化建议的接口。"
+            "OfferPilot 提供简历文件管理与在线预览接口。"
             "Swagger 文档可用于查看接口用途、参数要求、错误场景和响应示例。"
         ),
         version="0.1.0",
         openapi_tags=[
             {
                 "name": "resumes",
-                "description": "简历文件管理与简历优化建议接口，包含上传、替换、查询、预览、删除和建议生成。",
+                "description": "简历文件管理接口，包含上传、替换、查询、预览和删除。",
             }
         ],
         lifespan=lifespan,

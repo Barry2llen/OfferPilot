@@ -1,34 +1,25 @@
 from collections.abc import Generator
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, Request, Response, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Request, Response, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from db.repositories import ModelSelectionRepository, ResumeDocumentRepository
+from db.repositories import ResumeDocumentRepository
 from exceptions import (
-    ChatModelLoadError,
     EmptyResumeContentError,
-    ModelCallExecutionError,
-    ModelSelectionNotFoundError,
-    ModelSelectionValidationError,
     ResumeFileNotFoundError,
     ResumeNotFoundError,
     ResumeParsingError,
-    ResumePreviewError,
-    ResumePreviewFileNotFoundError,
     ResumeValidationError,
     UnsupportedResumeFileError,
 )
-from schemas.resume_advice import ResumeAdviceRequest, ResumeAdviceResponse
 from schemas.resume_document import (
     ResumeDetail,
     ResumeListItem,
 )
 from services import (
     DocumentParserService,
-    ModelSelectionService,
-    ResumeAdviceService,
     ResumeService,
     UploadedResumeFile,
 )
@@ -72,18 +63,6 @@ def _build_resume_service(request: Request, session: Session) -> ResumeService:
         repository=ResumeDocumentRepository(session),
         parser=DocumentParserService(),
         upload_dir=request.app.state.config.resume_upload_dir,
-    )
-
-
-def _build_model_selection_service(session: Session) -> ModelSelectionService:
-    return ModelSelectionService(ModelSelectionRepository(session))
-
-
-def _build_resume_advice_service(request: Request, session: Session) -> ResumeAdviceService:
-    return ResumeAdviceService(
-        resume_service=_build_resume_service(request, session),
-        model_selection_service=_build_model_selection_service(session),
-        config=request.app.state.config,
     )
 
 
@@ -144,7 +123,7 @@ async def get_resume(
     summary="上传简历文件",
     description=(
         "上传 PDF、DOCX、PNG、JPG 或 JPEG 格式的简历文件。"
-        "服务会保存原文件，并尝试提取完整文本内容用于后续展示和优化建议。"
+        "服务会保存原文件，并尝试提取完整文本内容用于后续展示和预览。"
     ),
     response_description="返回新建简历记录的完整信息。",
     responses={
@@ -306,131 +285,4 @@ async def preview_resume_file(
         path=stored_file.path,
         media_type=stored_file.media_type,
         headers=headers,
-    )
-
-
-@router.post(
-    "/{resume_id}/advice",
-    response_model=ResumeAdviceResponse,
-    summary="生成简历优化建议",
-    description=(
-        "基于已上传的简历记录生成一份完整的优化建议。"
-        "请求中必须提供已存在且支持图片输入的 `model_selection_id`，"
-        "可选传入 `user_prompt` 指定关注重点。"
-    ),
-    response_description="返回模型生成的完整简历优化建议。",
-    responses={
-        404: _error_response("未找到指定简历或模型配置。", example="Model selection not found: 1"),
-        422: _error_response("模型不支持图片输入或请求内容不合法。", example="Model selection does not support image input."),
-        500: _error_response("简历预览转换失败或模型执行失败。", example="Failed to convert PDF resume to preview images."),
-    },
-)
-async def generate_resume_advice(
-    request: Request,
-    resume_id: int = Path(
-        ...,
-        description="需要生成优化建议的简历记录 ID。",
-        examples=[1],
-    ),
-    payload: ResumeAdviceRequest = Body(
-        ...,
-        description="用于指定模型配置和附加优化要求的请求体。",
-        examples=[
-            {
-                "model_selection_id": 1,
-                "user_prompt": "请重点分析项目表述、量化成果和岗位匹配度。",
-            }
-        ],
-    ),
-    session: Session = Depends(_get_request_db_session),
-) -> ResumeAdviceResponse:
-    service = _build_resume_advice_service(request, session)
-
-    try:
-        generation = service.prepare_generation(resume_id=resume_id, request=payload)
-        return await service.generate_advice(generation)
-    except (ResumeNotFoundError, ModelSelectionNotFoundError) as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ResumePreviewFileNotFoundError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ModelSelectionValidationError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    except (
-        ResumePreviewError,
-        ChatModelLoadError,
-        ModelCallExecutionError,
-    ) as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
-
-
-@router.post(
-    "/{resume_id}/advice/stream",
-    summary="流式生成简历优化建议",
-    description=(
-        "以 Server-Sent Events 形式持续返回简历优化建议。"
-        "\n\n事件协议："
-        "\n- `event: token`：增量文本片段"
-        "\n- `event: done`：最终完整建议"
-        "\n- `event: error`：执行失败信息"
-    ),
-    response_description="返回 `text/event-stream` 事件流。",
-    responses={
-        200: {
-            "description": "返回 SSE 事件流，客户端可逐步消费模型输出。",
-            "content": {
-                "text/event-stream": {
-                    "schema": {
-                        "type": "string",
-                        "example": (
-                            "event: token\n"
-                            "data: {\"content\": \"建议先补充量化成果\"}\n\n"
-                            "event: done\n"
-                            "data: {\"resume_id\": 1, \"model_selection_id\": 1, "
-                            "\"content\": \"建议先补充量化成果，并突出岗位匹配度。\"}\n\n"
-                        ),
-                    }
-                }
-            },
-        },
-        404: _error_response("未找到指定简历或模型配置。", example="Resume not found: 1"),
-        422: _error_response("模型不支持图片输入或请求内容不合法。", example="Model selection does not support image input."),
-        500: _error_response("简历预览转换失败。", example="Failed to convert DOCX resume to preview images."),
-    },
-)
-async def stream_resume_advice(
-    request: Request,
-    resume_id: int = Path(
-        ...,
-        description="需要生成优化建议的简历记录 ID。",
-        examples=[1],
-    ),
-    payload: ResumeAdviceRequest = Body(
-        ...,
-        description="用于指定模型配置和附加优化要求的请求体。",
-        examples=[
-            {
-                "model_selection_id": 1,
-                "user_prompt": "请按技术栈、项目成果和表达精炼度给出建议。",
-            }
-        ],
-    ),
-    session: Session = Depends(_get_request_db_session),
-) -> StreamingResponse:
-    service = _build_resume_advice_service(request, session)
-
-    try:
-        generation = service.prepare_generation(resume_id=resume_id, request=payload)
-    except (ResumeNotFoundError, ModelSelectionNotFoundError) as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ResumePreviewFileNotFoundError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ModelSelectionValidationError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    except ResumePreviewError as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
-
-    return StreamingResponse(
-        service.stream_advice(generation),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache"},
     )

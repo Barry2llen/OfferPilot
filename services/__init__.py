@@ -7,14 +7,11 @@ from .resume_service import (
     ResumeService,
     UploadedResumeFile,
 )
-from .resume_advice_service import ResumeAdviceGeneration, ResumeAdviceService
 
 __all__ = [
     "DocumentParserService",
     "ModelProviderService",
     "ModelSelectionService",
-    "ResumeAdviceGeneration",
-    "ResumeAdviceService",
     "ResumeService",
     "UploadedResumeFile",
 ]

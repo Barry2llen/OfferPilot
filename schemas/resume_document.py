@@ -33,7 +33,7 @@ class ResumeDetail(BaseModel):
         }
     )
 
-    id: int = Field(description="简历记录 ID。用于查询详情、预览原文件和生成优化建议。", examples=[1])
+    id: int = Field(description="简历记录 ID。用于查询详情和预览原文件。", examples=[1])
     file_path: str | None = Field(
         default=None,
         description="服务端保存的简历文件路径。通常为相对项目根目录的存储路径。",
@@ -58,7 +58,7 @@ class ResumeDetail(BaseModel):
         examples=["application/pdf"],
     )
     has_file: bool = Field(
-        description="是否仍然保留原始简历文件，可用于预览或生成优化建议。",
+        description="是否仍然保留原始简历文件，可用于预览。",
         examples=[True],
     )
     preview_url: str | None = Field(
