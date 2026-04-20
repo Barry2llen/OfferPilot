@@ -22,8 +22,7 @@ _model_call_node = ModelCallGraph(
             "建议默认包含：整体评价、主要问题、优化建议、可补充的信息。"
             "如果简历整体质量较好，也要指出仍可继续提升的细节。"
         ))
-    ],
-    tools=web_search_tools
+    ]
 ).get_compiled_graph()
     
 graph = StateGraph[State](State)

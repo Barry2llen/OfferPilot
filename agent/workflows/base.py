@@ -14,7 +14,7 @@ def agent2workflow[State](
 
     def _set_up_initial_state_node(state: State) -> State:
         """Set up the initial state node for the workflow."""
-        return initial_state
+        return state if state else initial_state
     
     workflow_graph = StateGraph[State](state_schema)
     workflow_graph.add_node("initial_state", _set_up_initial_state_node)

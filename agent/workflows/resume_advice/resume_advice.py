@@ -16,7 +16,7 @@ def resume_advice(
         model: MaybeCallable[ModelSelection],
         *,
         resume_images: list[str] | None = None,
-        user_prompt: str | None = None,
+        user_prompts: list[str] | str | None = None,
         **kwargs
     ) -> CompiledStateGraph[State]:
 
@@ -25,8 +25,10 @@ def resume_advice(
         for image_uri in (resume_images or resume.convert_resume_to_image_base64())
     ]
 
-    if user_prompt:
-        content = [{"type": "text", "text": user_prompt}] + content
+    if user_prompts:
+        if isinstance(user_prompts, str):
+            user_prompts = [user_prompts]
+        content = [{"type": "text", "text": prompt} for prompt in user_prompts] + content
 
     return agent2workflow(
         State,
