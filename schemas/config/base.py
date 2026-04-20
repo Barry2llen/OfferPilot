@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
@@ -9,6 +9,7 @@ from .database import DatabaseConfig, SQLiteDatabaseConfig
 from utils.logger import logger
 
 class WebSearchConfig(BaseModel):
+    type: Literal["auto", "fast", "instant", "deep", "deep-lite", "deep-reasoning"] = "auto"
     max_characters: int = 2000
     guiding_query: str | None = None
 

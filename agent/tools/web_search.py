@@ -16,7 +16,7 @@ else:
     exa = AsyncExa(config.exa_api_key)
 
     @tool
-    async def web_search(
+    async def web_search_exa(
         query: str = Field(description="Natural language search query. Should be a semantically rich description of the ideal page, not just keywords."),
         num_results: int = Field(default=10, gt=1, lt=100, description="The number of search results to return"),
         include_domains: list[str] = Field(default=None, description="Domains to include in the search."),
@@ -35,7 +35,7 @@ else:
         return await exa.search(
             query,
             num_results = num_results,
-            type = "auto",
+            type = config.web_search.type,
             stream = False,
             user_location = "CN",
             include_domains = include_domains,
@@ -51,7 +51,7 @@ else:
         )
 
     @tool
-    async def web_fetch(
+    async def web_fetch_exa(
         urls: list[str] = Field(description="The list of URLs to fetch content from"),
     ) -> str:
         """
@@ -62,6 +62,7 @@ else:
         """
         return await exa.get_contents(urls)
     
+    # Optional tool to find similar pages, which can be useful for expanding research beyond the initial search results. Not needed for basic search and fetch use cases.
     @tool
     async def find_similar(
         url: str = Field(description="The URL to find similar pages for."),
@@ -79,7 +80,7 @@ else:
             exclude_source_domain = exclude_source_domain
         )
 
-    web_search_tools = [web_search, web_fetch, find_similar]
+    web_search_tools = [web_search_exa, web_fetch_exa]
 
 __all__ = [
     web_search_tools
