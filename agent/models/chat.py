@@ -30,21 +30,15 @@ def _load_chat_model_cached(
 
     required_base_and_key = False
 
-    match provider_name:
-        case "OpenAI":
-            model_provider = "openai"
-        case "Anthropic":
-            model_provider = "anthropic"
-        case "Google":
-            model_provider = "google_genai"
-        case "OpenAI Compatible":
+    model_provider = provider_name.lower()
+    match model_provider:
+        case "openai-compatible":
             model_provider = "openai"
             required_base_and_key = True
+        case "google":
+            model_provider = "google_genai"
         case _:
-            logger.error(f"Unsupported model provider: {provider_name}")
-            raise UnsupportedModelProviderError(
-                f"Unsupported model provider: {provider_name}"
-            )
+            pass
 
     try:
         return init_chat_model(

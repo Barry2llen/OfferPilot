@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import (
     TypedDict,
-    Annotated,
-    Callable
+    Annotated
 )
 
 from langgraph.graph import add_messages

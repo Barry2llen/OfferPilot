@@ -21,4 +21,6 @@ dependencies = [
     "langchain-google-genai>=4.2.2",
     "exa-py>=2.12.0",
     "langchain-mcp-adapters>=0.2.2",
+    "langchain-openai>=1.1.14",
+    "langchain-deepseek>=1.0.1",
 ]

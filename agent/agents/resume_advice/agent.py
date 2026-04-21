@@ -5,7 +5,6 @@ from langchain.messages import SystemMessage
 
 from .state import State
 from ...graphs.model_call import ModelCallGraph
-from ...tools.web_search import web_search_tools
 
 _model_call_node = ModelCallGraph(
     system_prompts=[
