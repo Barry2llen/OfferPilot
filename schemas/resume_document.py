@@ -6,14 +6,15 @@ from pathlib import Path
 
 import fitz
 from exceptions import (
+    ResumeFileNotFoundError,
     ResumePreviewConversionError,
     ResumePreviewDependencyError,
     ResumePreviewError,
     ResumePreviewFileNotFoundError,
     UnsupportedResumePreviewFileError,
 )
-
 from pydantic import BaseModel, ConfigDict, Field
+from utils import document_parser
 
 class ResumeDetail(BaseModel):
     model_config = ConfigDict(
@@ -93,6 +94,16 @@ class ResumeDocument(ResumeDetail):
             f"Unsupported resume preview file type: {suffix or '<missing>'}"
         )
 
+    def extract_text(self) -> str:
+        file_path = self._require_text_file_path()
+        if file_path.suffix.lower() in self._DIRECT_IMAGE_MIME_TYPES:
+            return self.extract_text_ocr()
+        return document_parser.extract_text(file_path)
+
+    def extract_text_ocr(self) -> str:
+        file_path = self._require_text_file_path()
+        return document_parser.extract_text_ocr(file_path)
+
     def _require_file_path(self) -> Path:
         if not self.file_path:
             raise ResumePreviewError("Resume file path is not available.")
@@ -101,6 +112,16 @@ class ResumeDocument(ResumeDetail):
         resolved = path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
         if not resolved.is_file():
             raise ResumePreviewFileNotFoundError(f"Resume file not found: {self.file_path}")
+        return resolved
+
+    def _require_text_file_path(self) -> Path:
+        if not self.file_path:
+            raise ResumeFileNotFoundError("Resume file path is not available.")
+
+        path = Path(self.file_path)
+        resolved = path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+        if not resolved.is_file():
+            raise ResumeFileNotFoundError(f"Resume file not found: {self.file_path}")
         return resolved
 
     def _convert_pdf_to_images(self, file_path: Path) -> list[str]:

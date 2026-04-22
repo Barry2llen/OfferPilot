@@ -19,7 +19,6 @@ from schemas.resume_document import (
     ResumeListItem,
 )
 from services import (
-    DocumentParserService,
     ResumeService,
     UploadedResumeFile,
 )
@@ -61,7 +60,6 @@ def _get_request_db_session(request: Request) -> Generator[Session, None, None]:
 def _build_resume_service(request: Request, session: Session) -> ResumeService:
     return ResumeService(
         repository=ResumeDocumentRepository(session),
-        parser=DocumentParserService(),
         upload_dir=request.app.state.config.resume_upload_dir,
     )
 

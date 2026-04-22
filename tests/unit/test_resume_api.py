@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from main import create_app
 from schemas.config import Config
-from services.document_parser_service import DocumentParserService
+from utils import document_parser
 
 
 def _create_pdf(path: Path, text: str) -> None:
@@ -69,9 +69,9 @@ def test_list_and_detail_resume_endpoints_with_uploaded_files(
     app = create_app(temporary_app_config)
     parsed_values = iter(["A" * 250, "Second Resume"])
     monkeypatch.setattr(
-        DocumentParserService,
+        document_parser,
         "extract_text",
-        lambda self, _: next(parsed_values),
+        lambda _: next(parsed_values),
     )
 
     with TestClient(app) as client:
@@ -105,9 +105,9 @@ def test_upload_resume_file_endpoint_with_image(
 ) -> None:
     app = create_app(temporary_app_config)
     monkeypatch.setattr(
-        DocumentParserService,
+        document_parser,
         "extract_text",
-        lambda self, _: "Jane Doe OCR Resume",
+        lambda _: "Jane Doe OCR Resume",
     )
 
     with TestClient(app) as client:
@@ -128,9 +128,9 @@ def test_replace_resume_file_endpoint(
     app = create_app(temporary_app_config)
     parsed_values = iter(["Original", "Updated OCR"])
     monkeypatch.setattr(
-        DocumentParserService,
+        document_parser,
         "extract_text",
-        lambda self, _: next(parsed_values),
+        lambda _: next(parsed_values),
     )
 
     with TestClient(app) as client:
@@ -187,7 +187,7 @@ def test_delete_resume_endpoint(
     monkeypatch,
 ) -> None:
     app = create_app(temporary_app_config)
-    monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Stored")
+    monkeypatch.setattr(document_parser, "extract_text", lambda _: "Stored")
 
     with TestClient(app) as client:
         created = client.post(

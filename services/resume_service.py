@@ -12,7 +12,7 @@ from exceptions import (
     UnsupportedResumeFileError,
 )
 from schemas.resume_document import ResumeDetail, ResumeListItem
-from services.document_parser_service import DocumentParserService
+from utils import document_parser
 
 
 @dataclass(slots=True)
@@ -35,11 +35,9 @@ class ResumeService:
     def __init__(
         self,
         repository: ResumeDocumentRepository,
-        parser: DocumentParserService,
         upload_dir: str | Path,
     ) -> None:
         self._repository = repository
-        self._parser = parser
         self._upload_dir = Path(upload_dir)
 
     def list_resumes(self) -> list[ResumeListItem]:
@@ -64,7 +62,7 @@ class ResumeService:
 
         try:
             extracted_content = self._normalize_content(
-                self._parser.extract_text(saved_path)
+                document_parser.extract_text(saved_path)
             )
             created = self._repository.create(
                 ResumeDocumentORM(
@@ -111,7 +109,7 @@ class ResumeService:
 
         try:
             document.file_path = self._to_storage_path(saved_path)
-            document.content = self._normalize_content(self._parser.extract_text(saved_path))
+            document.content = self._normalize_content(document_parser.extract_text(saved_path))
             document.original_filename = filename
             document.media_type = uploaded_file.content_type
             updated = self._repository.update(document)

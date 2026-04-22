@@ -6,8 +6,8 @@ from sqlalchemy import text
 from db.engine import DatabaseManager
 from db.repositories import ResumeDocumentRepository
 from exceptions import EmptyResumeContentError, ResumeParsingError
-from services.document_parser_service import DocumentParserService
 from services.resume_service import ResumeService, UploadedResumeFile
+from utils import document_parser
 
 
 @pytest.fixture
@@ -31,13 +31,12 @@ def test_create_resume_from_file_persists_metadata(
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
         monkeypatch.setattr(
-            DocumentParserService,
+            document_parser,
             "extract_text",
-            lambda self, _: "Jane Doe\nPython Engineer",
+            lambda _: "Jane Doe\nPython Engineer",
         )
 
         created = service.create_from_file(
@@ -71,15 +70,14 @@ def test_list_resumes_returns_summary_in_descending_order(
 ) -> None:
     parsed_values = iter(["A" * 250, "Second"])
     monkeypatch.setattr(
-        DocumentParserService,
+        document_parser,
         "extract_text",
-        lambda self, _: next(parsed_values),
+        lambda _: next(parsed_values),
     )
 
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
         first = service.create_from_file(
@@ -113,15 +111,14 @@ def test_replace_resume_file_updates_record_and_removes_old_file(
 ) -> None:
     parsed_values = iter(["First content", "Second content"])
     monkeypatch.setattr(
-        DocumentParserService,
+        document_parser,
         "extract_text",
-        lambda self, _: next(parsed_values),
+        lambda _: next(parsed_values),
     )
 
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
         created = service.create_from_file(
@@ -158,10 +155,9 @@ def test_replace_resume_file_cleans_up_new_file_on_parse_failure(
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
-        monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Original")
+        monkeypatch.setattr(document_parser, "extract_text", lambda _: "Original")
         created = service.create_from_file(
             UploadedResumeFile(
                 filename="resume.pdf",
@@ -171,9 +167,9 @@ def test_replace_resume_file_cleans_up_new_file_on_parse_failure(
         )
         original_path = _resolve_saved_path(created.file_path or "")
         monkeypatch.setattr(
-            DocumentParserService,
+            document_parser,
             "extract_text",
-            lambda self, _: (_ for _ in ()).throw(ResumeParsingError("parse failed")),
+            lambda _: (_ for _ in ()).throw(ResumeParsingError("parse failed")),
         )
 
         with pytest.raises(ResumeParsingError, match="parse failed"):
@@ -207,10 +203,9 @@ def test_delete_resume_removes_database_record_and_file(
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
-        monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Stored")
+        monkeypatch.setattr(document_parser, "extract_text", lambda _: "Stored")
         created = service.create_from_file(
             UploadedResumeFile(
                 filename="resume.pdf",
@@ -235,10 +230,9 @@ def test_get_resume_file_returns_saved_file(
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
-        monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "Stored")
+        monkeypatch.setattr(document_parser, "extract_text", lambda _: "Stored")
         created = service.create_from_file(
             UploadedResumeFile(
                 filename="resume.pdf",
@@ -262,10 +256,9 @@ def test_create_resume_from_file_rejects_empty_extracted_text(
     with initialized_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=temporary_resume_upload_dir,
         )
-        monkeypatch.setattr(DocumentParserService, "extract_text", lambda self, _: "   \n  ")
+        monkeypatch.setattr(document_parser, "extract_text", lambda _: "   \n  ")
 
         with pytest.raises(EmptyResumeContentError, match="Resume content is empty"):
             service.create_from_file(

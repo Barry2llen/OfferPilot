@@ -8,15 +8,18 @@ import fitz
 import pytest
 
 from exceptions import (
+    ResumeFileNotFoundError,
     ResumePreviewConversionError,
     ResumePreviewDependencyError,
     ResumePreviewError,
     ResumePreviewFileNotFoundError,
+    UnsupportedResumeFileError,
     UnsupportedResumePreviewFileError,
 )
 from schemas.resume_document import (
     ResumeDocument,
 )
+from utils import document_parser
 
 
 def _create_pdf(path: Path, pages: list[str]) -> None:
@@ -187,3 +190,57 @@ def test_convert_docx_raises_conversion_error_when_renderer_fails(
 
     with pytest.raises(ResumePreviewConversionError, match="Failed to convert DOCX"):
         _build_resume(file_path).convert_resume_to_image_base64()
+
+
+def test_extract_text_delegates_pdf_to_helper(
+    workspace_tmp_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = workspace_tmp_dir / "resume.pdf"
+    _create_pdf(file_path, ["Jane Doe"])
+    monkeypatch.setattr(document_parser, "extract_text", lambda _: "Jane Doe")
+
+    extracted = _build_resume(file_path).extract_text()
+
+    assert extracted == "Jane Doe"
+
+
+def test_extract_text_delegates_image_to_ocr(
+    workspace_tmp_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = workspace_tmp_dir / "resume.png"
+    file_path.write_bytes(b"fake-png")
+    monkeypatch.setattr(ResumeDocument, "extract_text_ocr", lambda self: "OCR Resume")
+
+    extracted = _build_resume(file_path).extract_text()
+
+    assert extracted == "OCR Resume"
+
+
+def test_extract_text_ocr_delegates_to_helper(
+    workspace_tmp_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = workspace_tmp_dir / "resume.docx"
+    _create_docx(file_path, ["Jane Doe"])
+    monkeypatch.setattr(document_parser, "extract_text_ocr", lambda _: "Jane Doe")
+
+    extracted = _build_resume(file_path).extract_text_ocr()
+
+    assert extracted == "Jane Doe"
+
+
+def test_extract_text_raises_when_file_path_missing() -> None:
+    with pytest.raises(ResumeFileNotFoundError, match="file path is not available"):
+        _build_resume(None).extract_text()
+
+
+def test_extract_text_ocr_raises_for_unsupported_file_type(
+    workspace_tmp_dir: Path,
+) -> None:
+    file_path = workspace_tmp_dir / "resume.txt"
+    file_path.write_text("resume", encoding="utf-8")
+
+    with pytest.raises(UnsupportedResumeFileError, match="Unsupported resume file type"):
+        _build_resume(file_path).extract_text_ocr()

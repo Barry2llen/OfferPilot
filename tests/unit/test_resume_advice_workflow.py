@@ -13,7 +13,6 @@ from exceptions import ResumeNotFoundError
 from schemas.config import Config, load_config
 from schemas.model_selection import ModelSelection, ModelProvider
 from schemas.resume_document import ResumeDocument
-from services.document_parser_service import DocumentParserService
 from services.resume_service import ResumeService
 from utils.stream import render_stream_events
 
@@ -89,7 +88,6 @@ def test_resume_advice_workflow_invokes_live_model_with_real_resume_service_reco
     with live_database_manager.session_scope() as session:
         service = ResumeService(
             repository=ResumeDocumentRepository(session),
-            parser=DocumentParserService(),
             upload_dir=debug_config.resume_upload_dir,
         )
         try:
