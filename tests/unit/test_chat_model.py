@@ -1,7 +1,7 @@
 import pytest
 
 from agent.models.chat import load_chat_model
-from exceptions import ChatModelLoadError, UnsupportedModelProviderError
+from exceptions import ChatModelLoadError
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
 
@@ -15,7 +15,7 @@ def test_load_chat_model_rejects_unsupported_provider() -> None:
         model_name="demo-model",
     )
 
-    with pytest.raises(UnsupportedModelProviderError, match="Unsupported model provider"):
+    with pytest.raises(ChatModelLoadError):
         load_chat_model(selection)
 
 

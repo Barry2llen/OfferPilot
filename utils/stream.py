@@ -1,29 +1,62 @@
 
-from typing import AsyncIterator, Callable
+from typing import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Literal,
+    Any
+)
 from langchain_core.runnables.schema import StreamEvent
+
+"""
+        | event                  | name                 | chunk                               | input                                             | output                                              |
+        | ---------------------- | -------------------- | ----------------------------------- | ------------------------------------------------- | --------------------------------------------------- |
+        | `on_chat_model_start`  | `'[model name]'`     |                                     | `{"messages": [[SystemMessage, HumanMessage]]}`   |                                                     |
+        | `on_chat_model_stream` | `'[model name]'`     | `AIMessageChunk(content="hello")`   |                                                   |                                                     |
+        | `on_chat_model_end`    | `'[model name]'`     |                                     | `{"messages": [[SystemMessage, HumanMessage]]}`   | `AIMessageChunk(content="hello world")`             |
+        | `on_llm_start`         | `'[model name]'`     |                                     | `{'input': 'hello'}`                              |                                                     |
+        | `on_llm_stream`        | `'[model name]'`     | `'Hello' `                          |                                                   |                                                     |
+        | `on_llm_end`           | `'[model name]'`     |                                     | `'Hello human!'`                                  |                                                     |
+        | `on_chain_start`       | `'format_docs'`      |                                     |                                                   |                                                     |
+        | `on_chain_stream`      | `'format_docs'`      | `'hello world!, goodbye world!'`    |                                                   |                                                     |
+        | `on_chain_end`         | `'format_docs'`      |                                     | `[Document(...)]`                                 | `'hello world!, goodbye world!'`                    |
+        | `on_tool_start`        | `'some_tool'`        |                                     | `{"x": 1, "y": "2"}`                              |                                                     |
+        | `on_tool_end`          | `'some_tool'`        |                                     |                                                   | `{"x": 1, "y": "2"}`                                |
+        | `on_retriever_start`   | `'[retriever name]'` |                                     | `{"query": "hello"}`                              |                                                     |
+        | `on_retriever_end`     | `'[retriever name]'` |                                     | `{"query": "hello"}`                              | `[Document(...), ..]`                               |
+        | `on_prompt_start`      | `'[template_name]'`  |                                     | `{"question": "hello"}`                           |                                                     |
+        | `on_prompt_end`        | `'[template_name]'`  |                                     | `{"question": "hello"}`                           | `ChatPromptValue(messages: [SystemMessage, ...])`   |
+"""
+
+type StreamEventName = Literal[
+    "on_chat_model_start",
+    "on_chat_model_stream",
+    "on_chat_model_end",
+    "on_llm_start",
+    "on_llm_stream",
+    "on_llm_end",
+    "on_chain_start",
+    "on_chain_stream",
+    "on_chain_end",
+    "on_tool_start",
+    "on_tool_end",
+    "on_retriever_start",
+    "on_retriever_end",
+    "on_prompt_start",
+    "on_prompt_end"
+]
+
+type StreamEventHandler = Callable[[StreamEvent], Any] | Callable[[StreamEvent], Awaitable[Any]]
 
 async def render_stream_events(
         events: AsyncIterator[StreamEvent],
         *,
-        on_event: Callable[[StreamEvent], None] | None = None,
-        on_chat_model_stream: Callable[[StreamEvent], None] | None = None,
-        on_tool_start: Callable[[StreamEvent], None] | None = None,
-        on_tool_end: Callable[[StreamEvent], None] | None = None,
+        handlers: dict[StreamEventName, StreamEventHandler] | None = None,
     ) -> None:
     async for event in events:
-        if on_event:
-            on_event(event)
-        match kind := event["event"]:
-            case "on_chat_model_stream":
-                if on_chat_model_stream:
-                    on_chat_model_stream(event)
-            case "on_tool_start":
-                if on_tool_start:
-                    on_tool_start(event)
-                # f'CALLED {event["name"]}({", ".join(f"{k}={v}" for k, v in event["data"]["input"].items())})'
-            case "on_tool_end":
-                if on_tool_end:
-                    on_tool_end(event)
-                # tool_msg: ToolMessage = event["data"]["output"]
-            case _:
-                pass
+        event_name = event["event"]
+        if handlers and event_name in handlers:
+            handler = handlers[event_name]
+            res = handler(event)
+            if isinstance(res, Awaitable):
+                await res
