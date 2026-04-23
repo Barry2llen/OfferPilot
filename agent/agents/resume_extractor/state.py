@@ -6,7 +6,7 @@ from langchain_core.language_models import LanguageModelInput
 from schemas.resume_profile import ResumeProfile
 from schemas.resume_document import ResumeDocument
 from ...base import BaseAgentState
-from ..annotations.types import Displace
+from ...annotations.types import Displace
 
 class State(BaseAgentState):
     """

@@ -18,7 +18,7 @@ from langgraph.types import (
     Checkpointer,
     All
 )
-from .agents.annotations.types import (
+from .annotations.types import (
     Displace,
     MaybeCallable
 )

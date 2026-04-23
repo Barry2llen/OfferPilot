@@ -5,7 +5,7 @@ from schemas.model_selection import ModelSelection
 from schemas.resume_profile import ResumeProfile
 from schemas.resume_document import ResumeDocument
 from ...base import BaseWorkflow
-from ...agents.annotations.types import MaybeCallable
+from ...annotations.types import MaybeCallable
 from ...agents.resume_extractor import State
 from ...agents.resume_extractor import agent as RESUME_EXTRACTOR
 
