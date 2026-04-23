@@ -1,8 +1,6 @@
 from functools import wraps
 from typing import Callable
 
-from ..state import BaseAgentState
-
 from utils.logger import logger
 
 def require_fields(
@@ -19,6 +17,9 @@ def require_fields(
                 state = args[index]
             elif isinstance(index, str):
                 state = kwargs.get(index)
+                if state is None:
+                    logger.error(f"State not found in kwargs with key '{index}' for node '{func.__name__}'")
+                    raise ValueError(f"State not found in kwargs with key '{index}'")
             else:
                 raise ValueError("Index must be an integer or a string.")
             missing_fields = [field for field in required_fields if field not in state or state[field] is None]

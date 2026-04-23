@@ -13,10 +13,11 @@ from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
 
 from exceptions import AgentStateError, ModelCallExecutionError
 from ..models import load_chat_model
-from ..state import BaseAgentState
-from ..types.interupt import BaseInterupt
-from ..nodes.wrappers import require_fields
-from .base import BaseGraph
+from ..base import (
+    BaseGraph,
+    BaseAgentState,
+    BaseInterupt
+)
 from schemas.config.base import Config
 from schemas.config import load_config
 from schemas.command import BaseCommand
@@ -39,13 +40,6 @@ class ModelCallGraph(BaseGraph):
         self.tools = tools or tuple[BaseTool]()
         self.tools_dict = {tool.name: tool for tool in self.tools}
         self.system_prompts = system_prompts or []
-
-    @require_fields('model', 'messages', index=1)
-    def _set_up_node(self, state: BaseAgentState) -> BaseAgentState:
-        """
-        Checking and setting up the initial state for the graph. This node is responsible for checking if the required fields are present in the state and setting up any additional fields needed for the graph execution.
-        """
-        return state
 
     async def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
         """
@@ -167,11 +161,9 @@ class ModelCallGraph(BaseGraph):
     def get_graph(self) -> StateGraph[BaseAgentState]:
         
         graph = StateGraph[BaseAgentState](BaseAgentState)
-        graph.add_node('set_up', self._set_up_node)
         graph.add_node('model', self._model_call_node)
         graph.add_node('tool', self._tool_node)
-        graph.add_edge(START, 'set_up')
-        graph.add_edge('set_up', 'model')
+        graph.add_edge(START, 'model')
         graph.add_edge('tool', 'model')
         graph.add_conditional_edges(
             'model',

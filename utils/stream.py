@@ -3,7 +3,6 @@ from typing import (
     AsyncIterator,
     Awaitable,
     Callable,
-    Literal,
     Any
 )
 from langchain_core.runnables.schema import StreamEvent
@@ -28,23 +27,7 @@ from langchain_core.runnables.schema import StreamEvent
         | `on_prompt_end`        | `'[template_name]'`  |                                     | `{"question": "hello"}`                           | `ChatPromptValue(messages: [SystemMessage, ...])`   |
 """
 
-type StreamEventName = Literal[
-    "on_chat_model_start",
-    "on_chat_model_stream",
-    "on_chat_model_end",
-    "on_llm_start",
-    "on_llm_stream",
-    "on_llm_end",
-    "on_chain_start",
-    "on_chain_stream",
-    "on_chain_end",
-    "on_tool_start",
-    "on_tool_end",
-    "on_retriever_start",
-    "on_retriever_end",
-    "on_prompt_start",
-    "on_prompt_end"
-]
+type StreamEventName = str
 
 type StreamEventHandler = Callable[[StreamEvent], Any] | Callable[[StreamEvent], Awaitable[Any]]
 

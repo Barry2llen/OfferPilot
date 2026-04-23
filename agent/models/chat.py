@@ -3,7 +3,7 @@ from functools import lru_cache
 
 from langchain.chat_models import BaseChatModel, init_chat_model
 
-from exceptions import ChatModelLoadError, UnsupportedModelProviderError
+from exceptions import ChatModelLoadError
 from schemas.model_selection import ModelSelection
 from utils.logger import logger
 

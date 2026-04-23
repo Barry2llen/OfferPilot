@@ -8,7 +8,7 @@ config = load_config()
 
 web_search_tools: list[BaseTool]
 if not config.exa_api_key:
-    from ..mcp.web_search import web_search_mcp_tools
+    from ..mcps.web_search import web_search_mcp_tools
     web_search_tools = web_search_mcp_tools
 else:
 
@@ -64,7 +64,7 @@ else:
     
     # Optional tool to find similar pages, which can be useful for expanding research beyond the initial search results. Not needed for basic search and fetch use cases.
     @tool
-    async def find_similar(
+    async def find_similar_exa(
         url: str = Field(description="The URL to find similar pages for."),
         num_results: int = Field(default=None, description="Number of results to return. Default is None (server default)."),
         include_domains: list[str] = Field(default=None, description="Domains to include in the search."),
@@ -84,7 +84,7 @@ else:
             exclude_source_domain = exclude_source_domain
         )
 
-    web_search_tools = [web_search_exa, web_fetch_exa]
+    web_search_tools = [web_search_exa, web_fetch_exa, find_similar_exa]
 
 __all__ = [
     "web_search_tools",
