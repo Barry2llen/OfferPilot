@@ -72,7 +72,7 @@ class BaseGraph[State = BaseAgentState](ABC):
 class BaseAgent[State = BaseAgentState](BaseGraph[State]):
     """Base agent"""
 
-    def get_agent(
+    def __init__(
         self,
         checkpointer: Checkpointer = None,
         *,
@@ -82,15 +82,26 @@ class BaseAgent[State = BaseAgentState](BaseGraph[State]):
         interrupt_after: All | list[str] | None = None,
         debug: bool = False,
         name: str | None = None,
-    ) -> CompiledStateGraph[State]:
+    ):
+        super().__init__()
+        self.checkpointer = checkpointer
+        self.cache = cache
+        self.store = store
+        self.interrupt_before = interrupt_before
+        self.interrupt_after = interrupt_after
+        self.debug = debug
+        self.name = name
+
+
+    def get_agent(self) -> CompiledStateGraph[State]:
         return self.get_compiled_graph(
-            checkpointer=checkpointer,
-            cache=cache,
-            store=store,
-            interrupt_before=interrupt_before,
-            interrupt_after=interrupt_after,
-            debug=debug,
-            name=name
+            checkpointer=self.checkpointer,
+            cache=self.cache,
+            store=self.store,
+            interrupt_before=self.interrupt_before,
+            interrupt_after=self.interrupt_after,
+            debug=self.debug,
+            name=self.name
         )
 
 class BaseWorkflow[Result = Any, State = BaseAgentState](ABC):

@@ -1,8 +1,8 @@
 
 from .state import State
-from .agent import agent
+from .agent import ResumeExtractorAgent
 
 __all__ = [
     State,
-    agent
+    ResumeExtractorAgent
 ]
