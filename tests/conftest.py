@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 from pathlib import Path
 from uuid import uuid4
@@ -6,7 +7,7 @@ import pytest
 from dotenv import load_dotenv
 from ruamel.yaml import YAML
 
-from db.engine import DatabaseManager
+from db.engine import AsyncDatabaseManager, DatabaseManager
 from schemas.config import Config, SQLiteDatabaseConfig
 
 
@@ -74,3 +75,14 @@ def temporary_database_manager(
         yield manager
     finally:
         manager.dispose()
+
+
+@pytest.fixture
+def temporary_async_database_manager(
+    temporary_sqlite_config: SQLiteDatabaseConfig,
+) -> AsyncDatabaseManager:
+    manager = AsyncDatabaseManager(temporary_sqlite_config)
+    try:
+        yield manager
+    finally:
+        asyncio.run(manager.dispose())

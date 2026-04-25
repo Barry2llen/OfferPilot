@@ -1,9 +1,15 @@
+import asyncio
 import os
 
 import pytest
 from sqlalchemy import text
 
-from db.engine import DatabaseManager, build_database_url
+from db.engine import (
+    AsyncDatabaseManager,
+    DatabaseManager,
+    build_async_database_url,
+    build_database_url,
+)
 from exceptions import DatabaseConfigurationError
 from schemas.config import PostgreSQLDatabaseConfig, SQLiteDatabaseConfig
 
@@ -27,6 +33,29 @@ def test_build_database_url_for_postgresql() -> None:
 
     assert (
         build_database_url(config)
+        == "postgresql+psycopg://postgres:secret@db.example.com:5432/offer_pilot"
+    )
+
+
+def test_build_async_database_url_for_sqlite(
+    temporary_sqlite_config: SQLiteDatabaseConfig,
+) -> None:
+    assert build_async_database_url(temporary_sqlite_config).startswith(
+        "sqlite+aiosqlite:///"
+    )
+
+
+def test_build_async_database_url_for_postgresql() -> None:
+    config = PostgreSQLDatabaseConfig(
+        host="db.example.com",
+        port=5432,
+        database="offer_pilot",
+        user="postgres",
+        password="secret",
+    )
+
+    assert (
+        build_async_database_url(config)
         == "postgresql+psycopg://postgres:secret@db.example.com:5432/offer_pilot"
     )
 
@@ -76,12 +105,22 @@ def test_initialize_tables_creates_expected_tables(
                 text(
                     "SELECT name FROM sqlite_master "
                     "WHERE type = 'table' AND name IN "
-                    "('tb_model_provider', 'tb_model_selection', 'tb_chat', 'tb_resume')"
+                    "('tb_model_provider', 'tb_model_selection', 'tb_chat', "
+                    "'tb_resume', 'tb_graph_checkpoint', 'tb_graph_checkpoint_blob', "
+                    "'tb_graph_checkpoint_write')"
                 )
             )
         }
 
-    assert tables == {"tb_model_provider", "tb_model_selection", "tb_chat", "tb_resume"}
+    assert tables == {
+        "tb_model_provider",
+        "tb_model_selection",
+        "tb_chat",
+        "tb_resume",
+        "tb_graph_checkpoint",
+        "tb_graph_checkpoint_blob",
+        "tb_graph_checkpoint_write",
+    }
 
 
 def test_initialize_tables_creates_expected_chat_columns(
@@ -165,6 +204,20 @@ def test_database_manager_dispose_reinitializes_engine(
         assert first_engine is not second_engine
     finally:
         manager.dispose()
+
+
+def test_async_database_manager_session_scope_and_connection_check(
+    temporary_async_database_manager: AsyncDatabaseManager,
+) -> None:
+    async def run() -> None:
+        await temporary_async_database_manager.initialize_tables()
+        assert await temporary_async_database_manager.check_connection() is True
+
+        async with temporary_async_database_manager.session_scope() as session:
+            result = await session.execute(text("SELECT 1"))
+            assert result.scalar_one() == 1
+
+    asyncio.run(run())
 
 
 def test_postgresql_connection_check_optional() -> None:
