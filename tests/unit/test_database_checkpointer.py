@@ -4,6 +4,7 @@ from langgraph.checkpoint.serde.types import ERROR
 
 from agent.checkpointers import DatabaseCheckpointer
 from db.engine import AsyncDatabaseManager, DatabaseManager
+from db.repositories import CheckpointRepository
 
 
 def make_config(
@@ -165,6 +166,68 @@ def test_database_checkpointer_put_writes_is_idempotent_and_overwrites_error_ent
         ("task-1", "messages", {"value": 1}),
         ("task-1", "summary", {"value": 2}),
         ("task-1", ERROR, {"value": "replaced"}),
+    ]
+
+
+def test_checkpoint_repository_lists_latest_checkpoint_per_thread(
+    temporary_database_manager: DatabaseManager,
+    temporary_async_database_manager: AsyncDatabaseManager,
+) -> None:
+    checkpointer = create_checkpointer(
+        temporary_database_manager,
+        temporary_async_database_manager,
+    )
+    first_checkpoint = make_checkpoint(
+        "00000000000000000000000000000001.0000000000000001",
+        message="first",
+        version="00000000000000000000000000000001.0000000000000001",
+        updated_channels=["messages"],
+    )
+    second_checkpoint = make_checkpoint(
+        "00000000000000000000000000000003.0000000000000001",
+        message="second",
+        version="00000000000000000000000000000003.0000000000000001",
+        updated_channels=["messages"],
+    )
+    other_thread_checkpoint = make_checkpoint(
+        "00000000000000000000000000000002.0000000000000001",
+        message="other",
+        version="00000000000000000000000000000002.0000000000000001",
+        updated_channels=["messages"],
+    )
+
+    first_config = checkpointer.put(
+        make_config("thread-latest"),
+        first_checkpoint,
+        {"source": "input", "step": -1, "run_id": "run-first", "parents": {}},
+        first_checkpoint["channel_versions"],
+    )
+    checkpointer.put(
+        first_config,
+        second_checkpoint,
+        {
+            "source": "loop",
+            "step": 0,
+            "run_id": "run-second",
+            "parents": {"": first_checkpoint["id"]},
+        },
+        second_checkpoint["channel_versions"],
+    )
+    checkpointer.put(
+        make_config("thread-other"),
+        other_thread_checkpoint,
+        {"source": "input", "step": -1, "run_id": "run-other", "parents": {}},
+        other_thread_checkpoint["channel_versions"],
+    )
+
+    with temporary_database_manager.session_scope() as session:
+        rows = CheckpointRepository(session).list_latest_checkpoints_by_thread(
+            limit=1,
+            offset=0,
+        )
+
+    assert [(row.thread_id, row.checkpoint_id) for row in rows] == [
+        ("thread-latest", second_checkpoint["id"]),
     ]
 
 

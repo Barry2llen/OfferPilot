@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import Select, delete, select, tuple_
+from sqlalchemy import Select, delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -50,6 +50,39 @@ class CheckpointRepository:
             GraphCheckpointORM.thread_id.asc(),
             GraphCheckpointORM.checkpoint_ns.asc(),
             GraphCheckpointORM.checkpoint_id.desc(),
+        )
+        return self._session.scalars(statement).all()
+
+    def list_latest_checkpoints_by_thread(
+        self,
+        *,
+        checkpoint_ns: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[GraphCheckpointORM]:
+        latest = (
+            select(
+                GraphCheckpointORM.thread_id.label("thread_id"),
+                func.max(GraphCheckpointORM.checkpoint_id).label("checkpoint_id"),
+            )
+            .where(GraphCheckpointORM.checkpoint_ns == checkpoint_ns)
+            .group_by(GraphCheckpointORM.thread_id)
+            .subquery()
+        )
+        statement = (
+            select(GraphCheckpointORM)
+            .join(
+                latest,
+                (GraphCheckpointORM.thread_id == latest.c.thread_id)
+                & (GraphCheckpointORM.checkpoint_id == latest.c.checkpoint_id),
+            )
+            .where(GraphCheckpointORM.checkpoint_ns == checkpoint_ns)
+            .order_by(
+                GraphCheckpointORM.created_at.desc(),
+                GraphCheckpointORM.checkpoint_id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
         )
         return self._session.scalars(statement).all()
 

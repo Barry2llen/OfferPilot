@@ -3,17 +3,23 @@ from collections.abc import AsyncGenerator, Generator
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.types import Command
 from sqlalchemy.orm import Session
 
-from db.repositories import ModelSelectionRepository
+from db.repositories import CheckpointRepository, ModelSelectionRepository
 from exceptions import ChatModelLoadError, ModelCallExecutionError
-from schemas.ai import AIChatRequest, AIChatResponse, AIChatStreamRequest
-from services import ModelSelectionService
+from schemas.ai import (
+    AIChatHistoryDetailResponse,
+    AIChatHistoryListResponse,
+    AIChatRequest,
+    AIChatResponse,
+    AIChatStreamRequest,
+)
+from services import ChatHistoryService, ModelSelectionService
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -166,6 +172,75 @@ def _is_tool_error_output(output: Any) -> bool:
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
+
+
+@router.get(
+    "/chats",
+    response_model=AIChatHistoryListResponse,
+    summary="查询 AI 会话历史列表",
+    description=(
+        "从 LangGraph checkpoint 中读取每个 thread_id 的最新会话状态，"
+        "返回会话标题、最后消息预览、消息数量和更新时间。"
+    ),
+    response_description="返回按最近更新时间倒序排列的 AI 会话历史摘要列表。",
+)
+async def list_chat_histories(
+    request: Request,
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description="分页大小，最大 100。",
+        examples=[20],
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="分页偏移量。",
+        examples=[0],
+    ),
+    session: Session = Depends(_get_request_db_session),
+) -> AIChatHistoryListResponse:
+    history_service = ChatHistoryService(
+        CheckpointRepository(session),
+        request.app.state.checkpointer,
+    )
+    return history_service.list_histories(limit=limit, offset=offset)
+
+
+@router.get(
+    "/chats/{thread_id}/history",
+    response_model=AIChatHistoryDetailResponse,
+    response_model_exclude_none=True,
+    summary="查询 AI 会话历史详情",
+    description=(
+        "按 thread_id 从最新 LangGraph checkpoint 中读取完整 messages 历史，"
+        "并转换为前端可直接消费的简化消息结构。"
+    ),
+    response_description="返回指定会话的完整消息历史。",
+    responses={
+        404: _error_response(
+            "未找到指定会话历史。",
+            example="Chat history not found: conversation-001",
+        ),
+    },
+)
+async def get_chat_history(
+    thread_id: str,
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> AIChatHistoryDetailResponse:
+    history_service = ChatHistoryService(
+        CheckpointRepository(session),
+        request.app.state.checkpointer,
+    )
+    history = history_service.get_history(thread_id)
+    if history is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chat history not found: {thread_id}",
+        )
+    return history
 
 
 @router.post(

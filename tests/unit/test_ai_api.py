@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from agent.tools import get_all_tools
@@ -38,6 +38,20 @@ def _checkpoint(checkpoint_id: str, message: str) -> dict:
         "id": checkpoint_id,
         "ts": "2026-04-25T00:00:00+00:00",
         "channel_values": {"messages": [message]},
+        "channel_versions": {"messages": version},
+        "versions_seen": {"model": {"messages": version}},
+        "updated_channels": ["messages"],
+        "pending_sends": [],
+    }
+
+
+def _message_checkpoint(checkpoint_id: str, messages: list[object]) -> dict:
+    version = f"{checkpoint_id.split('.')[0]}.{uuid4().hex[:16]}"
+    return {
+        "v": 2,
+        "id": checkpoint_id,
+        "ts": "2026-04-25T00:00:00+00:00",
+        "channel_values": {"messages": messages},
         "channel_versions": {"messages": version},
         "versions_seen": {"model": {"messages": version}},
         "updated_channels": ["messages"],
@@ -120,6 +134,150 @@ def test_ai_chat_endpoint_generates_thread_id_when_missing(
     assert response.status_code == 200
     assert response.json()["thread_id"]
     assert response.json()["content"] == "generated thread"
+
+
+def test_ai_chat_histories_endpoint_returns_latest_thread_summaries(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        old_checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="旧会话第一条用户消息"),
+                AIMessage(content="旧会话回复"),
+            ],
+        )
+        old_latest_checkpoint = _message_checkpoint(
+            "00000000000000000000000000000003.0000000000000001",
+            [
+                HumanMessage(content="旧会话第一条用户消息"),
+                AIMessage(content="旧会话最新回复"),
+            ],
+        )
+        new_checkpoint = _message_checkpoint(
+            "00000000000000000000000000000002.0000000000000001",
+            [
+                HumanMessage(content="新会话第一条用户消息"),
+                AIMessage(content="新会话回复"),
+            ],
+        )
+
+        old_config = checkpointer.put(
+            {"configurable": {"thread_id": "thread-old"}},
+            old_checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-old-1", "parents": {}},
+            old_checkpoint["channel_versions"],
+        )
+        checkpointer.put(
+            old_config,
+            old_latest_checkpoint,
+            {
+                "source": "loop",
+                "step": 0,
+                "run_id": "run-old-2",
+                "parents": {"": old_checkpoint["id"]},
+            },
+            old_latest_checkpoint["channel_versions"],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-new"}},
+            new_checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-new", "parents": {}},
+            new_checkpoint["channel_versions"],
+        )
+
+        response = client.get("/ai/chats", params={"limit": 10, "offset": 0})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["limit"] == 10
+    assert payload["offset"] == 0
+    assert [item["thread_id"] for item in payload["items"]] == [
+        "thread-old",
+        "thread-new",
+    ]
+    assert payload["items"][0]["title"] == "旧会话第一条用户消息"
+    assert payload["items"][0]["last_message_preview"] == "旧会话最新回复"
+    assert payload["items"][0]["message_count"] == 2
+    assert payload["items"][0]["updated_at"]
+
+
+def test_ai_chat_history_endpoint_returns_normalized_messages(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="请搜索 OfferPilot"),
+                AIMessage(content="我会先搜索。"),
+                ToolMessage(
+                    content="搜索结果",
+                    tool_call_id="call-1",
+                    name="web_search_exa",
+                    status="success",
+                ),
+                AIMessage(content="OfferPilot 是一个求职辅助服务。"),
+            ],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-history", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+
+        response = client.get("/ai/chats/thread-history/history")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["thread_id"] == "thread-history"
+    assert payload["title"] == "请搜索 OfferPilot"
+    assert payload["last_message_preview"] == "OfferPilot 是一个求职辅助服务。"
+    assert payload["message_count"] == 4
+    assert payload["messages"] == [
+        {
+            "role": "user",
+            "type": "human",
+            "content": "请搜索 OfferPilot",
+        },
+        {
+            "role": "assistant",
+            "type": "ai",
+            "content": "我会先搜索。",
+        },
+        {
+            "role": "tool",
+            "type": "tool",
+            "content": "搜索结果",
+            "name": "web_search_exa",
+            "tool_call_id": "call-1",
+            "status": "success",
+        },
+        {
+            "role": "assistant",
+            "type": "ai",
+            "content": "OfferPilot 是一个求职辅助服务。",
+        },
+    ]
+
+
+def test_ai_chat_history_endpoint_returns_404_for_missing_thread(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        response = client.get("/ai/chats/missing-thread/history")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Chat history not found: missing-thread"
 
 
 def test_ai_chat_endpoint_returns_404_for_missing_selection(
@@ -421,6 +579,23 @@ def test_ai_chat_stream_openapi_documents_interrupt_and_retry(
     stream_operation = payload["paths"]["/ai/chat/stream"]["post"]
     assert "interrupt" in stream_operation["responses"]["200"]["description"]
     assert "retry" in stream_operation["description"]
+
+
+def test_ai_chat_history_openapi_documents_history_endpoints(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        payload = client.get("/openapi.json").json()
+
+    assert "/ai/chats" in payload["paths"]
+    assert "/ai/chats/{thread_id}/history" in payload["paths"]
+    assert payload["paths"]["/ai/chats"]["get"]["summary"] == "查询 AI 会话历史列表"
+    assert (
+        payload["paths"]["/ai/chats/{thread_id}/history"]["get"]["summary"]
+        == "查询 AI 会话历史详情"
+    )
 
 
 def test_base_command_accepts_retry_without_prompt() -> None:
