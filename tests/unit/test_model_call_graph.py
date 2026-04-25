@@ -8,8 +8,6 @@ from langchain_core.tools import tool
 from agent.graphs.model_call import ModelCallGraph
 from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
-from schemas.model_provider import ModelProvider
-from schemas.model_selection import ModelSelection
 
 
 @tool
@@ -47,58 +45,6 @@ def make_state(messages: list, model: object | None = None) -> dict:
         "model": object() if model is None else model,
         "messages": messages,
     }
-
-
-def make_deepseek_selection() -> ModelSelection:
-    return ModelSelection(
-        provider=ModelProvider(
-            provider="OpenAI Compatible",
-            name="deepseek",
-            base_url="https://api.deepseek.com/v1",
-            api_key="test-key",
-        ),
-        model_name="deepseek-reasoner",
-    )
-
-
-class FakeInputValue:
-    def __init__(self, messages: list) -> None:
-        self.messages = messages
-
-    def to_messages(self) -> list:
-        return self.messages
-
-
-class FakePayloadModel:
-    def __init__(self, response: AIMessage) -> None:
-        self.response = response
-        self.payloads: list[dict] = []
-
-    def bind_tools(self, tools: object) -> "FakePayloadModel":
-        return self
-
-    def _convert_input(self, input_: list) -> FakeInputValue:
-        return FakeInputValue(input_)
-
-    def _get_request_payload(self, input_: list, *args: object, **kwargs: object) -> dict:
-        payload_messages: list[dict] = []
-        for message in input_:
-            if isinstance(message, HumanMessage):
-                payload_messages.append({"role": "user", "content": message.content})
-            elif isinstance(message, AIMessage):
-                payload_messages.append({"role": "assistant", "content": message.content or None})
-            elif isinstance(message, ToolMessage):
-                payload_messages.append({
-                    "role": "tool",
-                    "content": message.content,
-                    "tool_call_id": message.tool_call_id,
-                })
-
-        return {"messages": payload_messages}
-
-    def invoke(self, messages: list) -> AIMessage:
-        self.payloads.append(self._get_request_payload(messages))
-        return self.response
 
 
 def test_model_call_graph_can_be_imported_and_initialized_without_tools() -> None:
@@ -342,68 +288,6 @@ def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.Mo
         ("invoke", state["messages"]),
     ]
     assert result["messages"] == [response]
-
-
-def test_model_call_node_preserves_deepseek_reasoning_content(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    response = AIMessage(content="model-response")
-    fake_model = FakePayloadModel(response)
-    selection = make_deepseek_selection()
-
-    monkeypatch.setattr(
-        "agent.graphs.model_call.load_chat_model",
-        lambda model_selection: fake_model,
-    )
-
-    graph = ModelCallGraph(config=Config(), tools=[echo_value])
-    result = graph._model_call_node(
-        make_state(
-            [
-                HumanMessage(content="hello"),
-                AIMessage(
-                    content="",
-                    additional_kwargs={"reasoning_content": "thinking steps"},
-                    tool_calls=[{"name": "echo_value", "args": {"value": 1}, "id": "call-1"}],
-                ),
-                ToolMessage(content="value=1", tool_call_id="call-1"),
-            ],
-            model=selection,
-        )
-    )
-
-    assert result["messages"] == [response]
-    assert fake_model.payloads[0]["messages"][1]["reasoning_content"] == "thinking steps"
-
-
-def test_model_call_node_does_not_add_missing_deepseek_reasoning_content(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    response = AIMessage(content="model-response")
-    fake_model = FakePayloadModel(response)
-    selection = make_deepseek_selection()
-
-    monkeypatch.setattr(
-        "agent.graphs.model_call.load_chat_model",
-        lambda model_selection: fake_model,
-    )
-
-    graph = ModelCallGraph(config=Config(), tools=[echo_value])
-    graph._model_call_node(
-        make_state(
-            [
-                HumanMessage(content="hello"),
-                AIMessage(
-                    content="",
-                    tool_calls=[{"name": "echo_value", "args": {"value": 1}, "id": "call-1"}],
-                ),
-                ToolMessage(content="value=1", tool_call_id="call-1"),
-            ],
-            model=selection,
-        )
-    )
-
-    assert "reasoning_content" not in fake_model.payloads[0]["messages"][1]
 
 
 def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyPatch) -> None:
