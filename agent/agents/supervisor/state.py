@@ -2,7 +2,7 @@
 from ...base import BaseAgentState
 
 class State(BaseAgentState):
-    """State for the superior agent."""
+    """State for the supervisor agent."""
     pass
 
 __all__ = [
