@@ -1,3 +1,3 @@
-from .routes import resume_router
+from .routes import ai_router, model_config_router, resume_router
 
-__all__ = ["resume_router"]
+__all__ = ["ai_router", "model_config_router", "resume_router"]

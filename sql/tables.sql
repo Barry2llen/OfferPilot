@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS tb_model_selection (
     id INTEGER PRIMARY KEY,
     provider_name VARCHAR(255) NOT NULL,
     model_name VARCHAR(255) NOT NULL,
+    supports_image_input BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE (provider_name, model_name),
     FOREIGN KEY (provider_name) REFERENCES tb_model_provider(name)
 );

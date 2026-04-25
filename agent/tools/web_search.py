@@ -1,53 +1,73 @@
-
-from pydantic import Field
 from langchain_core.tools import BaseTool, tool
+from pydantic import Field
 
-from schemas.config import load_config
+from schemas.config import Config, load_config
+from utils.logger import logger
 
-config = load_config()
 
-web_search_tools: list[BaseTool]
-if not config.exa_api_key:
-    from ..mcps.web_search import web_search_mcp_tools
-    web_search_tools = web_search_mcp_tools
-else:
+def get_web_search_tools(
+    config: Config | None = None,
+    *,
+    allow_mcp_fallback: bool = False,
+) -> list[BaseTool]:
+    target_config = config or load_config()
+    if not target_config.exa_api_key:
+        if not allow_mcp_fallback:
+            logger.warning("No Exa API key configured; web search tools are disabled.")
+            return []
+
+        try:
+            from ..mcps.web_search import web_search_mcp_tools
+        except Exception as error:
+            logger.warning(f"Failed to load MCP web search tools: {error}")
+            return []
+        return list(web_search_mcp_tools)
 
     from exa_py import AsyncExa
-    exa = AsyncExa(config.exa_api_key)
+
+    exa = AsyncExa(target_config.exa_api_key)
 
     @tool
     async def web_search_exa(
-        query: str = Field(description="Natural language search query. Should be a semantically rich description of the ideal page, not just keywords."),
-        num_results: int = Field(default=10, gt=1, lt=100, description="The number of search results to return"),
-        include_domains: list[str] = Field(default=None, description="Domains to include in the search."),
-        exclude_domains: list[str] = Field(default=None, description="Domains to exclude from the search."),
-        # start_published_date: str = Field(default=None, description="Optional ISO 8601 date string to only include results published after this date.Example: '2026-04-11T16:00:00.000Z'"),
-        # end_published_date: str = Field(default=None, description="Optional ISO 8601 date string to only include results published before this date."),
+        query: str = Field(
+            description=(
+                "Natural language search query. Should be a semantically rich "
+                "description of the ideal page, not just keywords."
+            )
+        ),
+        num_results: int = Field(
+            default=10,
+            gt=1,
+            lt=100,
+            description="The number of search results to return",
+        ),
+        include_domains: list[str] = Field(
+            default=None,
+            description="Domains to include in the search.",
+        ),
+        exclude_domains: list[str] = Field(
+            default=None,
+            description="Domains to exclude from the search.",
+        ),
     ) -> str:
         """
-        Search the web for any topic and get clean, ready-to-use content. 
-        Best for: Finding current information, news, facts, people, companies, or answering questions about any topic. 
-        Returns: Clean text content from top search results. 
-        Query tips: describe the ideal page, not keywords. "blog post comparing React and Vue performance" not "React vs Vue".
-        If highlights are insufficient, follow up with web_fetch_exa on the best URLs.
+        Search the web for current information and return ready-to-use content.
         """
 
         return await exa.search(
             query,
-            num_results = num_results,
-            type = config.web_search.type,
-            stream = False,
-            user_location = "CN",
-            include_domains = include_domains,
-            exclude_domains = exclude_domains,
-            # start_published_date = start_published_date,
-            # end_published_date = end_published_date,
-            contents = {
+            num_results=num_results,
+            type=target_config.web_search.type,
+            stream=False,
+            user_location="CN",
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            contents={
                 "highlights": {
-                    "max_characters": config.web_search.max_characters,
-                    "guiding_query": config.web_search.guiding_query,
+                    "max_characters": target_config.web_search.max_characters,
+                    "guiding_query": target_config.web_search.guiding_query,
                 }
-            }
+            },
         )
 
     @tool
@@ -55,37 +75,49 @@ else:
         urls: list[str] = Field(description="The list of URLs to fetch content from"),
     ) -> str:
         """
-        Read a webpage's full content as clean markdown. 
-        Use after web_search_exa when highlights are insufficient or to read any URL. 
-        Best for: Extracting full content from known URLs. Batch multiple URLs in one call. 
-        Returns: Clean text content and metadata from the page(s).
+        Read webpage content as clean markdown.
         """
+
         return await exa.get_contents(urls)
-    
-    # Optional tool to find similar pages, which can be useful for expanding research beyond the initial search results. Not needed for basic search and fetch use cases.
+
     @tool
     async def find_similar_exa(
         url: str = Field(description="The URL to find similar pages for."),
-        num_results: int = Field(default=None, description="Number of results to return. Default is None (server default)."),
-        include_domains: list[str] = Field(default=None, description="Domains to include in the search."),
-        exclude_domains: list[str] = Field(default=None, description="Domains to exclude from the search."),
-        exclude_source_domain: bool = Field(default=False, description="Whether to exclude the source domain.")
+        num_results: int = Field(
+            default=None,
+            description="Number of results to return. Default is None.",
+        ),
+        include_domains: list[str] = Field(
+            default=None,
+            description="Domains to include in the search.",
+        ),
+        exclude_domains: list[str] = Field(
+            default=None,
+            description="Domains to exclude from the search.",
+        ),
+        exclude_source_domain: bool = Field(
+            default=False,
+            description="Whether to exclude the source domain.",
+        ),
     ) -> str:
         """
         Find pages similar to a known URL.
-        Use when the initial search result is relevant and you want adjacent sources on the same topic.
-        Returns: Similar pages and their metadata from Exa.
         """
+
         return await exa.find_similar(
             url,
-            num_results = num_results,
-            include_domains = include_domains,
-            exclude_domains = exclude_domains,
-            exclude_source_domain = exclude_source_domain
+            num_results=num_results,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            exclude_source_domain=exclude_source_domain,
         )
 
-    web_search_tools = [web_search_exa, web_fetch_exa, find_similar_exa]
+    return [web_search_exa, web_fetch_exa, find_similar_exa]
+
+
+web_search_tools: list[BaseTool] = []
 
 __all__ = [
+    "get_web_search_tools",
     "web_search_tools",
 ]

@@ -5,7 +5,8 @@ from typing import (
     Any,
     TypedDict,
     Annotated,
-    Literal
+    Literal,
+    NotRequired
 )
 from abc import ABC, abstractmethod
 
@@ -175,8 +176,8 @@ class BaseWorkflow[Result = Any, State = BaseAgentState](ABC):
 type InteruptType = Literal['error', 'question', 'warning', 'other']
 
 class BaseInterupt(TypedDict):
-    type: InteruptType = 'other'
-    message: str = None
+    type: NotRequired[InteruptType]
+    message: NotRequired[str | None]
 
 __all__ = [
     BaseAgentState,

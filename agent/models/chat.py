@@ -32,7 +32,7 @@ def _load_chat_model_cached(
 
     model_provider = provider_name.lower()
     match model_provider:
-        case "openai-compatible":
+        case "openai-compatible" | "openai compatible":
             model_provider = "openai"
             required_base_and_key = True
         case "google":

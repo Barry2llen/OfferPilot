@@ -1,11 +1,13 @@
 
 from typing import override
+from collections.abc import Sequence
 from langgraph.graph import StateGraph, START, END
 from langchain.messages import SystemMessage
+from langchain_core.tools import BaseTool
 
 from agent.graphs.model_call import ModelCallGraph
+from schemas.config import Config
 from .state import State
-from ...tools import get_all_tools
 from ...base import BaseAgent
 
 class SupervisorAgent(BaseAgent[State]):
@@ -14,12 +16,20 @@ class SupervisorAgent(BaseAgent[State]):
         content="You are a helpful assistant."
     )
 
-    tools = get_all_tools()
-
-    _model_call_node = ModelCallGraph(
-        system_prompts=[system_prompt],
-        tools=tools
-    ).get_compiled_graph()
+    def __init__(
+        self,
+        *args,
+        config: Config | None = None,
+        tools: Sequence[BaseTool] | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.tools = tuple(tools or ())
+        self._model_call_node = ModelCallGraph(
+            system_prompts=[self.system_prompt],
+            config=config,
+            tools=self.tools,
+        ).get_compiled_graph()
 
     @override
     def get_graph(self) -> StateGraph[State]:
