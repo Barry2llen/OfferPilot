@@ -11,7 +11,7 @@ dependencies = [
     "langgraph>=1.1.6",
     "loguru>=0.7.3",
     "path>=17.1.1",
-    "psycopg>=3.2.0",
+    "psycopg[binary]>=3.2.0",
     "aspose-words",
     "pydantic>=2.13.0",
     "pymupdf>=1.27.2.2",
