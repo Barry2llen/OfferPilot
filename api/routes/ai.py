@@ -3,7 +3,7 @@ from collections.abc import AsyncGenerator, Generator
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -63,7 +63,7 @@ def _agent_config(thread_id: str) -> dict:
     return {"configurable": {"thread_id": thread_id}}
 
 
-def _extract_content(messages: list[BaseMessage]) -> str:
+def _extract_content(messages: list[BaseMessage]) -> Any:
     if not messages:
         return ""
 
@@ -71,7 +71,7 @@ def _extract_content(messages: list[BaseMessage]) -> str:
     content = last_message.content
     if isinstance(content, str):
         return content
-    return json.dumps(content, ensure_ascii=False)
+    return _to_jsonable(content)
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -241,6 +241,45 @@ async def get_chat_history(
             detail=f"Chat history not found: {thread_id}",
         )
     return history
+
+
+@router.delete(
+    "/chats/{thread_id}",
+    status_code=204,
+    summary="删除 AI 会话历史",
+    description=(
+        "根据 thread_id 删除指定 AI 会话的 LangGraph checkpoint、"
+        "checkpoint blob 和 pending writes。删除后该会话无法继续 retry 或续聊。"
+    ),
+    response_description="删除成功，无响应体。",
+    responses={
+        404: _error_response(
+            "未找到指定会话历史。",
+            example="Chat history not found: conversation-001",
+        ),
+    },
+)
+async def delete_chat_history(
+    request: Request,
+    thread_id: str = Path(
+        ...,
+        description="待删除的会话线程 ID。",
+        examples=["conversation-001"],
+    ),
+    session: Session = Depends(_get_request_db_session),
+) -> Response:
+    history_service = ChatHistoryService(
+        CheckpointRepository(session),
+        request.app.state.checkpointer,
+    )
+    deleted = history_service.delete_history(thread_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chat history not found: {thread_id}",
+        )
+    session.commit()
+    return Response(status_code=204)
 
 
 @router.post(

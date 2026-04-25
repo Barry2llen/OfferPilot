@@ -61,6 +61,14 @@ class ChatHistoryService:
             messages=normalized_messages,
         )
 
+    def delete_history(self, thread_id: str) -> bool:
+        row = self._repository.get_checkpoint(thread_id, "")
+        if row is None:
+            return False
+
+        self._repository.delete_thread(thread_id)
+        return True
+
     def _to_summary(self, row: GraphCheckpointORM) -> AIChatHistorySummary:
         return _build_summary(row, self._get_messages(row.thread_id))
 

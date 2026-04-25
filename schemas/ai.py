@@ -52,6 +52,25 @@ class AIChatResponse(BaseModel):
                 {
                     "thread_id": "conversation-001",
                     "content": "这份简历的主要优势是项目经历完整、技术栈清晰。",
+                },
+                {
+                    "thread_id": "conversation-002",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "你好！有什么我可以帮您的吗？",
+                            "index": 0,
+                            "extras": {},
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/png;base64,iVBORw0KGgo="
+                            },
+                            "index": 1,
+                            "extras": {},
+                        },
+                    ],
                 }
             ]
         }
@@ -61,9 +80,19 @@ class AIChatResponse(BaseModel):
         description="本次请求使用的会话线程 ID。",
         examples=["conversation-001"],
     )
-    content: str = Field(
-        description="AI 最终回复文本。",
-        examples=["这份简历的主要优势是项目经历完整、技术栈清晰。"],
+    content: Any = Field(
+        description="AI 最终回复内容。字符串会原样返回，文字、图片等结构化内容块会保持 JSON 结构。",
+        examples=[
+            "这份简历的主要优势是项目经历完整、技术栈清晰。",
+            [
+                {
+                    "type": "text",
+                    "text": "你好！有什么我可以帮您的吗？",
+                    "index": 0,
+                    "extras": {},
+                }
+            ],
+        ],
     )
 
 

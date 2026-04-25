@@ -136,6 +136,50 @@ def test_ai_chat_endpoint_generates_thread_id_when_missing(
     assert response.json()["content"] == "generated thread"
 
 
+def test_ai_chat_endpoint_returns_structured_multimodal_content(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+    content_blocks = [
+        {
+            "type": "text",
+            "text": "你好！有什么我可以帮您的吗？",
+            "index": 0,
+            "extras": {},
+        },
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="},
+            "index": 1,
+            "extras": {"source": "model"},
+        },
+    ]
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            def invoke(self, state: dict, config: dict) -> dict:
+                return {"messages": [AIMessage(content=content_blocks)]}
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-multimodal",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "thread_id": "thread-multimodal",
+        "content": content_blocks,
+    }
+
+
 def test_ai_chat_histories_endpoint_returns_latest_thread_summaries(
     temporary_app_config: Config,
 ) -> None:
@@ -280,6 +324,65 @@ def test_ai_chat_history_endpoint_returns_404_for_missing_thread(
     assert response.json()["detail"] == "Chat history not found: missing-thread"
 
 
+def test_ai_chat_history_delete_endpoint_removes_thread_checkpoints(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="待删除会话"),
+                AIMessage(content="待删除回复"),
+            ],
+        )
+        other_checkpoint = _message_checkpoint(
+            "00000000000000000000000000000002.0000000000000001",
+            [
+                HumanMessage(content="保留会话"),
+                AIMessage(content="保留回复"),
+            ],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-delete"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-delete", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-keep"}},
+            other_checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-keep", "parents": {}},
+            other_checkpoint["channel_versions"],
+        )
+
+        response = client.delete("/ai/chats/thread-delete")
+        deleted_history = client.get("/ai/chats/thread-delete/history")
+        remaining_history = client.get("/ai/chats/thread-keep/history")
+        saved = checkpointer.get_tuple({"configurable": {"thread_id": "thread-delete"}})
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert saved is None
+    assert deleted_history.status_code == 404
+    assert remaining_history.status_code == 200
+    assert remaining_history.json()["thread_id"] == "thread-keep"
+
+
+def test_ai_chat_history_delete_endpoint_returns_404_for_missing_thread(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        response = client.delete("/ai/chats/missing-thread")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Chat history not found: missing-thread"
+
+
 def test_ai_chat_endpoint_returns_404_for_missing_selection(
     temporary_app_config: Config,
 ) -> None:
@@ -346,6 +449,71 @@ def test_ai_chat_stream_endpoint_returns_sse_final_event(
     assert 'event: token\ndata: {"thread_id": "thread-stream", "content": "streamed "}' in response.text
     assert 'event: token\ndata: {"thread_id": "thread-stream", "content": "response"}' in response.text
     assert 'event: final\ndata: {"thread_id": "thread-stream", "content": "streamed response"}' in response.text
+
+
+def test_ai_chat_stream_endpoint_returns_structured_final_content(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+    content_blocks = [
+        {
+            "type": "text",
+            "text": "你好！有什么我可以帮您的吗？",
+            "index": 0,
+            "extras": {},
+        },
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="},
+            "index": 1,
+            "extras": {},
+        },
+    ]
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_chat_model_stream",
+                    "data": {"chunk": AIMessageChunk(content=content_blocks)},
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content=content_blocks)]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-stream-multimodal",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: token\ndata: {"thread_id": "thread-stream-multimodal", '
+        '"content": "你好！有什么我可以帮您的吗？"}'
+        in response.text
+    )
+    assert (
+        'event: final\ndata: {"thread_id": "thread-stream-multimodal", '
+        '"content": [{"type": "text", "text": "你好！有什么我可以帮您的吗？", '
+        '"index": 0, "extras": {}}, {"type": "image_url", "image_url": '
+        '{"url": "data:image/png;base64,iVBORw0KGgo="}, "index": 1, "extras": {}}]}'
+        in response.text
+    )
 
 
 def test_ai_chat_stream_endpoint_returns_tool_events(
@@ -591,7 +759,9 @@ def test_ai_chat_history_openapi_documents_history_endpoints(
 
     assert "/ai/chats" in payload["paths"]
     assert "/ai/chats/{thread_id}/history" in payload["paths"]
+    assert "delete" in payload["paths"]["/ai/chats/{thread_id}"]
     assert payload["paths"]["/ai/chats"]["get"]["summary"] == "查询 AI 会话历史列表"
+    assert payload["paths"]["/ai/chats/{thread_id}"]["delete"]["summary"] == "删除 AI 会话历史"
     assert (
         payload["paths"]["/ai/chats/{thread_id}/history"]["get"]["summary"]
         == "查询 AI 会话历史详情"
