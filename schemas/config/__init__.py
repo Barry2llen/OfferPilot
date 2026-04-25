@@ -1,5 +1,6 @@
 from .base import (
     Config,
+    CorsConfig,
     load_config,
     reload_config
 )
@@ -7,6 +8,7 @@ from .database import DatabaseConfig, PostgreSQLDatabaseConfig, SQLiteDatabaseCo
 
 __all__ = [
     "Config",
+    "CorsConfig",
     "DatabaseConfig",
     "PostgreSQLDatabaseConfig",
     "SQLiteDatabaseConfig",

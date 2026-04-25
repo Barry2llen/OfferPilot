@@ -5,6 +5,15 @@ database:
 
 resume_upload_dir: "./data/resumes"
 
+cors:
+  allow_origins:
+    - "*"
+  allow_credentials: false
+  allow_methods:
+    - "*"
+  allow_headers:
+    - "*"
+
 exa_api_key: "your_exa_api_key_here"
 
 # PostgreSQL example:

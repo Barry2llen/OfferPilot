@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from agent.agents.supervisor import SupervisorAgent
@@ -67,6 +68,13 @@ def create_app(config: Config | None = None) -> FastAPI:
             }
         ],
         lifespan=lifespan,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=target_config.cors.allow_origins,
+        allow_credentials=target_config.cors.allow_credentials,
+        allow_methods=target_config.cors.allow_methods,
+        allow_headers=target_config.cors.allow_headers,
     )
     app.include_router(resume_router)
     app.include_router(model_config_router)

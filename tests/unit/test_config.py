@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 from ruamel.yaml import YAML
 
-from schemas.config import Config, PostgreSQLDatabaseConfig, SQLiteDatabaseConfig, load_config
+from schemas.config import Config, CorsConfig, PostgreSQLDatabaseConfig, SQLiteDatabaseConfig, load_config
 
 
 def test_config_validation_rejects_mixed_database_fields() -> None:
@@ -25,6 +25,11 @@ def test_default_config_uses_sqlite() -> None:
     assert config.database.type == "sqlite"
     assert config.database.path == "./data/offer_pilot.db"
     assert config.resume_upload_dir == "./data/resumes"
+    assert isinstance(config.cors, CorsConfig)
+    assert config.cors.allow_origins == ["*"]
+    assert config.cors.allow_methods == ["*"]
+    assert config.cors.allow_headers == ["*"]
+    assert config.cors.allow_credentials is False
 
 
 def test_config_loads_example(sample_config: Config) -> None:
@@ -32,6 +37,7 @@ def test_config_loads_example(sample_config: Config) -> None:
     assert sample_config.database.type == "sqlite"
     assert sample_config.database.path == "./data/offer_pilot.db"
     assert sample_config.resume_upload_dir == "./data/resumes"
+    assert sample_config.cors.allow_origins == ["*"]
 
 
 def test_postgresql_config_parses_correctly() -> None:

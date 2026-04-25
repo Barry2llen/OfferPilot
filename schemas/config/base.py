@@ -13,11 +13,20 @@ class WebSearchConfig(BaseModel):
     max_characters: int = 2000
     guiding_query: str | None = None
 
+
+class CorsConfig(BaseModel):
+    allow_origins: list[str] = Field(default_factory=lambda: ["*"])
+    allow_credentials: bool = False
+    allow_methods: list[str] = Field(default_factory=lambda: ["*"])
+    allow_headers: list[str] = Field(default_factory=lambda: ["*"])
+
+
 class Config(BaseModel):
     """Configuration for the application."""
 
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
+    cors: CorsConfig = Field(default_factory=CorsConfig)
 
     resume_upload_dir: str = "./data/resumes"
 
@@ -43,6 +52,11 @@ def _normalize_config_data(config_data: dict[str, Any] | None) -> dict[str, Any]
         web_search_config = legacy_config.get("web_search")
         if web_search_config is not None:
             normalized["web_search"] = web_search_config
+
+    if "cors" not in normalized and isinstance(legacy_config, dict):
+        cors_config = legacy_config.get("cors")
+        if cors_config is not None:
+            normalized["cors"] = cors_config
 
     return normalized
 
@@ -72,4 +86,4 @@ def reload_config(config_path: str = "config.yaml") -> Config:
     load_config.cache_clear()
     return load_config(config_path)
 
-__all__ = ["Config", "load_config", "reload_config"]
+__all__ = ["Config", "CorsConfig", "load_config", "reload_config"]
