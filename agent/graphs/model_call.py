@@ -2,6 +2,7 @@
 import asyncio
 
 from typing import (
+    Any,
     Sequence
 )
 
@@ -9,7 +10,7 @@ from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
-from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
+from langchain_core.messages import AIMessage, ToolMessage, ToolCall, BaseMessage
 
 from exceptions import AgentStateError, ModelCallExecutionError
 from ..models import load_chat_model
@@ -22,6 +23,67 @@ from schemas.config.base import Config
 from schemas.config import load_config
 from schemas.command import BaseCommand
 from utils.logger import logger
+
+
+def _uses_deepseek(model_selection: object) -> bool:
+    provider = getattr(model_selection, "provider", None)
+    values = [
+        getattr(model_selection, "model_name", None),
+        getattr(provider, "provider", None),
+        getattr(provider, "name", None),
+        getattr(provider, "base_url", None),
+    ]
+    return any("deepseek" in str(value).lower() for value in values if value)
+
+
+def _copy_reasoning_content(
+    source_messages: list[BaseMessage],
+    payload_messages: list[dict[str, Any]],
+) -> None:
+    for source_message, payload_message in zip(source_messages, payload_messages):
+        if not isinstance(source_message, AIMessage):
+            continue
+
+        if payload_message.get("role") != "assistant":
+            continue
+
+        if "reasoning_content" not in source_message.additional_kwargs:
+            continue
+
+        reasoning_content = source_message.additional_kwargs["reasoning_content"]
+        if reasoning_content is not None:
+            payload_message["reasoning_content"] = reasoning_content
+
+
+def _preserve_deepseek_reasoning_content(model: object, model_selection: object) -> object:
+    if not _uses_deepseek(model_selection):
+        return model
+
+    if getattr(model, "_offerpilot_preserves_reasoning_content", False):
+        return model
+
+    get_request_payload = getattr(model, "_get_request_payload", None)
+    convert_input = getattr(model, "_convert_input", None)
+    if not callable(get_request_payload) or not callable(convert_input):
+        return model
+
+    def _get_request_payload_with_reasoning(
+        input_: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        payload = get_request_payload(input_, *args, **kwargs)
+        payload_messages = payload.get("messages")
+        if not isinstance(payload_messages, list):
+            return payload
+
+        source_messages = convert_input(input_).to_messages()
+        _copy_reasoning_content(source_messages, payload_messages)
+        return payload
+
+    setattr(model, "_get_request_payload", _get_request_payload_with_reasoning)
+    setattr(model, "_offerpilot_preserves_reasoning_content", True)
+    return model
 
 
 class ModelCallGraph(BaseGraph):
@@ -112,7 +174,9 @@ class ModelCallGraph(BaseGraph):
             model_selection = state['model']
             if callable(model_selection):
                 model_selection = model_selection(state=state)
-            model = load_chat_model(model_selection).bind_tools(self.tools)
+            base_model = load_chat_model(model_selection)
+            base_model = _preserve_deepseek_reasoning_content(base_model, model_selection)
+            model = base_model.bind_tools(self.tools)
         except Exception as e:
             logger.error(f"Error loading model: {e}")
             resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Error loading model: {e}"))
