@@ -15,6 +15,7 @@ from langgraph.checkpoint.base import (
     get_checkpoint_id,
     get_checkpoint_metadata,
 )
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from db.engine import AsyncDatabaseManager, DatabaseManager
 from db.models import (
@@ -23,6 +24,10 @@ from db.models import (
     GraphCheckpointWriteORM,
 )
 from db.repositories import AsyncCheckpointRepository, CheckpointRepository
+
+ALLOWED_CHECKPOINT_MSGPACK_MODULES = [
+    ("schemas.model_selection", "ModelSelection"),
+]
 
 
 class DatabaseCheckpointer(BaseCheckpointSaver[str]):
@@ -35,7 +40,12 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
         *,
         serde: Any | None = None,
     ) -> None:
-        super().__init__(serde=serde)
+        super().__init__(
+            serde=serde
+            or JsonPlusSerializer(
+                allowed_msgpack_modules=ALLOWED_CHECKPOINT_MSGPACK_MODULES,
+            )
+        )
         self._sync_manager = sync_manager
         self._async_manager = async_manager
 

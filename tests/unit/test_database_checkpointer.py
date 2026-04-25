@@ -1,10 +1,13 @@
 import asyncio
+import logging
 
 from langgraph.checkpoint.serde.types import ERROR
 
 from agent.checkpointers import DatabaseCheckpointer
 from db.engine import AsyncDatabaseManager, DatabaseManager
 from db.repositories import CheckpointRepository
+from schemas.model_provider import ModelProvider
+from schemas.model_selection import ModelSelection
 
 
 def make_config(
@@ -112,6 +115,45 @@ def test_database_checkpointer_round_trip_and_list_filters(
         )
     )
     assert [item.checkpoint["id"] for item in before_items] == [first_checkpoint["id"]]
+
+
+def test_database_checkpointer_allows_model_selection_deserialization_without_warning(
+    temporary_database_manager: DatabaseManager,
+    temporary_async_database_manager: AsyncDatabaseManager,
+    caplog,
+) -> None:
+    checkpointer = create_checkpointer(
+        temporary_database_manager,
+        temporary_async_database_manager,
+    )
+    selection = ModelSelection(
+        id=1,
+        provider=ModelProvider(provider="OpenAI", name="default-openai"),
+        model_name="gpt-4o-mini",
+    )
+    checkpoint = make_checkpoint(
+        "00000000000000000000000000000003.0000000000000001",
+        message="hello",
+        version="00000000000000000000000000000003.0000000000000001",
+        updated_channels=["model", "messages"],
+    )
+    checkpoint["channel_values"]["model"] = selection
+    checkpoint["channel_versions"]["model"] = checkpoint["channel_versions"]["messages"]
+
+    checkpointer.put(
+        make_config("thread-model-selection"),
+        checkpoint,
+        {"source": "input", "step": -1, "run_id": "run-model", "parents": {}},
+        checkpoint["channel_versions"],
+    )
+
+    caplog.clear()
+    caplog.set_level(logging.WARNING)
+    loaded = checkpointer.get_tuple(make_config("thread-model-selection"))
+
+    assert loaded is not None
+    assert loaded.checkpoint["channel_values"]["model"] == selection
+    assert "Deserializing unregistered type" not in caplog.text
 
 
 def test_database_checkpointer_put_writes_is_idempotent_and_overwrites_error_entries(
