@@ -112,6 +112,15 @@ def _extract_chunk_text(chunk: Any) -> str:
     return ""
 
 
+def _extract_chunk_reasoning(chunk: Any) -> str:
+    additional_kwargs = getattr(chunk, "additional_kwargs", None)
+    if not isinstance(additional_kwargs, dict):
+        return ""
+
+    reasoning_content = additional_kwargs.get("reasoning_content")
+    return reasoning_content if isinstance(reasoning_content, str) else ""
+
+
 def _extract_event_output(event: dict[str, Any]) -> dict[str, Any] | None:
     data = event.get("data")
     if not isinstance(data, dict):
@@ -339,7 +348,7 @@ async def chat(
     responses={
         200: {
             "description": (
-                "返回 SSE 事件流。事件包括 thread、token、tool_start、tool_end、"
+                "返回 SSE 事件流。事件包括 thread、token、reasoning、tool_start、tool_end、"
                 "tool_error、interrupt、final，失败时返回 error。"
             ),
             "content": {
@@ -453,7 +462,8 @@ async def chat_stream(
                     continue
 
                 if event_name in {"on_chat_model_stream", "on_llm_stream"}:
-                    text = _extract_chunk_text(data.get("chunk"))
+                    chunk = data.get("chunk")
+                    text = _extract_chunk_text(chunk)
                     if text:
                         yield _sse(
                             "token",
@@ -462,6 +472,16 @@ async def chat_stream(
                                 "content": text,
                             },
                         )
+                    else:
+                        reasoning = _extract_chunk_reasoning(chunk)
+                        if reasoning:
+                            yield _sse(
+                                "reasoning",
+                                {
+                                    "thread_id": thread_id,
+                                    "content": reasoning,
+                                },
+                            )
 
                 output = _extract_event_output(event)
                 if output is not None:

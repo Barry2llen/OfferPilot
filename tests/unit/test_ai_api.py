@@ -451,6 +451,69 @@ def test_ai_chat_stream_endpoint_returns_sse_final_event(
     assert 'event: final\ndata: {"thread_id": "thread-stream", "content": "streamed response"}' in response.text
 
 
+def test_ai_chat_stream_endpoint_returns_reasoning_event(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_chat_model_stream",
+                    "data": {
+                        "chunk": AIMessageChunk(
+                            content="",
+                            additional_kwargs={"reasoning_content": "正在分析问题。"},
+                        )
+                    },
+                }
+                yield {
+                    "event": "on_chat_model_stream",
+                    "data": {"chunk": AIMessageChunk(content="最终答案")},
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="最终答案")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-reasoning",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: reasoning\ndata: {"thread_id": "thread-reasoning", '
+        '"content": "正在分析问题。"}'
+        in response.text
+    )
+    assert (
+        'event: token\ndata: {"thread_id": "thread-reasoning", '
+        '"content": "最终答案"}'
+        in response.text
+    )
+    assert (
+        'event: final\ndata: {"thread_id": "thread-reasoning", '
+        '"content": "最终答案"}'
+        in response.text
+    )
+
+
 def test_ai_chat_stream_endpoint_returns_structured_final_content(
     temporary_app_config: Config,
 ) -> None:
@@ -746,6 +809,7 @@ def test_ai_chat_stream_openapi_documents_interrupt_and_retry(
 
     stream_operation = payload["paths"]["/ai/chat/stream"]["post"]
     assert "interrupt" in stream_operation["responses"]["200"]["description"]
+    assert "reasoning" in stream_operation["responses"]["200"]["description"]
     assert "retry" in stream_operation["description"]
 
 
