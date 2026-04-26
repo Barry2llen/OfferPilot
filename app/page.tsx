@@ -5,7 +5,9 @@ import Link from "next/link";
 import { aiChatApi } from "@/app/lib/api/ai";
 import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
 import { useChatStream } from "@/app/hooks/use-chat-stream";
-import ChatMessage from "@/app/components/chat/chat-message";
+import ChatMessage, {
+  StreamingAssistantMessage,
+} from "@/app/components/chat/chat-message";
 import ChatInput from "@/app/components/chat/chat-input";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
 import ContextPanel from "@/app/components/chat/context-panel";
@@ -21,7 +23,7 @@ export default function Home() {
   const {
     messages,
     streamingText,
-    reasoningSteps,
+    streamingReasoning,
     toolCalls,
     interrupt,
     streamError,
@@ -42,7 +44,7 @@ export default function Home() {
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText]);
+  }, [messages, streamingText, streamingReasoning]);
 
   const handleSend = useCallback(
     (prompt: string) => {
@@ -175,19 +177,13 @@ export default function Home() {
                 <ChatMessage key={i} message={msg} />
               ))}
 
-              {/* Streaming text */}
-              {streamingText && (
-                <div className="flex gap-3 py-2">
-                  <div className="w-7 h-7 rounded-full bg-brand-blue/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <svg className="w-3.5 h-3.5 text-brand-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                  <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-surface-secondary text-text-primary rounded-bl-md">
-                    <span className="whitespace-pre-wrap">{streamingText}</span>
-                    <span className="inline-block w-1.5 h-4 bg-primary-500 animate-pulse ml-0.5 align-middle" />
-                  </div>
-                </div>
+              {/* Streaming assistant message */}
+              {(isStreaming || streamingText || streamingReasoning) && (
+                <StreamingAssistantMessage
+                  content={streamingText}
+                  reasoning={streamingReasoning}
+                  waiting={isStreaming}
+                />
               )}
 
               {/* Interrupt message */}
@@ -218,9 +214,9 @@ export default function Home() {
 
         {/* Agent timeline */}
         <AgentTimeline
-          reasoningSteps={reasoningSteps}
           toolCalls={toolCalls}
           streamingText={streamingText}
+          isStreaming={isStreaming}
         />
 
         {/* Input */}

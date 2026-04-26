@@ -19,6 +19,7 @@ export interface ToolCallEntry {
 export interface ChatMessage {
   role: "user" | "assistant" | "tool";
   content: string;
+  reasoning?: string;
   toolCallId?: string;
   toolName?: string;
   toolStatus?: string;
@@ -86,7 +87,7 @@ export function useChatStream() {
     useAppActions();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
-  const [reasoningSteps, setReasoningSteps] = useState<string[]>([]);
+  const [streamingReasoning, setStreamingReasoning] = useState("");
   const [toolCalls, setToolCalls] = useState<ToolCallEntry[]>([]);
   const [interrupt, setInterrupt] = useState<{
     interruptId: string;
@@ -98,7 +99,7 @@ export function useChatStream() {
 
   const clearStreamingState = useCallback(() => {
     setStreamingText("");
-    setReasoningSteps([]);
+    setStreamingReasoning("");
     setToolCalls([]);
     setInterrupt(null);
     setStreamError(null);
@@ -130,6 +131,7 @@ export function useChatStream() {
       }
 
       let accumulatedText = "";
+      let accumulatedReasoning = "";
       const currentToolCalls: ToolCallEntry[] = [];
 
       try {
@@ -169,7 +171,8 @@ export function useChatStream() {
                 if (!reasoning) {
                   break;
                 }
-                setReasoningSteps((prev) => [...prev, reasoning]);
+                accumulatedReasoning += reasoning;
+                setStreamingReasoning(accumulatedReasoning);
                 break;
               }
 
@@ -252,10 +255,15 @@ export function useChatStream() {
                 if (finalContent) {
                   setMessages((prev) => [
                     ...prev,
-                    { role: "assistant", content: finalContent },
+                    {
+                      role: "assistant",
+                      content: finalContent,
+                      reasoning: accumulatedReasoning || undefined,
+                    },
                   ]);
                 }
                 setStreamingText("");
+                setStreamingReasoning("");
                 setAgentStatus("idle");
                 setIsStreaming(false);
                 bumpChatHistoryVersion();
@@ -333,7 +341,7 @@ export function useChatStream() {
   return {
     messages,
     streamingText,
-    reasoningSteps,
+    streamingReasoning,
     toolCalls,
     interrupt,
     streamError,
