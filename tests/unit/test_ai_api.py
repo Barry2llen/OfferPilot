@@ -597,12 +597,12 @@ def test_ai_chat_stream_endpoint_returns_tool_events(
             ):
                 yield {
                     "event": "on_tool_start",
-                    "name": "web_search_exa",
+                    "name": "custom_tool",
                     "data": {"input": {"query": "OfferPilot"}},
                 }
                 yield {
                     "event": "on_tool_end",
-                    "name": "web_search_exa",
+                    "name": "custom_tool",
                     "data": {"output": "search result"},
                 }
                 yield {
@@ -623,14 +623,222 @@ def test_ai_chat_stream_endpoint_returns_tool_events(
 
     assert response.status_code == 200
     assert (
-        'event: tool_start\ndata: {"thread_id": "thread-tools", "tool_name": "web_search_exa", "input": {"query": "OfferPilot"}}'
+        'event: tool_start\ndata: {"thread_id": "thread-tools", "tool_name": "custom_tool", "input": {"query": "OfferPilot"}}'
         in response.text
     )
     assert (
-        'event: tool_end\ndata: {"thread_id": "thread-tools", "tool_name": "web_search_exa", "output": "search result"}'
+        'event: tool_end\ndata: {"thread_id": "thread-tools", "tool_name": "custom_tool", "output": "search result"}'
         in response.text
     )
     assert 'event: final\ndata: {"thread_id": "thread-tools", "content": "done"}' in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_web_search_tool_output(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    class FakeSearchResult:
+        def __init__(
+            self,
+            *,
+            url: str,
+            title: str | None = None,
+            favicon: str | None = None,
+            highlights: list[str] | None = None,
+        ) -> None:
+            self.url = url
+            self.title = title
+            self.favicon = favicon
+            self.highlights = highlights
+
+    class FakeSearchResponse:
+        def __init__(self) -> None:
+            self.results = [
+                FakeSearchResult(
+                    url="https://example.com/a",
+                    title="Example A",
+                    favicon="https://example.com/favicon.ico",
+                    highlights=["private highlight"],
+                ),
+                FakeSearchResult(
+                    url="https://example.com/b",
+                    title="Example B",
+                    highlights=["another private highlight"],
+                ),
+            ]
+            self.cost_dollars = {"total": 1}
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "web_search_exa",
+                    "data": {"output": FakeSearchResponse()},
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-web-search-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-web-search-summary", '
+        '"tool_name": "web_search_exa", "output": [{"url": "https://example.com/a", '
+        '"title": "Example A", "favicon": "https://example.com/favicon.ico"}, '
+        '{"url": "https://example.com/b", "title": "Example B"}]}'
+        in response.text
+    )
+    assert "private highlight" not in response.text
+    assert "cost_dollars" not in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_find_similar_tool_output(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "find_similar_exa",
+                    "data": {
+                        "output": {
+                            "results": [
+                                {
+                                    "url": "https://example.com/similar",
+                                    "title": "Similar Page",
+                                    "favicon": "https://example.com/favicon.ico",
+                                    "text": "private page text",
+                                    "score": 0.98,
+                                }
+                            ],
+                            "cost_dollars": {"total": 1},
+                        }
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-find-similar-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-find-similar-summary", '
+        '"tool_name": "find_similar_exa", "output": [{"url": "https://example.com/similar", '
+        '"title": "Similar Page", "favicon": "https://example.com/favicon.ico"}]}'
+        in response.text
+    )
+    assert "private page text" not in response.text
+    assert "cost_dollars" not in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_search_tool_message_text_output(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "web_search_exa",
+                    "data": {
+                        "output": ToolMessage(
+                            content=(
+                                "Title: Example A\n"
+                                "URL: https://example.com/a\n"
+                                "ID: result-a\n"
+                                "Favicon: https://example.com/favicon.ico\n"
+                                "Highlights: ['private highlight']\n\n"
+                                "Title: Example B\n"
+                                "URL: https://example.com/b\n"
+                                "ID: result-b\n"
+                                "Favicon: None\n"
+                                "Text: private page text"
+                            ),
+                            tool_call_id="call-1",
+                            name="web_search_exa",
+                            status="success",
+                        )
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-search-text-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-search-text-summary", '
+        '"tool_name": "web_search_exa", "output": [{"url": "https://example.com/a", '
+        '"title": "Example A", "favicon": "https://example.com/favicon.ico"}, '
+        '{"url": "https://example.com/b", "title": "Example B"}]}'
+        in response.text
+    )
+    assert "private highlight" not in response.text
+    assert "private page text" not in response.text
 
 
 def test_ai_chat_stream_endpoint_returns_tool_error_event(
@@ -810,6 +1018,7 @@ def test_ai_chat_stream_openapi_documents_interrupt_and_retry(
     stream_operation = payload["paths"]["/ai/chat/stream"]["post"]
     assert "interrupt" in stream_operation["responses"]["200"]["description"]
     assert "reasoning" in stream_operation["responses"]["200"]["description"]
+    assert "url、title、favicon" in stream_operation["responses"]["200"]["description"]
     assert "retry" in stream_operation["description"]
 
 

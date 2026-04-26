@@ -179,6 +179,92 @@ def _is_tool_error_output(output: Any) -> bool:
     return False
 
 
+_SEARCH_RESULT_TOOL_NAMES = {"web_search_exa", "find_similar_exa"}
+_SEARCH_RESULT_FRONTEND_FIELDS = ("url", "title", "favicon")
+_SEARCH_RESULT_TEXT_FIELD_MAP = {
+    "URL": "url",
+    "Title": "title",
+    "Favicon": "favicon",
+}
+
+
+def _get_field_value(value: Any, field: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(field)
+    return getattr(value, field, None)
+
+
+def _extract_search_results(output: Any) -> list[Any] | None:
+    if isinstance(output, BaseMessage):
+        output = output.content
+
+    if isinstance(output, str):
+        try:
+            output = json.loads(output)
+        except json.JSONDecodeError:
+            parsed_results = _parse_search_result_text(output)
+            return parsed_results if parsed_results else None
+
+    if isinstance(output, dict):
+        results = output.get("results")
+    elif isinstance(output, list | tuple):
+        results = output
+    else:
+        results = getattr(output, "results", None)
+
+    return list(results) if isinstance(results, list | tuple) else None
+
+
+def _parse_search_result_text(output: str) -> list[dict[str, str]]:
+    results: list[dict[str, str]] = []
+    for block in output.split("\n\n"):
+        result: dict[str, str] = {}
+        for line in block.splitlines():
+            key, separator, value = line.partition(":")
+            if not separator:
+                continue
+
+            field = _SEARCH_RESULT_TEXT_FIELD_MAP.get(key.strip())
+            if field is None:
+                continue
+
+            cleaned_value = value.strip()
+            if cleaned_value and cleaned_value != "None":
+                result[field] = cleaned_value
+
+        if "url" in result:
+            results.append(result)
+
+    return results
+
+
+def _summarize_search_tool_output(output: Any) -> list[dict[str, Any]]:
+    results = _extract_search_results(output)
+    if results is None:
+        return []
+
+    summaries: list[dict[str, Any]] = []
+    for result in results:
+        summary = {
+            field: _get_field_value(result, field)
+            for field in _SEARCH_RESULT_FRONTEND_FIELDS
+        }
+        summaries.append(
+            {
+                field: value
+                for field, value in summary.items()
+                if value is not None
+            }
+        )
+    return summaries
+
+
+def _summarize_tool_output_for_stream(tool_name: str, output: Any) -> Any:
+    if tool_name in _SEARCH_RESULT_TOOL_NAMES:
+        return _summarize_search_tool_output(output)
+    return output
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
 
@@ -349,7 +435,8 @@ async def chat(
         200: {
             "description": (
                 "返回 SSE 事件流。事件包括 thread、token、reasoning、tool_start、tool_end、"
-                "tool_error、interrupt、final，失败时返回 error。"
+                "tool_error、interrupt、final，失败时返回 error。搜索类工具的 tool_end.output "
+                "仅包含前端安全摘要字段 url、title、favicon。"
             ),
             "content": {
                 "text/event-stream": {
@@ -445,7 +532,10 @@ async def chat_stream(
                         {
                             "thread_id": thread_id,
                             "tool_name": tool_name,
-                            "output": output,
+                            "output": _summarize_tool_output_for_stream(
+                                tool_name,
+                                output,
+                            ),
                         },
                     )
                     continue
