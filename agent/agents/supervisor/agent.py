@@ -13,7 +13,10 @@ from ...base import BaseAgent
 class SupervisorAgent(BaseAgent[State]):
     
     system_prompt = SystemMessage(
-        content="You are a helpful assistant."
+        content = (
+            "You are a helpful assistant.\n" /
+            f"Today is {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}."
+        )
     )
 
     def __init__(
