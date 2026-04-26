@@ -2,10 +2,16 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonStyleOptions {
   variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md" | "lg";
   pill?: boolean;
+  className?: string;
+}
+
+interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement>,
+    ButtonStyleOptions {
   children: ReactNode;
 }
 
@@ -29,6 +35,17 @@ const sizes: Record<string, string> = {
   lg: "text-base h-12 px-6 rounded-xl",
 };
 
+export function buttonClassName({
+  variant = "primary",
+  size = "md",
+  pill = false,
+  className = "",
+}: ButtonStyleOptions = {}): string {
+  return `${base} ${variants[variant]} ${sizes[size]} ${
+    pill ? "rounded-[9999px]" : ""
+  } ${className}`.trim();
+}
+
 export default function Button({
   variant = "primary",
   size = "md",
@@ -39,9 +56,7 @@ export default function Button({
 }: ButtonProps) {
   return (
     <button
-      className={`${base} ${variants[variant]} ${sizes[size]} ${
-        pill ? "rounded-[9999px]" : ""
-      } ${className}`}
+      className={buttonClassName({ variant, size, pill, className })}
       {...props}
     >
       {children}

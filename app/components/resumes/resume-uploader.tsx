@@ -9,9 +9,13 @@ import type { ResumeDetail } from "@/app/lib/api/types";
 
 interface ResumeUploaderProps {
   onUploaded: (detail: ResumeDetail) => void;
+  uploadFile?: (file: File) => Promise<ResumeDetail>;
 }
 
-export default function ResumeUploader({ onUploaded }: ResumeUploaderProps) {
+export default function ResumeUploader({
+  onUploaded,
+  uploadFile = resumesApi.upload,
+}: ResumeUploaderProps) {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -27,7 +31,7 @@ export default function ResumeUploader({ onUploaded }: ResumeUploaderProps) {
       setFile(f);
       setUploading(true);
       try {
-        const detail = await resumesApi.upload(f);
+        const detail = await uploadFile(f);
         addToast(`「${f.name}」上传成功`, "success");
         setFile(null);
         onUploaded(detail);
@@ -38,7 +42,7 @@ export default function ResumeUploader({ onUploaded }: ResumeUploaderProps) {
         setUploading(false);
       }
     },
-    [addToast, onUploaded]
+    [addToast, onUploaded, uploadFile]
   );
 
   const onDrop = useCallback(

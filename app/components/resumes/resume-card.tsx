@@ -3,13 +3,11 @@
 import Link from "next/link";
 import Card from "@/app/components/ui/card";
 import Badge from "@/app/components/ui/badge";
-import Button from "@/app/components/ui/button";
+import Button, { buttonClassName } from "@/app/components/ui/button";
 import type { ResumeListItem } from "@/app/lib/api/types";
 
 interface ResumeCardProps {
   resume: ResumeListItem;
-  isContext: boolean;
-  onSetContext: (id: number) => void;
   onDelete: (resume: ResumeListItem) => void;
   deleting: boolean;
 }
@@ -36,8 +34,6 @@ function mediaLabel(type: string | null): string {
 
 export default function ResumeCard({
   resume,
-  isContext,
-  onSetContext,
   onDelete,
   deleting,
 }: ResumeCardProps) {
@@ -55,11 +51,6 @@ export default function ResumeCard({
             <Badge variant="neutral" size="sm">
               {mediaLabel(resume.media_type)}
             </Badge>
-            {isContext && (
-              <Badge variant="info" size="sm">
-                当前上下文
-              </Badge>
-            )}
           </div>
           <p className="text-sm text-text-secondary leading-relaxed mb-2 line-clamp-2">
             {resume.content_preview || "(无解析内容)"}
@@ -70,10 +61,11 @@ export default function ResumeCard({
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           <div className="flex items-center gap-2">
-            <Link href={`/resumes/${resume.id}`}>
-              <Button variant="ghost" size="sm">
-                详情
-              </Button>
+            <Link
+              href={`/resumes/${resume.id}`}
+              className={buttonClassName({ variant: "ghost", size: "sm" })}
+            >
+              详情
             </Link>
             <Button
               variant="ghost"
@@ -85,16 +77,6 @@ export default function ResumeCard({
               {deleting ? "删除中..." : "删除"}
             </Button>
           </div>
-          {!isContext && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onSetContext(resume.id)}
-              className="w-full"
-            >
-              设为上下文
-            </Button>
-          )}
         </div>
       </div>
     </Card>

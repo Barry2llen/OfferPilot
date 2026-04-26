@@ -6,7 +6,6 @@ import { useAppActions } from "@/app/lib/context/app-context";
 import type {
   SSEEvent,
   AIChatHistoryMessage,
-  SSEToolCallData,
 } from "@/app/lib/api/types";
 
 export interface ToolCallEntry {
@@ -25,10 +24,69 @@ export interface ChatMessage {
   toolStatus?: string;
 }
 
+function extractTextContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    const parts = content.flatMap((item) => {
+      if (typeof item === "string") {
+        return [item];
+      }
+      if (
+        item &&
+        typeof item === "object" &&
+        "text" in item &&
+        typeof item.text === "string"
+      ) {
+        return [item.text];
+      }
+      return [];
+    });
+
+    return parts.join("");
+  }
+
+  return "";
+}
+
+function formatDisplayContent(content: unknown): string {
+  const text = extractTextContent(content);
+  if (text) {
+    return text;
+  }
+
+  if (content == null) {
+    return "";
+  }
+
+  try {
+    return JSON.stringify(content, null, 2);
+  } catch {
+    return String(content);
+  }
+}
+
+function findLastRunningToolCallIndex(
+  toolCalls: ToolCallEntry[],
+  name: string
+): number {
+  for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
+    if (toolCalls[index].name === name && toolCalls[index].status === "running") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
 export function useChatStream() {
-  const { setThreadId, setAgentStatus } = useAppActions();
+  const { setThreadId, setAgentStatus, bumpChatHistoryVersion } =
+    useAppActions();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
+  const [reasoningSteps, setReasoningSteps] = useState<string[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCallEntry[]>([]);
   const [interrupt, setInterrupt] = useState<{
     interruptId: string;
@@ -40,10 +98,15 @@ export function useChatStream() {
 
   const clearStreamingState = useCallback(() => {
     setStreamingText("");
+    setReasoningSteps([]);
     setToolCalls([]);
     setInterrupt(null);
     setStreamError(null);
     setIsStreaming(false);
+  }, []);
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
   }, []);
 
   const startChat = useCallback(
@@ -87,24 +150,32 @@ export function useChatStream() {
                   (event.data as Record<string, unknown>).thread_id;
                 if (typeof tid === "string") {
                   setThreadId(tid);
+                  bumpChatHistoryVersion();
                 }
                 break;
               }
 
               case "token": {
-                const token =
-                  (event.data.content as string) ||
-                  (event.data.token as string) ||
-                  "";
+                const token = extractTextContent(
+                  event.data.content ?? event.data.token ?? ""
+                );
                 accumulatedText += token;
                 setStreamingText(accumulatedText);
                 break;
               }
 
+              case "reasoning": {
+                const reasoning = extractTextContent(event.data.content);
+                if (!reasoning) {
+                  break;
+                }
+                setReasoningSteps((prev) => [...prev, reasoning]);
+                break;
+              }
+
               case "tool_start": {
                 setAgentStatus("tool_calling");
-                const name =
-                  (event.data.name as string) || "unknown_tool";
+                const name = (event.data.tool_name as string) || "unknown_tool";
                 const input = event.data.input as
                   | Record<string, unknown>
                   | undefined;
@@ -119,39 +190,47 @@ export function useChatStream() {
               }
 
               case "tool_end": {
-                const name =
-                  (event.data.name as string) || "unknown_tool";
+                const name = (event.data.tool_name as string) || "unknown_tool";
                 const output = event.data.output;
-                const idx = currentToolCalls.findIndex(
-                  (t) => t.name === name && t.status === "running"
-                );
+                const idx = findLastRunningToolCallIndex(currentToolCalls, name);
                 if (idx >= 0) {
                   currentToolCalls[idx] = {
                     ...currentToolCalls[idx],
                     output,
                     status: "success",
                   };
-                  setToolCalls([...currentToolCalls]);
+                } else {
+                  currentToolCalls.push({
+                    name,
+                    output,
+                    status: "success",
+                  });
                 }
+                setToolCalls([...currentToolCalls]);
                 setAgentStatus("generating");
                 break;
               }
 
               case "tool_error": {
-                const name =
-                  (event.data.name as string) || "unknown_tool";
-                const errMsg = (event.data.error as string) || "Tool error";
-                const idx = currentToolCalls.findIndex(
-                  (t) => t.name === name && t.status === "running"
-                );
+                const name = (event.data.tool_name as string) || "unknown_tool";
+                const errMsg =
+                  extractTextContent(event.data.detail ?? event.data.error) ||
+                  "Tool error";
+                const idx = findLastRunningToolCallIndex(currentToolCalls, name);
                 if (idx >= 0) {
                   currentToolCalls[idx] = {
                     ...currentToolCalls[idx],
                     error: errMsg,
                     status: "error",
                   };
-                  setToolCalls([...currentToolCalls]);
+                } else {
+                  currentToolCalls.push({
+                    name,
+                    error: errMsg,
+                    status: "error",
+                  });
                 }
+                setToolCalls([...currentToolCalls]);
                 setAgentStatus("generating");
                 break;
               }
@@ -159,27 +238,27 @@ export function useChatStream() {
               case "interrupt": {
                 setAgentStatus("interrupted");
                 setInterrupt({
-                  interruptId:
-                    (event.data.interrupt_id as string) || "",
-                  message:
-                    (event.data.message as string) ||
-                    "Agent interrupted",
+                  interruptId: (event.data.id as string) || "",
+                  message: extractTextContent(event.data.message) || "Agent interrupted",
                 });
+                setIsStreaming(false);
+                bumpChatHistoryVersion();
                 break;
               }
 
               case "final": {
                 const finalContent =
-                  (event.data.content as string) ||
-                  accumulatedText ||
-                  "";
-                setMessages((prev) => [
-                  ...prev,
-                  { role: "assistant", content: finalContent },
-                ]);
+                  formatDisplayContent(event.data.content) || accumulatedText || "";
+                if (finalContent) {
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: "assistant", content: finalContent },
+                  ]);
+                }
                 setStreamingText("");
                 setAgentStatus("idle");
                 setIsStreaming(false);
+                bumpChatHistoryVersion();
                 break;
               }
 
@@ -202,6 +281,10 @@ export function useChatStream() {
           },
           controller.signal
         );
+
+        if (!controller.signal.aborted) {
+          setIsStreaming(false);
+        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== "AbortError") {
           setStreamError(err.message);
@@ -210,7 +293,12 @@ export function useChatStream() {
         }
       }
     },
-    [clearStreamingState, setAgentStatus, setThreadId]
+    [
+      bumpChatHistoryVersion,
+      clearStreamingState,
+      setAgentStatus,
+      setThreadId,
+    ]
   );
 
   const stopStream = useCallback(() => {
@@ -231,8 +319,7 @@ export function useChatStream() {
     (historyMessages: AIChatHistoryMessage[]) => {
       const msgs: ChatMessage[] = historyMessages.map((m) => ({
         role: m.role as ChatMessage["role"],
-        content:
-          typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        content: formatDisplayContent(m.content),
         toolCallId: m.tool_call_id ?? undefined,
         toolName: m.name ?? undefined,
         toolStatus: m.status ?? undefined,
@@ -246,6 +333,7 @@ export function useChatStream() {
   return {
     messages,
     streamingText,
+    reasoningSteps,
     toolCalls,
     interrupt,
     streamError,
@@ -254,7 +342,7 @@ export function useChatStream() {
     stopStream,
     retry,
     loadHistory,
-    clearMessages: () => setMessages([]),
-    setMessages,
+    clearMessages,
+    resetStreamingState: clearStreamingState,
   };
 }

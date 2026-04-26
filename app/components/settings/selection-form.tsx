@@ -7,11 +7,12 @@ import type {
   ModelSelectionCreate,
   ModelSelectionResponse,
   ModelProviderResponse,
+  ModelSelectionUpdate,
 } from "@/app/lib/api/types";
 
 interface SelectionFormProps {
   initial?: ModelSelectionResponse;
-  onSubmit: (data: ModelSelectionCreate) => Promise<void>;
+  onSubmit: (data: ModelSelectionCreate | ModelSelectionUpdate) => Promise<void>;
   onCancel: () => void;
   submitting: boolean;
 }
@@ -42,7 +43,11 @@ export default function SelectionForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSubmit({ provider_name: providerName, model_name: modelName, supports_image_input: supportsImage });
+    await onSubmit({
+      provider_name: providerName,
+      model_name: modelName,
+      supports_image_input: supportsImage,
+    });
   };
 
   return (
@@ -54,7 +59,6 @@ export default function SelectionForm({
         <select
           value={providerName}
           onChange={(e) => setProviderName(e.target.value)}
-          disabled={isEdit}
           required
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         >

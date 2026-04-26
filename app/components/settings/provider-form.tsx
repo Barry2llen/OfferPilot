@@ -2,11 +2,16 @@
 
 import { useState } from "react";
 import Button from "@/app/components/ui/button";
-import type { Provider, ModelProviderCreate, ModelProviderResponse } from "@/app/lib/api/types";
+import type {
+  Provider,
+  ModelProviderCreate,
+  ModelProviderResponse,
+  ModelProviderUpdate,
+} from "@/app/lib/api/types";
 
 interface ProviderFormProps {
   initial?: ModelProviderResponse;
-  onSubmit: (data: ModelProviderCreate) => Promise<void>;
+  onSubmit: (data: ModelProviderCreate | ModelProviderUpdate) => Promise<void>;
   onCancel: () => void;
   submitting: boolean;
 }
@@ -15,6 +20,7 @@ const providerOptions: { value: Provider; label: string }[] = [
   { value: "OpenAI", label: "OpenAI" },
   { value: "Google", label: "Google" },
   { value: "Anthropic", label: "Anthropic" },
+  { value: "DeepSeek", label: "DeepSeek" },
   { value: "OpenAI Compatible", label: "OpenAI Compatible" },
 ];
 
@@ -36,13 +42,31 @@ export default function ProviderForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const data: ModelProviderCreate = { provider, name };
-    if (baseUrl) data.base_url = baseUrl;
-    if (clearKey) {
-      data.api_key = null;
+
+    const data: ModelProviderCreate | ModelProviderUpdate = isEdit
+      ? {
+          provider,
+          base_url: baseUrl || null,
+        }
+      : {
+          provider,
+          name,
+        };
+
+    if (!isEdit && baseUrl) {
+      data.base_url = baseUrl;
+    }
+
+    if (isEdit) {
+      if (clearKey) {
+        data.api_key = null;
+      } else if (apiKey) {
+        data.api_key = apiKey;
+      }
     } else if (apiKey) {
       data.api_key = apiKey;
     }
+
     await onSubmit(data);
   };
 
@@ -55,7 +79,6 @@ export default function ProviderForm({
         <select
           value={provider}
           onChange={(e) => setProvider(e.target.value as Provider)}
-          disabled={isEdit}
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         >
           {providerOptions.map((opt) => (
@@ -111,7 +134,12 @@ export default function ProviderForm({
         <input
           type="password"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={(e) => {
+            setApiKey(e.target.value);
+            if (e.target.value) {
+              setClearKey(false);
+            }
+          }}
           placeholder={isEdit ? "输入新密钥以更新" : "sk-..."}
           autoComplete="off"
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40"
@@ -122,6 +150,7 @@ export default function ProviderForm({
               type="checkbox"
               checked={clearKey}
               onChange={(e) => setClearKey(e.target.checked)}
+              disabled={!!apiKey}
               className="rounded"
             />
             <span className="text-xs text-text-muted">清空已配置的 API Key</span>

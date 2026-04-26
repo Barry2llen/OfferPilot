@@ -12,21 +12,21 @@ import type { AgentStatus } from "@/app/lib/api/types";
 interface AppState {
   currentModelSelection: number | null;
   currentThreadId: string | null;
-  currentResumeId: number | null;
   agentStatus: AgentStatus;
+  chatHistoryVersion: number;
 }
 
 type AppAction =
   | { type: "SET_MODEL_SELECTION"; payload: number | null }
   | { type: "SET_THREAD_ID"; payload: string | null }
-  | { type: "SET_RESUME_ID"; payload: number | null }
-  | { type: "SET_AGENT_STATUS"; payload: AgentStatus };
+  | { type: "SET_AGENT_STATUS"; payload: AgentStatus }
+  | { type: "BUMP_CHAT_HISTORY_VERSION" };
 
 const initialState: AppState = {
   currentModelSelection: null,
   currentThreadId: null,
-  currentResumeId: null,
   agentStatus: "idle",
+  chatHistoryVersion: 0,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -35,10 +35,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, currentModelSelection: action.payload };
     case "SET_THREAD_ID":
       return { ...state, currentThreadId: action.payload };
-    case "SET_RESUME_ID":
-      return { ...state, currentResumeId: action.payload };
     case "SET_AGENT_STATUS":
       return { ...state, agentStatus: action.payload };
+    case "BUMP_CHAT_HISTORY_VERSION":
+      return {
+        ...state,
+        chatHistoryVersion: state.chatHistoryVersion + 1,
+      };
     default:
       return state;
   }
@@ -76,13 +79,13 @@ export function useAppActions() {
       (id: string | null) => dispatch({ type: "SET_THREAD_ID", payload: id }),
       [dispatch]
     ),
-    setResumeId: useCallback(
-      (id: number | null) => dispatch({ type: "SET_RESUME_ID", payload: id }),
-      [dispatch]
-    ),
     setAgentStatus: useCallback(
       (status: AgentStatus) =>
         dispatch({ type: "SET_AGENT_STATUS", payload: status }),
+      [dispatch]
+    ),
+    bumpChatHistoryVersion: useCallback(
+      () => dispatch({ type: "BUMP_CHAT_HISTORY_VERSION" }),
       [dispatch]
     ),
   };

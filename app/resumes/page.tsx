@@ -3,21 +3,18 @@
 import { useState, useCallback } from "react";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";
-import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
 import { useToast } from "@/app/components/ui/toast";
 import ResumeCard from "@/app/components/resumes/resume-card";
 import ResumeUploader from "@/app/components/resumes/resume-uploader";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Button from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
-import type { ResumeListItem, ResumeDetail } from "@/app/lib/api/types";
+import type { ResumeListItem } from "@/app/lib/api/types";
 
 export default function ResumesPage() {
   const { data, loading, error, refetch } = useAsyncData(() =>
     resumesApi.list()
   );
-  const { state } = useAppContext();
-  const { setResumeId } = useAppActions();
   const { addToast } = useToast();
 
   const [deleting, setDeleting] = useState<number | null>(null);
@@ -25,29 +22,15 @@ export default function ResumesPage() {
     null
   );
 
-  const handleUploaded = useCallback(
-    (_detail: ResumeDetail) => {
-      refetch();
-    },
-    [refetch]
-  );
-
-  const handleSetContext = useCallback(
-    (id: number) => {
-      setResumeId(id);
-      addToast("已设为当前上下文", "success");
-    },
-    [setResumeId, addToast]
-  );
+  const handleUploaded = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
     setDeleting(confirmDelete.id);
     try {
       await resumesApi.delete(confirmDelete.id);
-      if (state.currentResumeId === confirmDelete.id) {
-        setResumeId(null);
-      }
       addToast("简历已删除", "success");
       setConfirmDelete(null);
       refetch();
@@ -89,7 +72,7 @@ export default function ResumesPage() {
           简历库
         </h1>
         <p className="text-sm text-text-muted mt-1">
-          上传和管理简历文件，作为 AI 对话的上下文
+          上传和管理简历文件，查看解析结果与原始预览
         </p>
       </div>
 
@@ -109,8 +92,6 @@ export default function ResumesPage() {
             <ResumeCard
               key={r.id}
               resume={r}
-              isContext={state.currentResumeId === r.id}
-              onSetContext={handleSetContext}
               onDelete={setConfirmDelete}
               deleting={deleting === r.id}
             />

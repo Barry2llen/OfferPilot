@@ -45,15 +45,6 @@ export default function ContextBar() {
         </div>
       )}
 
-      {state.currentResumeId && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-text-muted">简历</span>
-          <span className="font-medium text-text-primary">
-            #{state.currentResumeId}
-          </span>
-        </div>
-      )}
-
       <div className="flex-1" />
 
       <div className="flex items-center gap-1.5">

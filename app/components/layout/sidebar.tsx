@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 
 const navItems = [
   {
@@ -39,16 +38,21 @@ const futureItems = [
   { label: "知识库" },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <>
       <button
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={onToggle}
         className="fixed top-4 left-4 z-50 lg:hidden p-2 rounded-lg bg-white shadow-card border border-border-default"
         aria-label="Toggle sidebar"
+        aria-expanded={!collapsed}
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -122,9 +126,10 @@ export default function Sidebar() {
             </p>
           )}
           <button
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={onToggle}
             className="hidden lg:block w-full mt-1 p-1 rounded-lg hover:bg-black/[0.03] transition-colors"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
           >
             <svg
               className={`w-4 h-4 mx-auto text-text-muted transition-transform ${

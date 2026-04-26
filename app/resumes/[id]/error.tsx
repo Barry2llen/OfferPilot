@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import Button from "@/app/components/ui/button";
+import Button, { buttonClassName } from "@/app/components/ui/button";
 
 export default function ResumeDetailError({
   error,
@@ -19,8 +19,11 @@ export default function ResumeDetailError({
         <p className="text-sm text-text-secondary mb-6">{error.message}</p>
         <div className="flex gap-3 justify-center">
           <Button onClick={unstable_retry}>重试</Button>
-          <Link href="/resumes">
-            <Button variant="ghost">返回列表</Button>
+          <Link
+            href="/resumes"
+            className={buttonClassName({ variant: "ghost" })}
+          >
+            返回列表
           </Link>
         </div>
       </div>

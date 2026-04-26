@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import Button from "@/app/components/ui/button";
 
 interface QuickTasksProps {

@@ -1,5 +1,10 @@
 // ─── Provider Enum ───
-export type Provider = "OpenAI" | "Google" | "Anthropic" | "OpenAI Compatible";
+export type Provider =
+  | "OpenAI"
+  | "Google"
+  | "Anthropic"
+  | "DeepSeek"
+  | "OpenAI Compatible";
 
 // ─── Resumes ───
 export interface ResumeListItem {
@@ -125,6 +130,7 @@ export interface AIChatStreamRequest {
 export type SSEEventType =
   | "thread"
   | "token"
+  | "reasoning"
   | "tool_start"
   | "tool_end"
   | "tool_error"
@@ -143,14 +149,15 @@ export interface SSETokenData {
 }
 
 export interface SSEToolCallData {
-  name: string;
+  tool_name: string;
   input?: Record<string, unknown>;
   output?: unknown;
-  error?: string;
+  detail?: string;
 }
 
 export interface SSEInterruptData {
-  interrupt_id: string;
+  id?: string;
+  type?: string;
   message: string;
 }
 

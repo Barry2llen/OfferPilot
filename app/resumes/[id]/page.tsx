@@ -1,25 +1,22 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";
-import { useAppActions, useAppContext } from "@/app/lib/context/app-context";
 import { useToast } from "@/app/components/ui/toast";
-import Button from "@/app/components/ui/button";
+import Button, { buttonClassName } from "@/app/components/ui/button";
 import Badge from "@/app/components/ui/badge";
 import Card from "@/app/components/ui/card";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Spinner from "@/app/components/ui/spinner";
 import ResumeUploader from "@/app/components/resumes/resume-uploader";
-import type { ResumeDetail } from "@/app/lib/api/types";
 
 export default function ResumeDetailPage() {
   const params = useParams();
   const id = Number(params.id);
-  const { state } = useAppContext();
-  const { setResumeId } = useAppActions();
   const { addToast } = useToast();
 
   const { data: resume, loading, error, refetch } = useAsyncData(
@@ -31,11 +28,6 @@ export default function ResumeDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [operating, setOperating] = useState(false);
 
-  const handleSetContext = useCallback(() => {
-    setResumeId(id);
-    addToast("已设为当前上下文", "success");
-  }, [id, setResumeId, addToast]);
-
   const handleCopyText = useCallback(() => {
     if (resume?.content) {
       navigator.clipboard.writeText(resume.content);
@@ -44,7 +36,7 @@ export default function ResumeDetailPage() {
   }, [resume, addToast]);
 
   const handleReplace = useCallback(
-    async (detail: ResumeDetail) => {
+    async () => {
       setReplaceOpen(false);
       refetch();
       addToast("文件已替换", "success");
@@ -56,7 +48,6 @@ export default function ResumeDetailPage() {
     setOperating(true);
     try {
       await resumesApi.delete(id);
-      if (state.currentResumeId === id) setResumeId(null);
       addToast("简历已删除", "success");
       window.location.href = "/resumes";
     } catch (err: unknown) {
@@ -86,8 +77,11 @@ export default function ResumeDetailPage() {
             <Button variant="secondary" onClick={refetch}>
               重试
             </Button>
-            <Link href="/resumes">
-              <Button variant="ghost">返回列表</Button>
+            <Link
+              href="/resumes"
+              className={buttonClassName({ variant: "ghost" })}
+            >
+              返回列表
             </Link>
           </div>
         </div>
@@ -97,15 +91,14 @@ export default function ResumeDetailPage() {
 
   if (!resume) return null;
 
-  const isContext = state.currentResumeId === id;
-
   return (
     <div className="max-w-3xl mx-auto p-6 lg:py-8">
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/resumes">
-          <Button variant="ghost" size="sm">
-            ← 返回列表
-          </Button>
+        <Link
+          href="/resumes"
+          className={buttonClassName({ variant: "ghost", size: "sm" })}
+        >
+          ← 返回列表
         </Link>
       </div>
 
@@ -122,15 +115,9 @@ export default function ResumeDetailPage() {
             <span className="text-xs text-text-muted">
               {new Date(resume.upload_time).toLocaleString("zh-CN")}
             </span>
-            {isContext && <Badge variant="info">当前上下文</Badge>}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!isContext && (
-            <Button variant="secondary" size="sm" onClick={handleSetContext}>
-              设为上下文
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="sm"
@@ -164,20 +151,26 @@ export default function ResumeDetailPage() {
             </Button>
           </div>
           {replaceOpen ? (
-            <ResumeUploader onUploaded={handleReplace} />
+            <ResumeUploader
+              onUploaded={handleReplace}
+              uploadFile={(file) => resumesApi.replace(id, file)}
+            />
           ) : (
             <div className="rounded-xl overflow-hidden border border-border-light bg-surface-secondary">
               {resume.media_type?.includes("pdf") ? (
                 <iframe
                   src={resumesApi.previewUrl(id)}
                   className="w-full h-[500px]"
-                  title="PDF Preview"
+                  title="简历预览"
                 />
               ) : resume.media_type?.startsWith("image/") ? (
-                <img
+                <Image
                   src={resumesApi.previewUrl(id)}
                   alt={resume.original_filename || ""}
-                  className="max-w-full max-h-[500px] mx-auto"
+                  width={1200}
+                  height={1600}
+                  unoptimized
+                  className="w-auto h-auto max-w-full max-h-[500px] mx-auto"
                 />
               ) : (
                 <div className="text-center py-12 text-text-muted text-sm">

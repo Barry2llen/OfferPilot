@@ -1,19 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useCallback } from "react";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAsyncData } from "@/app/hooks/use-async-data";
-import { useAppActions } from "@/app/lib/context/app-context";
 import { useToast } from "@/app/components/ui/toast";
 import SelectionCard from "@/app/components/settings/selection-card";
 import SelectionForm from "@/app/components/settings/selection-form";
 import FormDrawer from "@/app/components/ui/form-drawer";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
-import Button from "@/app/components/ui/button";
+import Button, { buttonClassName } from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
 import type {
   ModelSelectionResponse,
   ModelSelectionCreate,
+  ModelSelectionUpdate,
 } from "@/app/lib/api/types";
 
 export default function SelectionsPage() {
@@ -21,7 +22,6 @@ export default function SelectionsPage() {
     () => modelSelectionsApi.list()
   );
 
-  const { setModelSelection } = useAppActions();
   const { addToast } = useToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<ModelSelectionResponse | null>(null);
@@ -41,14 +41,14 @@ export default function SelectionsPage() {
   };
 
   const handleSubmit = useCallback(
-    async (data: ModelSelectionCreate) => {
+    async (data: ModelSelectionCreate | ModelSelectionUpdate) => {
       setSubmitting(true);
       try {
         if (editing) {
-          await modelSelectionsApi.update(editing.id, data);
+          await modelSelectionsApi.update(editing.id, data as ModelSelectionUpdate);
           addToast("模型选择已更新", "success");
         } else {
-          await modelSelectionsApi.create(data);
+          await modelSelectionsApi.create(data as ModelSelectionCreate);
           addToast("模型选择已创建", "success");
         }
         setDrawerOpen(false);
@@ -121,9 +121,12 @@ export default function SelectionsPage() {
           <p className="text-text-muted text-sm mb-3">
             暂无模型选择配置，请先创建模型供应商
           </p>
-          <a href="/settings/providers">
-            <Button variant="secondary">前往模型供应商</Button>
-          </a>
+          <Link
+            href="/settings/providers"
+            className={buttonClassName({ variant: "secondary" })}
+          >
+            前往模型供应商
+          </Link>
         </div>
       ) : (
         <div className="space-y-3">

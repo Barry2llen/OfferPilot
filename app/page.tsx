@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Link from "next/link";
 import { aiChatApi } from "@/app/lib/api/ai";
 import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
 import { useChatStream } from "@/app/hooks/use-chat-stream";
@@ -10,17 +11,17 @@ import ChatSidebar from "@/app/components/chat/chat-sidebar";
 import ContextPanel from "@/app/components/chat/context-panel";
 import AgentTimeline from "@/app/components/chat/agent-timeline";
 import QuickTasks from "@/app/components/chat/quick-tasks";
-import Button from "@/app/components/ui/button";
-import Badge from "@/app/components/ui/badge";
+import Button, { buttonClassName } from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
 
 export default function Home() {
-  const { state, dispatch } = useAppContext();
+  const { state } = useAppContext();
   const { setThreadId } = useAppActions();
 
   const {
     messages,
     streamingText,
+    reasoningSteps,
     toolCalls,
     interrupt,
     streamError,
@@ -30,10 +31,9 @@ export default function Home() {
     retry,
     loadHistory,
     clearMessages,
-    setMessages,
+    resetStreamingState,
   } = useChatStream();
 
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -47,7 +47,9 @@ export default function Home() {
   const handleSend = useCallback(
     (prompt: string) => {
       if (!state.currentModelSelection) return;
-      clearMessages();
+      if (!state.currentThreadId) {
+        clearMessages();
+      }
       startChat(state.currentModelSelection, prompt, state.currentThreadId);
     },
     [state.currentModelSelection, state.currentThreadId, startChat, clearMessages]
@@ -60,31 +62,35 @@ export default function Home() {
 
   const handleSelectThread = useCallback(
     async (threadId: string) => {
+      stopStream();
       if (!threadId) {
+        resetStreamingState();
         clearMessages();
         setThreadId(null);
-        setActiveThreadId(null);
         return;
       }
       setHistoryLoading(true);
       setThreadId(threadId);
-      setActiveThreadId(threadId);
       try {
         const history = await aiChatApi.getHistory(threadId);
         loadHistory(history.messages);
       } catch {
-        // ignore
+        resetStreamingState();
+        clearMessages();
+        setThreadId(null);
       } finally {
         setHistoryLoading(false);
       }
     },
-    [clearMessages, loadHistory, setThreadId]
+    [clearMessages, loadHistory, resetStreamingState, setThreadId, stopStream]
   );
 
   const handleQuickPrompt = useCallback(
     (prompt: string) => {
       if (!state.currentModelSelection) return;
-      clearMessages();
+      if (!state.currentThreadId) {
+        clearMessages();
+      }
       startChat(state.currentModelSelection, prompt, state.currentThreadId);
     },
     [state.currentModelSelection, state.currentThreadId, startChat, clearMessages]
@@ -98,7 +104,7 @@ export default function Home() {
       {sidebarOpen && (
         <ChatSidebar
           onSelectThread={handleSelectThread}
-          activeThreadId={activeThreadId}
+          activeThreadId={state.currentThreadId}
         />
       )}
 
@@ -116,7 +122,7 @@ export default function Home() {
             </svg>
           </button>
           <h2 className="font-display text-sm font-semibold text-text-primary truncate flex-1">
-            {activeThreadId
+            {state.currentThreadId
               ? "AI 对话"
               : "新对话"}
           </h2>
@@ -150,12 +156,15 @@ export default function Home() {
               <p className="text-sm text-text-secondary mb-6 max-w-md">
                 {hasNoModel
                   ? "请先配置模型供应商和模型选择，然后开始对话"
-                  : "输入求职相关任务，AI Agent 将基于简历和上下文为你提供帮助"}
+                  : "输入求职相关任务，开始一轮新的 AI 对话或继续当前会话"}
               </p>
               {hasNoModel ? (
-                <a href="/settings/providers">
-                  <Button>前往配置模型</Button>
-                </a>
+                <Link
+                  href="/settings/providers"
+                  className={buttonClassName()}
+                >
+                  前往配置模型
+                </Link>
               ) : (
                 <QuickTasks onPrompt={handleQuickPrompt} disabled={isStreaming} />
               )}
@@ -208,7 +217,11 @@ export default function Home() {
         </div>
 
         {/* Agent timeline */}
-        <AgentTimeline toolCalls={toolCalls} streamingText={streamingText} />
+        <AgentTimeline
+          reasoningSteps={reasoningSteps}
+          toolCalls={toolCalls}
+          streamingText={streamingText}
+        />
 
         {/* Input */}
         <ChatInput

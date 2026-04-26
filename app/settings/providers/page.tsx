@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import Link from "next/link";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { useToast } from "@/app/components/ui/toast";
@@ -10,11 +9,11 @@ import ProviderForm from "@/app/components/settings/provider-form";
 import FormDrawer from "@/app/components/ui/form-drawer";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Button from "@/app/components/ui/button";
-import Badge from "@/app/components/ui/badge";
 import Spinner from "@/app/components/ui/spinner";
 import type {
   ModelProviderResponse,
   ModelProviderCreate,
+  ModelProviderUpdate,
 } from "@/app/lib/api/types";
 
 export default function ProvidersPage() {
@@ -41,14 +40,14 @@ export default function ProvidersPage() {
   };
 
   const handleSubmit = useCallback(
-    async (data: ModelProviderCreate) => {
+    async (data: ModelProviderCreate | ModelProviderUpdate) => {
       setSubmitting(true);
       try {
         if (editing) {
-          await modelProvidersApi.update(editing.name, data);
+          await modelProvidersApi.update(editing.name, data as ModelProviderUpdate);
           addToast("供应商配置已更新", "success");
         } else {
-          await modelProvidersApi.create(data);
+          await modelProvidersApi.create(data as ModelProviderCreate);
           addToast("供应商配置已创建", "success");
         }
         setDrawerOpen(false);

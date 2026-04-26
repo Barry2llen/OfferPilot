@@ -19,7 +19,7 @@ export default function ChatSidebar({
   const [chats, setChats] = useState<AIChatHistorySummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { dispatch } = useAppContext();
+  const { state, dispatch } = useAppContext();
   const { setThreadId } = useAppActions();
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -38,7 +38,7 @@ export default function ChatSidebar({
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, state.chatHistoryVersion]);
 
   const handleNewChat = () => {
     setThreadId(null);
@@ -88,44 +88,52 @@ export default function ChatSidebar({
             暂无历史会话
           </p>
         ) : (
-          chats.map((chat) => (
-            <button
-              key={chat.thread_id}
-              onClick={() => onSelectThread(chat.thread_id)}
-              className={`w-full text-left px-3 py-2.5 hover:bg-surface-secondary transition-colors border-b border-border-light/50 group ${
-                activeThreadId === chat.thread_id ? "bg-primary-200/30" : ""
-              }`}
-            >
-              <div className="flex items-start justify-between gap-1">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary truncate">
-                    {chat.title || "新对话"}
-                  </p>
-                  <p className="text-xs text-text-muted truncate mt-0.5">
-                    {chat.last_message_preview || "(无消息)"}
-                  </p>
+          chats.map((chat) => {
+            const isActive = activeThreadId === chat.thread_id;
+
+            return (
+              <div
+                key={chat.thread_id}
+                className={`border-b border-border-light/50 transition-colors group ${
+                  isActive ? "bg-primary-200/30" : "hover:bg-surface-secondary"
+                }`}
+              >
+                <div className="flex items-start gap-2 px-3 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => onSelectThread(chat.thread_id)}
+                    className="flex-1 min-w-0 text-left"
+                  >
+                    <p className="text-sm font-medium text-text-primary truncate">
+                      {chat.title || "新对话"}
+                    </p>
+                    <p className="text-xs text-text-muted truncate mt-0.5">
+                      {chat.last_message_preview || "(无消息)"}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] text-text-muted">
+                        {new Date(chat.updated_at).toLocaleDateString("zh-CN")}
+                      </span>
+                      <span className="text-[10px] text-text-muted">
+                        {chat.message_count} 条消息
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(chat.thread_id, e)}
+                    disabled={deleting === chat.thread_id}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error-bg transition-all shrink-0 mt-0.5"
+                    title="删除"
+                  >
+                    <svg className="w-3.5 h-3.5 text-text-muted hover:text-error-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
-                <button
-                  onClick={(e) => handleDelete(chat.thread_id, e)}
-                  disabled={deleting === chat.thread_id}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error-bg transition-all shrink-0"
-                  title="删除"
-                >
-                  <svg className="w-3.5 h-3.5 text-text-muted hover:text-error-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
               </div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] text-text-muted">
-                  {new Date(chat.updated_at).toLocaleDateString("zh-CN")}
-                </span>
-                <span className="text-[10px] text-text-muted">
-                  {chat.message_count} 条消息
-                </span>
-              </div>
-            </button>
-          ))
+            );
+          })
         )}
       </div>
     </div>

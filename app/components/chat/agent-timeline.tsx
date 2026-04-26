@@ -4,15 +4,19 @@ import { useState } from "react";
 import type { ToolCallEntry } from "@/app/hooks/use-chat-stream";
 
 interface AgentTimelineProps {
+  reasoningSteps: string[];
   toolCalls: ToolCallEntry[];
   streamingText: string;
 }
 
 export default function AgentTimeline({
+  reasoningSteps,
   toolCalls,
   streamingText,
 }: AgentTimelineProps) {
-  if (toolCalls.length === 0 && !streamingText) return null;
+  if (reasoningSteps.length === 0 && toolCalls.length === 0 && !streamingText) {
+    return null;
+  }
 
   return (
     <div className="border-t border-border-light bg-surface-secondary/50 p-3 max-h-48 overflow-y-auto">
@@ -20,6 +24,17 @@ export default function AgentTimeline({
         Agent 运行时间线
       </h4>
       <div className="space-y-2">
+        {reasoningSteps.map((step, i) => (
+          <div key={`${step}-${i}`} className="flex items-start gap-2 text-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary-500 shrink-0 mt-1.5" />
+            <div>
+              <div className="text-text-muted font-medium">推理中</div>
+              <div className="text-text-secondary leading-relaxed whitespace-pre-wrap">
+                {step}
+              </div>
+            </div>
+          </div>
+        ))}
         {toolCalls.map((tc, i) => (
           <ToolCallEntry key={i} entry={tc} />
         ))}

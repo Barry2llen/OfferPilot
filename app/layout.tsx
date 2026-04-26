@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { AppProvider } from "@/app/lib/context/app-context";
 import { ToastProvider } from "@/app/components/ui/toast";
-import Sidebar from "@/app/components/layout/sidebar";
-import ContextBar from "@/app/components/layout/context-bar";
+import AppShell from "@/app/components/layout/app-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,13 +19,7 @@ export default function RootLayout({
       <body className="h-full bg-surface-primary text-text-primary font-sans">
         <AppProvider>
           <ToastProvider>
-            <div className="flex h-full">
-              <Sidebar />
-              <div className="flex flex-col flex-1 min-w-0 lg:ml-60">
-                <ContextBar />
-                <main className="flex-1 overflow-y-auto">{children}</main>
-              </div>
-            </div>
+            <AppShell>{children}</AppShell>
           </ToastProvider>
         </AppProvider>
       </body>
