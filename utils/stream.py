@@ -35,7 +35,9 @@ async def render_stream_events(
         events: AsyncIterator[StreamEvent],
         *,
         handlers: dict[StreamEventName, StreamEventHandler] | None = None,
-    ) -> None:
+        returns: StreamEventHandler | None = None
+    ) -> Any:
+    result: Any = None
     async for event in events:
         event_name = event["event"]
         if handlers and event_name in handlers:
@@ -43,3 +45,16 @@ async def render_stream_events(
             res = handler(event)
             if isinstance(res, Awaitable):
                 await res
+        if returns and event_name == "on_chain_end":
+            res = returns(event)
+            if isinstance(res, Awaitable):
+                result = await res
+            else:
+                result = res
+    return result
+
+__all__ = [
+    render_stream_events,
+    StreamEventHandler,
+    StreamEventName
+]
