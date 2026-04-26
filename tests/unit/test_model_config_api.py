@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from main import create_app
@@ -128,6 +130,30 @@ def test_model_selection_api_crud_and_provider_reference_conflict(
     assert missing_provider.status_code == 404
 
 
+def test_model_provider_api_accepts_deepseek(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/model-providers",
+            json={
+                "provider": "DeepSeek",
+                "name": "default-deepseek",
+                "api_key": "sk-deepseek",
+            },
+        )
+
+    assert created.status_code == 200
+    assert created.json() == {
+        "provider": "DeepSeek",
+        "name": "default-deepseek",
+        "base_url": None,
+        "has_api_key": True,
+    }
+
+
 def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     app = create_app(temporary_app_config)
 
@@ -141,4 +167,8 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     assert payload["paths"]["/model-providers"]["post"]["summary"] == "创建模型供应商配置"
     assert payload["paths"]["/model-selections"]["post"]["summary"] == "创建模型选择配置"
     assert "ModelProviderResponse" in payload["components"]["schemas"]
+    assert "DeepSeek" in json.dumps(
+        payload["components"]["schemas"]["ModelProviderCreate"],
+        ensure_ascii=False,
+    )
     assert "不会回显明文密钥" in payload["components"]["schemas"]["ModelProviderResponse"]["properties"]["has_api_key"]["description"]

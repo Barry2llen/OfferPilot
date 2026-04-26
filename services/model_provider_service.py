@@ -7,6 +7,7 @@ _DOMAIN_TO_DATABASE_PROVIDER = {
     "OpenAI": "openai",
     "Google": "google",
     "Anthropic": "anthropic",
+    "DeepSeek": "deepseek",
     "OpenAI Compatible": "openai compatible",
 }
 _DATABASE_TO_DOMAIN_PROVIDER = {

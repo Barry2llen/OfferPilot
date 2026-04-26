@@ -6,6 +6,7 @@ type Provider = Literal[
     "OpenAI",
     "Google",
     "Anthropic",
+    "DeepSeek",
     "OpenAI Compatible",
 ]
 
@@ -22,10 +23,10 @@ class ModelProviderCreate(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "provider": "OpenAI",
-                    "name": "default-openai",
+                    "provider": "DeepSeek",
+                    "name": "default-deepseek",
                     "base_url": None,
-                    "api_key": "sk-local-secret",
+                    "api_key": "sk-deepseek-secret",
                 }
             ]
         }
@@ -41,7 +42,7 @@ class ModelProviderCreate(BaseModel):
     )
     base_url: str | None = Field(
         default=None,
-        description="供应商兼容 API 地址。OpenAI Compatible 通常需要配置。",
+        description="供应商 API 地址。OpenAI Compatible 通常需要配置；DeepSeek 省略时使用官方默认地址。",
         examples=["https://api.example.com/v1"],
     )
     api_key: str | None = Field(
@@ -56,8 +57,8 @@ class ModelProviderUpdate(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "provider": "OpenAI Compatible",
-                    "base_url": "https://compatible.example.com/v1",
+                    "provider": "DeepSeek",
+                    "base_url": None,
                     "api_key": None,
                 }
             ]
@@ -67,7 +68,7 @@ class ModelProviderUpdate(BaseModel):
     provider: Provider | None = Field(
         default=None,
         description="新的供应商类型。省略时保持原值。",
-        examples=["OpenAI Compatible"],
+        examples=["DeepSeek"],
     )
     base_url: str | None = Field(
         default=None,
@@ -86,8 +87,8 @@ class ModelProviderResponse(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "provider": "OpenAI",
-                    "name": "default-openai",
+                    "provider": "DeepSeek",
+                    "name": "default-deepseek",
                     "base_url": None,
                     "has_api_key": True,
                 }

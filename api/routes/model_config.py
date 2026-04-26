@@ -145,7 +145,7 @@ async def get_model_provider(
     response_description="返回新建模型供应商配置摘要。",
     responses={
         409: _error_response("模型供应商配置名称已存在。", example="Model provider already exists: default-openai"),
-        422: _error_response("供应商类型不受支持。", example="Unsupported provider value: DeepSeek"),
+        422: _error_response("供应商类型不受支持。", example="Unsupported provider value: Unknown"),
     },
 )
 async def create_model_provider(
@@ -180,7 +180,7 @@ async def create_model_provider(
     response_description="返回更新后的模型供应商配置摘要。",
     responses={
         404: _error_response("未找到指定模型供应商配置。", example="Model provider not found: default-openai"),
-        422: _error_response("供应商类型不受支持。", example="Unsupported provider value: DeepSeek"),
+        422: _error_response("供应商类型不受支持。", example="Unsupported provider value: Unknown"),
     },
 )
 async def update_model_provider(

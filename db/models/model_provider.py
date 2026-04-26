@@ -10,7 +10,7 @@ class ModelProviderORM(Base):
     __tablename__ = "tb_model_provider"
     __table_args__ = (
         CheckConstraint(
-            "provider IN ('openai', 'anthropic', 'google', 'openai compatible')",
+            "provider IN ('openai', 'anthropic', 'google', 'deepseek', 'openai compatible')",
             name="ck_tb_model_provider_provider",
         ),
     )

@@ -2,7 +2,9 @@
 
 CREATE TABLE IF NOT EXISTS tb_model_provider (
     name VARCHAR(255) PRIMARY KEY,
-    provider VARCHAR(32) NOT NULL,
+    provider VARCHAR(32) NOT NULL CHECK (
+        provider IN ('openai', 'anthropic', 'google', 'deepseek', 'openai compatible')
+    ),
     base_url VARCHAR(255),
     api_key VARCHAR(255)
 );

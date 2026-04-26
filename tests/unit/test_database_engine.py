@@ -171,6 +171,28 @@ def test_initialize_tables_creates_expected_model_selection_constraints(
     assert unique_index_columns == {"provider_name", "model_name"}
 
 
+def test_initialize_tables_accepts_deepseek_model_provider(
+    temporary_database_manager: DatabaseManager,
+) -> None:
+    temporary_database_manager.initialize_tables()
+
+    with temporary_database_manager.session_scope() as session:
+        session.execute(
+            text(
+                "INSERT INTO tb_model_provider (name, provider) "
+                "VALUES ('default-deepseek', 'deepseek')"
+            )
+        )
+        provider = session.execute(
+            text(
+                "SELECT provider FROM tb_model_provider "
+                "WHERE name = 'default-deepseek'"
+            )
+        ).scalar_one()
+
+    assert provider == "deepseek"
+
+
 def test_initialize_tables_creates_expected_resume_columns(
     temporary_database_manager: DatabaseManager,
 ) -> None:
