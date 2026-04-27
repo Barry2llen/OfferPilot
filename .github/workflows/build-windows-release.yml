@@ -1,0 +1,132 @@
+name: Build Windows Release
+
+on:
+  push:
+    branches:
+      - main
+      - test
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish Windows x64 installer
+    runs-on: windows-latest
+    if: startsWith(github.event.head_commit.message, 'v')
+
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v5
+        with:
+          repository: Barry2llen/OfferPilot
+          ref: ${{ github.sha }}
+          path: backend
+
+      - name: Checkout frontend
+        uses: actions/checkout@v5
+        with:
+          repository: Barry2llen/OfferPilot-frontend
+          path: frontend
+
+      - name: Checkout Electron shell
+        uses: actions/checkout@v5
+        with:
+          repository: Barry2llen/offer-pilot-electron
+          path: electron
+
+      - name: Derive release tag
+        id: release
+        shell: pwsh
+        env:
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          $subject = $env:HEAD_COMMIT_MESSAGE -split "`r?`n" | Select-Object -First 1
+          $tag = ($subject -split '\s+')[0]
+
+          if ($tag -notmatch '^v[0-9A-Za-z][0-9A-Za-z._-]*$') {
+            throw "Commit message must start with a valid release tag like v1.0.0. Actual first token: '$tag'"
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "title=$subject" >> $env:GITHUB_OUTPUT
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/pyproject.toml
+            backend/uv.lock
+
+      - name: Install Python
+        working-directory: backend
+        run: uv python install 3.13
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            electron/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Electron dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --frozen --all-groups
+
+      - name: Build Windows installer
+        working-directory: electron
+        run: npm run build:win
+
+      - name: Collect installer
+        id: artifact
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path electron/release -Recurse -Filter '*Setup.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $installer) {
+            throw "No Windows setup installer was found under electron/release."
+          }
+
+          $asset = "OfferPilot-Windows-x64-${{ steps.release.outputs.tag }}.exe"
+          $assetPath = Join-Path $PWD $asset
+          Copy-Item -LiteralPath $installer.FullName -Destination $assetPath -Force
+
+          "path=$assetPath" >> $env:GITHUB_OUTPUT
+          "name=$asset" >> $env:GITHUB_OUTPUT
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TITLE: ${{ steps.release.outputs.title }}
+          ASSET_PATH: ${{ steps.artifact.outputs.path }}
+          ASSET_NAME: ${{ steps.artifact.outputs.name }}
+        run: |
+          $releaseExists = gh release view $env:TAG --repo Barry2llen/OfferPilot 2>$null
+
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG `
+              --repo Barry2llen/OfferPilot `
+              --target $env:GITHUB_SHA `
+              --title $env:TAG `
+              --notes "Automated Windows x64 desktop build for $env:TITLE." `
+              $env:ASSET_PATH
+          } else {
+            gh release upload $env:TAG $env:ASSET_PATH `
+              --repo Barry2llen/OfferPilot `
+              --clobber
+          }
