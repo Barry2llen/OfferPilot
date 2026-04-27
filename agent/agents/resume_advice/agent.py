@@ -40,5 +40,5 @@ class ResumeAdviceAgent(BaseAgent[State]):
         return graph
     
 __all__ = [
-    ResumeAdviceAgent
+    "ResumeAdviceAgent"
 ]

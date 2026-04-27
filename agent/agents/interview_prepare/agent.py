@@ -24,5 +24,5 @@ graph.add_edge("model_call", END)
 agent = graph.compile()
 
 __all__ = [
-    agent
+    "agent"
 ]

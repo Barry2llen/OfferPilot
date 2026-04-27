@@ -3,5 +3,5 @@ from .chat import (
 )
 
 __all__ = [
-    load_chat_model
+    "load_chat_model"
 ]

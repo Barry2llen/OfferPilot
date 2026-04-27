@@ -1048,10 +1048,10 @@ def test_base_command_accepts_retry_without_prompt() -> None:
     assert "prompt" not in command
 
 
-def test_get_all_tools_builds_exa_tools_from_config() -> None:
+async def test_get_all_tools_builds_exa_tools_from_config() -> None:
     config = Config(exa_api_key="test-exa-key")
 
-    tools = get_all_tools(config)
+    tools = await get_all_tools(config)
 
     assert [tool.name for tool in tools] == [
         "web_search_exa",

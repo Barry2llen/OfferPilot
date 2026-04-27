@@ -5,7 +5,7 @@ from schemas.config import Config, load_config
 from utils.logger import logger
 
 
-def get_web_search_tools(
+async def get_web_search_tools(
     config: Config | None = None,
     *,
     allow_mcp_fallback: bool = False,
@@ -17,11 +17,11 @@ def get_web_search_tools(
             return []
 
         try:
-            from ..mcps.web_search import web_search_mcp_tools
+            from ..mcps.web_search import get_web_search_mcp_tools
         except Exception as error:
             logger.warning(f"Failed to load MCP web search tools: {error}")
             return []
-        return list(web_search_mcp_tools)
+        return list(await get_web_search_mcp_tools())
 
     from exa_py import AsyncExa
 

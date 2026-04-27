@@ -9,6 +9,6 @@ def update_if_not_true(old: bool, new: bool) -> bool:
     return new if new else old
 
 __all__ = [
-    update_if_not_none,
-    update_if_not_true
+    "update_if_not_none",
+    "update_if_not_true"
 ]

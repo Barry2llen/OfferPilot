@@ -12,6 +12,6 @@ class BaseCommand(TypedDict):
     prompt: NotRequired[str | None]
 
 __all__ = [
-    CommandType,
-    BaseCommand
+    "CommandType",
+    "BaseCommand"
 ]

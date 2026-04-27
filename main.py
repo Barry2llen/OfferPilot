@@ -40,7 +40,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         app.state.supervisor_agent = SupervisorAgent(
             checkpointer=app.state.checkpointer,
             config=target_config,
-            tools=get_all_tools(target_config, allow_mcp_fallback=True),
+            tools=await get_all_tools(target_config, allow_mcp_fallback=True),
         ).get_agent()
         yield
         await dispose_async_database_manager()

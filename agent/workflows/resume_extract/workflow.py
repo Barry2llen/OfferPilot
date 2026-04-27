@@ -33,5 +33,5 @@ class ResumeExtractWorkflow(BaseWorkflow[ResumeProfile, State]):
         return state["resume_profile"]
     
 __all__ = [
-    ResumeExtractWorkflow
+    "ResumeExtractWorkflow"
 ]
