@@ -2,10 +2,16 @@
   "name": "offer-pilot-electron",
   "private": true,
   "version": "0.0.0",
+  "description": "OfferPilot desktop application.",
+  "author": "barry2llen",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "npm run build:win",
+    "build:electron": "tsc && vite build",
+    "build:frontend": "npm --prefix ../frontend run build && node scripts/prepare-frontend.mjs",
+    "build:backend": "uv run --project ../backend pyinstaller ../backend/packaging/offer_pilot_api.spec --noconfirm --clean --distpath resources/backend-build/dist --workpath resources/backend-build/build && node scripts/prepare-backend.mjs",
+    "build:win": "npm run build:frontend && npm run build:backend && npm run build:electron && electron-builder --win --x64",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },

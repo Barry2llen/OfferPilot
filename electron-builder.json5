@@ -1,15 +1,25 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "YourAppID",
+  "appId": "com.offerpilot.desktop",
   "asar": true,
-  "productName": "YourAppName",
+  "productName": "OfferPilot",
   "directories": {
     "output": "release/${version}"
   },
   "files": [
     "dist",
     "dist-electron"
+  ],
+  "extraResources": [
+    {
+      "from": "resources/frontend",
+      "to": "frontend"
+    },
+    {
+      "from": "resources/backend/offer-pilot-api",
+      "to": "backend/offer-pilot-api"
+    }
   ],
   "mac": {
     "target": [
