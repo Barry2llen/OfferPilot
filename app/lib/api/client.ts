@@ -1,5 +1,27 @@
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+declare global {
+  interface Window {
+    offerPilotRuntime?: {
+      apiBaseUrl?: string;
+    };
+  }
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+function getBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const runtimeBaseUrl = window.offerPilotRuntime?.apiBaseUrl;
+    if (runtimeBaseUrl) {
+      return normalizeBaseUrl(runtimeBaseUrl);
+    }
+  }
+
+  return normalizeBaseUrl(
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
+  );
+}
 
 export class ApiError extends Error {
   public status: number;
@@ -17,7 +39,7 @@ export async function apiRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${BASE_URL}${path}`;
+  const url = `${getBaseUrl()}${path}`;
   const isFormData = options.body instanceof FormData;
 
   const res = await fetch(url, {
@@ -46,5 +68,5 @@ export async function apiRequest<T>(
 }
 
 export function apiUrl(path: string): string {
-  return `${BASE_URL}${path}`;
+  return `${getBaseUrl()}${path}`;
 }
