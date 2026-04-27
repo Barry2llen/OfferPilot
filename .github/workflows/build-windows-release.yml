@@ -86,7 +86,7 @@ jobs:
 
       - name: Build Windows installer
         working-directory: electron
-        run: npm run build:win
+        run: npm run build:win -- --publish never
 
       - name: Collect installer
         id: artifact
