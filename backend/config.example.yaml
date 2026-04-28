@@ -1,0 +1,28 @@
+database:
+  type: "sqlite"
+  path: "./data/offer_pilot.db"
+  echo: false
+
+resume_upload_dir: "./data/resumes"
+
+cors:
+  allow_origins:
+    - "*"
+  allow_credentials: false
+  allow_methods:
+    - "*"
+  allow_headers:
+    - "*"
+
+exa_api_key: "your_exa_api_key_here"
+
+# PostgreSQL example:
+# database:
+#   type: "postgresql"
+#   host: "127.0.0.1"
+#   port: 5432
+#   database: "offer_pilot"
+#   user: "postgres"
+#   password: "postgres"
+#   driver: "psycopg"
+#   echo: false
