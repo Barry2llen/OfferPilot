@@ -1,4 +1,3 @@
-from pydantic import BaseModel, Field
 from typing import override
 
 from langgraph.constants import START, END
@@ -6,6 +5,7 @@ from langgraph.graph.state import StateGraph
 from langchain.messages import HumanMessage, SystemMessage
 
 from utils.logger import logger
+from utils.garble_text import detect_garbled_text
 from exceptions.resume import ResumePreviewConversionError
 from schemas.resume_profile import ResumeProfile
 from .state import State
@@ -27,16 +27,6 @@ class ResumeExtractorAgent(BaseAgent[State]):
                     "You are a helpful assistant that extracts structured information from resumes." \
                     "Please extract the relevant information from the provided resume and return it in a structured format." \
                     "Here follows the resume information that needs to be extracted: "
-            )
-        )
-
-    validation_system_prompt: SystemMessage = (
-            SystemMessage(
-                content = 
-                    "You are a helpful assistant that validates the extracted resume profile. " \
-                    "Your only task is to determine if the resume profile contains amount of garbled text or other forms of corruption. " \
-                    "Please validate the extracted resume profile and return whether it's valid or not, along with the reason for the validation result." \
-                    "Here follows the extracted resume profile that needs to be validated: "
             )
         )
 
@@ -100,17 +90,12 @@ class ResumeExtractorAgent(BaseAgent[State]):
         Check if the information extraction was successful by using llm to validate the extracted profile.
         """
 
-        class Validation(BaseModel):
-            """
-            Validation schema for the extracted resume profile.
-            """
-            is_valid: bool = Field(description="Whether the extracted resume profile is valid or not.")
-            reason: str | None = Field(default=None, description="The reason for the validation result.")
-        
-        validator = load_chat_model(state["model"]).with_structured_output(Validation)
-        validation: Validation = validator.invoke([self.validation_system_prompt, HumanMessage(content=f"{state['resume_profile']}")])
-
-        return validation.is_valid
+        txt = state["resume_text"]
+        if not txt:
+            logger.warning("No resume text available for validation.")
+            raise ResumePreviewConversionError("No resume text available for validation.")
+        result = detect_garbled_text(txt)
+        return not result.is_garbled
 
     def _extract_with_text_node(self, state: State) -> State:
         """

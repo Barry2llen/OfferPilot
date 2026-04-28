@@ -34,15 +34,6 @@ class BaseAgentState(TypedDict):
     model: Displace[MaybeCallable[ModelSelection]]
     messages: Annotated[list[BaseMessage], add_messages]
 
-    def _to_base(self) -> BaseAgentState:
-        """
-        Convert the state to a BaseAgentState. This is useful for converting from a subclass to the base class.
-        """
-        return BaseAgentState(
-            model=self['model'],
-            messages=self['messages']
-        )
-
 class BaseGraph[State = BaseAgentState](ABC):
     """Base graph"""
     @abstractmethod
