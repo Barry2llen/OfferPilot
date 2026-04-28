@@ -1,5 +1,4 @@
 
-from langchain.messages import SystemMessage
 from langchain_core.runnables import Runnable
 from langchain_core.language_models import LanguageModelInput
 

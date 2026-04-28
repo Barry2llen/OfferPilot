@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 from main import create_app
 from schemas.config import Config
-from utils import document_parser
 
 
 def _create_pdf(path: Path, text: str) -> None:
@@ -38,7 +37,7 @@ def test_upload_resume_file_endpoint_with_pdf(
 
     assert response.status_code == 200
     payload = response.json()
-    assert "Jane Doe Resume" in payload["content"]
+    assert "content" not in payload
     assert payload["original_filename"] == "resume.pdf"
     assert payload["file_path"] is not None
     assert payload["preview_url"] == f"/resumes/{payload['id']}/file"
@@ -49,14 +48,14 @@ def test_list_and_detail_resume_endpoints(temporary_app_config: Config) -> None:
     app = create_app(temporary_app_config)
 
     with TestClient(app) as client:
-        first = client.post("/resumes/files", files={"file": ("resume.png", b"img", "image/png")})
-        second = client.post("/resumes/files", files={"file": ("resume.jpg", b"img", "image/jpeg")})
+        first = client.post("/resumes/files", files={"file": ("resume.txt", b"text", "text/plain")})
+        second = client.post("/resumes/files", files={"file": ("resume.doc", b"doc", "application/msword")})
 
         listed = client.get("/resumes")
         detail = client.get("/resumes/1")
 
-    assert first.status_code == 422
-    assert second.status_code == 422
+    assert first.status_code == 415
+    assert second.status_code == 415
     assert listed.status_code == 200
     assert listed.json() == []
     assert detail.status_code == 404
@@ -64,15 +63,8 @@ def test_list_and_detail_resume_endpoints(temporary_app_config: Config) -> None:
 
 def test_list_and_detail_resume_endpoints_with_uploaded_files(
     temporary_app_config: Config,
-    monkeypatch,
 ) -> None:
     app = create_app(temporary_app_config)
-    parsed_values = iter(["A" * 250, "Second Resume"])
-    monkeypatch.setattr(
-        document_parser,
-        "extract_text",
-        lambda _: next(parsed_values),
-    )
 
     with TestClient(app) as client:
         first = client.post(
@@ -90,25 +82,19 @@ def test_list_and_detail_resume_endpoints_with_uploaded_files(
     assert second.status_code == 200
     assert listed.status_code == 200
     assert len(listed.json()) == 2
-    assert listed.json()[0]["content_preview"] == "Second Resume"
+    assert "content_preview" not in listed.json()[0]
     assert listed.json()[0]["preview_url"] == f"/resumes/{second.json()['id']}/file"
-    assert listed.json()[1]["content_preview"] == "A" * 200
+    assert "content_preview" not in listed.json()[1]
     assert listed.json()[1]["preview_url"] == f"/resumes/{first.json()['id']}/file"
     assert detail.status_code == 200
-    assert detail.json()["content"] == "A" * 250
+    assert "content" not in detail.json()
     assert detail.json()["has_file"] is True
 
 
 def test_upload_resume_file_endpoint_with_image(
     temporary_app_config: Config,
-    monkeypatch,
 ) -> None:
     app = create_app(temporary_app_config)
-    monkeypatch.setattr(
-        document_parser,
-        "extract_text",
-        lambda _: "Jane Doe OCR Resume",
-    )
 
     with TestClient(app) as client:
         response = client.post(
@@ -117,21 +103,14 @@ def test_upload_resume_file_endpoint_with_image(
         )
 
     assert response.status_code == 200
-    assert response.json()["content"] == "Jane Doe OCR Resume"
+    assert "content" not in response.json()
     assert response.json()["media_type"] == "image/png"
 
 
 def test_replace_resume_file_endpoint(
     temporary_app_config: Config,
-    monkeypatch,
 ) -> None:
     app = create_app(temporary_app_config)
-    parsed_values = iter(["Original", "Updated OCR"])
-    monkeypatch.setattr(
-        document_parser,
-        "extract_text",
-        lambda _: next(parsed_values),
-    )
 
     with TestClient(app) as client:
         created = client.post(
@@ -144,7 +123,7 @@ def test_replace_resume_file_endpoint(
         )
 
     assert response.status_code == 200
-    assert response.json()["content"] == "Updated OCR"
+    assert "content" not in response.json()
     assert response.json()["original_filename"] == "resume.jpg"
     assert response.json()["media_type"] == "image/jpeg"
 
@@ -184,10 +163,8 @@ def test_resume_text_endpoints_are_removed(temporary_app_config: Config) -> None
 
 def test_delete_resume_endpoint(
     temporary_app_config: Config,
-    monkeypatch,
 ) -> None:
     app = create_app(temporary_app_config)
-    monkeypatch.setattr(document_parser, "extract_text", lambda _: "Stored")
 
     with TestClient(app) as client:
         created = client.post(
@@ -251,7 +228,7 @@ def test_openapi_json_contains_complete_resume_docs(
 
     list_resumes = payload["paths"]["/resumes"]["get"]
     assert list_resumes["summary"] == "列出已上传简历"
-    assert "摘要信息" in list_resumes["description"]
+    assert "文件信息" in list_resumes["description"]
 
     upload_resume = payload["paths"]["/resumes/files"]["post"]
     assert upload_resume["summary"] == "上传简历文件"
@@ -262,7 +239,8 @@ def test_openapi_json_contains_complete_resume_docs(
 
     schemas = payload["components"]["schemas"]
     resume_detail = schemas["ResumeDetail"]
-    assert "完整文本内容" in resume_detail["properties"]["content"]["description"]
+    assert "content" not in resume_detail["properties"]
+    assert "content_preview" not in schemas["ResumeListItem"]["properties"]
     assert resume_detail["properties"]["preview_url"]["examples"][0] == "/resumes/1/file"
     assert "ResumeAdviceRequest" not in schemas
     assert "ResumeAdviceResponse" not in schemas

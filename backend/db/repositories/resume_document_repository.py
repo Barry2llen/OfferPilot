@@ -33,7 +33,6 @@ class ResumeDocumentRepository:
             raise ResumeNotFoundError(f"Resume not found: {document.id}")
 
         orm_document.file_path = document.file_path
-        orm_document.content = document.content
         orm_document.original_filename = document.original_filename
         orm_document.media_type = document.media_type
         self._session.flush()

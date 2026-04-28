@@ -10,7 +10,6 @@ from exceptions import (
     EmptyResumeContentError,
     ResumeFileNotFoundError,
     ResumeNotFoundError,
-    ResumeParsingError,
     ResumeValidationError,
     UnsupportedResumeFileError,
 )
@@ -76,10 +75,10 @@ async def _read_upload_file(file: UploadFile) -> bytes:
     response_model=list[ResumeListItem],
     summary="列出已上传简历",
     description=(
-        "返回当前系统中所有简历记录的摘要信息。"
-        "适用于列表页展示，包含原文件信息、文本预览和预览地址。"
+        "返回当前系统中所有简历记录的文件信息。"
+        "适用于列表页展示，包含原文件信息和预览地址。"
     ),
-    response_description="按上传时间倒序返回简历摘要列表。",
+    response_description="按上传时间倒序返回简历文件列表。",
 )
 async def list_resumes(
     request: Request,
@@ -93,8 +92,8 @@ async def list_resumes(
     "/{resume_id}",
     response_model=ResumeDetail,
     summary="获取简历详情",
-    description="根据简历记录 ID 返回完整解析文本、原文件信息和预览地址。",
-    response_description="返回指定简历的完整详情。",
+    description="根据简历记录 ID 返回原文件信息和预览地址。",
+    response_description="返回指定简历的文件详情。",
     responses={
         404: _error_response("未找到指定简历。", example="Resume not found: 1"),
     },
@@ -121,12 +120,12 @@ async def get_resume(
     summary="上传简历文件",
     description=(
         "上传 PDF、DOCX、PNG、JPG 或 JPEG 格式的简历文件。"
-        "服务会保存原文件，并尝试提取完整文本内容用于后续展示和预览。"
+        "服务会保存原文件和文件元数据，用于后续展示和预览。"
     ),
-    response_description="返回新建简历记录的完整信息。",
+    response_description="返回新建简历记录的文件信息。",
     responses={
         415: _error_response("上传了不支持的文件类型。", example="Legacy .doc files are not supported."),
-        422: _error_response("文件为空、文件名非法或内容解析失败。", example="Resume content is empty."),
+        422: _error_response("文件为空或文件名非法。", example="Uploaded file is empty."),
     },
 )
 async def upload_resume_file(
@@ -152,7 +151,6 @@ async def upload_resume_file(
         raise HTTPException(status_code=415, detail=str(error)) from error
     except (
         EmptyResumeContentError,
-        ResumeParsingError,
         ResumeValidationError,
     ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -163,14 +161,14 @@ async def upload_resume_file(
     response_model=ResumeDetail,
     summary="替换简历原文件",
     description=(
-        "使用新的简历文件替换指定记录对应的原始文件，并重新提取全文内容。"
-        "替换成功后会更新文件名、媒体类型和解析文本。"
+        "使用新的简历文件替换指定记录对应的原始文件。"
+        "替换成功后会更新文件名和媒体类型。"
     ),
     response_description="返回替换后的简历详情。",
     responses={
         404: _error_response("未找到指定简历。", example="Resume not found: 1"),
         415: _error_response("上传了不支持的文件类型。", example="Unsupported resume file type: .txt"),
-        422: _error_response("文件为空、文件名非法或内容解析失败。", example="Resume content is empty."),
+        422: _error_response("文件为空或文件名非法。", example="Uploaded file is empty."),
     },
 )
 async def replace_resume_file(
@@ -204,7 +202,6 @@ async def replace_resume_file(
         raise HTTPException(status_code=415, detail=str(error)) from error
     except (
         EmptyResumeContentError,
-        ResumeParsingError,
         ResumeValidationError,
     ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

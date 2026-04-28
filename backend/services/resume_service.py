@@ -12,7 +12,6 @@ from exceptions import (
     UnsupportedResumeFileError,
 )
 from schemas.resume_document import ResumeDetail, ResumeListItem
-from utils import document_parser
 
 
 @dataclass(slots=True)
@@ -61,13 +60,9 @@ class ResumeService:
         saved_path.write_bytes(uploaded_file.content)
 
         try:
-            extracted_content = self._normalize_content(
-                document_parser.extract_text(saved_path)
-            )
             created = self._repository.create(
                 ResumeDocumentORM(
                     file_path=self._to_storage_path(saved_path),
-                    content=extracted_content,
                     original_filename=filename,
                     media_type=uploaded_file.content_type,
                 )
@@ -109,7 +104,6 @@ class ResumeService:
 
         try:
             document.file_path = self._to_storage_path(saved_path)
-            document.content = self._normalize_content(document_parser.extract_text(saved_path))
             document.original_filename = filename
             document.media_type = uploaded_file.content_type
             updated = self._repository.update(document)
@@ -156,12 +150,6 @@ class ResumeService:
     def _build_target_path(self, suffix: str) -> Path:
         return self._upload_dir / f"{uuid4().hex}{suffix}"
 
-    def _normalize_content(self, content: str) -> str:
-        normalized = content.replace("\r\n", "\n").replace("\r", "\n").strip()
-        if not normalized:
-            raise EmptyResumeContentError("Resume content is empty.")
-        return normalized
-
     def _validate_suffix(self, suffix: str) -> None:
         if suffix == ".doc":
             raise UnsupportedResumeFileError("Legacy .doc files are not supported.")
@@ -183,7 +171,6 @@ class ResumeService:
         return ResumeDetail(
             id=document.id,
             file_path=document.file_path,
-            content=document.content,
             upload_time=document.upload_time,
             original_filename=document.original_filename,
             media_type=document.media_type,
@@ -199,7 +186,6 @@ class ResumeService:
             upload_time=document.upload_time,
             original_filename=document.original_filename,
             media_type=document.media_type,
-            content_preview=document.content[:200],
             has_file=has_file,
             preview_url=self._build_preview_url(document.id) if has_file else None,
         )
