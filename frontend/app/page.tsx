@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { aiChatApi } from "@/app/lib/api/ai";
+import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
 import { useChatStream } from "@/app/hooks/use-chat-stream";
 import ChatMessage, {
@@ -10,15 +11,16 @@ import ChatMessage, {
 } from "@/app/components/chat/chat-message";
 import ChatInput from "@/app/components/chat/chat-input";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
-import ContextPanel from "@/app/components/chat/context-panel";
 import AgentTimeline from "@/app/components/chat/agent-timeline";
+import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
 import QuickTasks from "@/app/components/chat/quick-tasks";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
+import type { ModelSelectionResponse } from "@/app/lib/api/types";
 
 export default function Home() {
   const { state } = useAppContext();
-  const { setThreadId } = useAppActions();
+  const { setThreadId, setModelSelection } = useAppActions();
 
   const {
     messages,
@@ -37,7 +39,8 @@ export default function Home() {
   } = useChatStream();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [models, setModels] = useState<ModelSelectionResponse[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -45,6 +48,29 @@ export default function Home() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText, streamingReasoning]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    modelSelectionsApi
+      .list()
+      .then((data) => {
+        if (!mounted) return;
+        setModels(data);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setModels([]);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setModelsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleSend = useCallback(
     (prompt: string) => {
@@ -113,7 +139,7 @@ export default function Home() {
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Chat header */}
-        <div className="h-12 border-b border-border-light flex items-center px-4 gap-2 bg-white shrink-0">
+        <div className="min-h-12 border-b border-border-light flex flex-wrap items-center px-4 py-2 gap-3 bg-white shrink-0">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-1.5 rounded-lg hover:bg-surface-secondary transition-colors"
@@ -128,15 +154,13 @@ export default function Home() {
               ? "AI 对话"
               : "新对话"}
           </h2>
-          <button
-            onClick={() => setPanelOpen(!panelOpen)}
-            className="p-1.5 rounded-lg hover:bg-surface-secondary transition-colors"
-            title="Toggle context panel"
-          >
-            <svg className="w-4 h-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
+          <ModelSelectionPicker
+            models={models}
+            loading={modelsLoading}
+            value={state.currentModelSelection}
+            disabled={isStreaming}
+            onChange={setModelSelection}
+          />
         </div>
 
         {/* Messages */}
@@ -229,9 +253,6 @@ export default function Home() {
           disabled={hasNoModel}
         />
       </div>
-
-      {/* Context Panel (right) */}
-      {panelOpen && <ContextPanel />}
     </div>
   );
 }
