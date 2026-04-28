@@ -1,4 +1,0 @@
-interface:
-  display_name: "SQL Compatibility Validator"
-  short_description: "Validate project SQL for SQLite/PostgreSQL portability"
-  default_prompt: "Use $sql-compat-validator to validate SQL files in this project for SQLite and PostgreSQL compatibility."
