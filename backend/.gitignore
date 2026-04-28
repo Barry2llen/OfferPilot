@@ -35,4 +35,4 @@ logs
 tasks
 
 # test file
-test.py
+local_test*.py
