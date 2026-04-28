@@ -12,9 +12,10 @@ import Spinner from "@/app/components/ui/spinner";
 import type { ResumeListItem } from "@/app/lib/api/types";
 
 export default function ResumesPage() {
-  const { data, loading, error, refetch } = useAsyncData(() =>
-    resumesApi.list()
-  );
+  const fetchResumes = useCallback(() => resumesApi.list(), []);
+  const { data, loading, error, refetch } = useAsyncData(fetchResumes, [
+    fetchResumes,
+  ]);
   const { addToast } = useToast();
 
   const [deleting, setDeleting] = useState<number | null>(null);

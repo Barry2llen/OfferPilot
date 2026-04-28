@@ -69,7 +69,7 @@ export default function ChatMessage({ message }: Props) {
         </div>
       )}
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+        className={`max-w-[min(80%,48rem)] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isUser
             ? "bg-text-charcoal text-white rounded-br-md"
             : "bg-surface-secondary text-text-primary rounded-bl-md"
@@ -96,7 +96,7 @@ export function StreamingAssistantMessage({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       </div>
-      <div className="max-w-[80%] rounded-2xl rounded-bl-md bg-surface-secondary px-4 py-2.5 text-sm leading-relaxed text-text-primary">
+      <div className="max-w-[min(80%,48rem)] rounded-2xl rounded-bl-md bg-surface-secondary px-4 py-2.5 text-sm leading-relaxed text-text-primary">
         {reasoning && <ReasoningDisclosure content={reasoning} />}
         {content ? (
           <div className="flex items-end gap-1">

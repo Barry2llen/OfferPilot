@@ -164,7 +164,7 @@ export default function Home() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           {historyLoading ? (
             <div className="flex items-center justify-center py-20">
               <Spinner size="lg" />
@@ -196,7 +196,7 @@ export default function Home() {
               )}
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto">
+            <div className="w-full">
               {messages.map((msg, i) => (
                 <ChatMessage key={i} message={msg} />
               ))}
