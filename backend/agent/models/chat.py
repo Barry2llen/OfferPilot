@@ -44,7 +44,9 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
 
         return payload
 
-def load_chat_model(model_selection: ModelSelection) -> BaseChatModel:
+def load_chat_model(model_selection: ModelSelection | None) -> BaseChatModel:
+    if model_selection is None:
+        raise ChatModelLoadError("Model selection is required to load a chat model.")
     return _load_chat_model_cached(
         provider_name=model_selection.provider.provider,
         model_name=model_selection.model_name,
@@ -79,7 +81,7 @@ def _load_chat_model_cached(
 
     try:
         if model_provider == "deepseek":
-            deepseek_kwargs: dict[str, str] = {"model": model_name}
+            deepseek_kwargs: dict[str, Any] = {"model": model_name}
             if base_url is not None:
                 deepseek_kwargs["api_base"] = base_url
             if api_key is not None:

@@ -51,17 +51,17 @@ class ModelCallGraph(BaseGraph):
             logger.warning("No tools provided, skipping tool node.")
             return state
         
-        messages = state['messages']
+        messages = state.get("messages")
 
         if not messages:
             logger.warning("No messages in state, skipping tool node.")
             return state
         
-        if messages[-1].type != 'ai' or not hasattr(messages[-1], 'tool_calls') or not messages[-1].tool_calls:
+        if messages[-1].type != 'ai' or not hasattr(messages[-1], 'tool_calls'):
             logger.warning("Last message is not a tool call, skipping tool node.")
             return state
         
-        tool_calls: list[ToolCall] = messages[-1].tool_calls
+        tool_calls: list[ToolCall] = getattr(messages[-1], 'tool_calls')
 
         async def _call_tool(tool_call: ToolCall) -> ToolMessage:
             name = tool_call["name"]
@@ -109,7 +109,7 @@ class ModelCallGraph(BaseGraph):
         logger.debug(f"Calling model with state: {state}")
         
         try:
-            model_selection = state['model']
+            model_selection = state.get('model')
             if callable(model_selection):
                 model_selection = model_selection(state=state)
             model = load_chat_model(model_selection).bind_tools(self.tools)
@@ -122,8 +122,8 @@ class ModelCallGraph(BaseGraph):
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
                 try:
-                    logger.debug(f"Invoking model with system prompts: {self.system_prompts} and messages: {state['messages']}")
-                    response = model.invoke(self.system_prompts + state['messages'])
+                    logger.debug(f"Invoking model with system prompts: {self.system_prompts} and messages: {state.get('messages')}")
+                    response = model.invoke(self.system_prompts + state.get('messages', []))
                     return BaseAgentState(messages=[response])
                 except Exception as e:
                     logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
@@ -146,7 +146,7 @@ class ModelCallGraph(BaseGraph):
         Decide next action node. This node is responsible for deciding the next action based on the state.messages.
         """
 
-        messages = state['messages']
+        messages = state.get("messages")
 
         if not messages:
             logger.error("No messages in state, this should not happen.")
@@ -156,7 +156,7 @@ class ModelCallGraph(BaseGraph):
             logger.error("Last message is not from AI, this should not happen.")
             raise AgentStateError("Last message is not from AI, this should not happen.")
         
-        return 'end' if not hasattr(messages[-1], 'tool_calls') or not messages[-1].tool_calls else 'tool'
+        return 'end' if not hasattr(messages[-1], 'tool_calls') else 'tool'
             
     def get_graph(self) -> StateGraph[BaseAgentState]:
         
