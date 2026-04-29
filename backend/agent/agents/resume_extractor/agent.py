@@ -1,3 +1,4 @@
+from pydantic import BaseModel, Field
 from typing import override
 
 from langgraph.constants import START, END
@@ -5,7 +6,6 @@ from langgraph.graph.state import StateGraph
 from langchain.messages import HumanMessage, SystemMessage
 
 from utils.logger import logger
-from utils.garble_text import detect_garbled_text
 from exceptions.resume import ResumePreviewConversionError
 from schemas.resume_profile import ResumeProfile
 from .state import State
@@ -30,11 +30,23 @@ class ResumeExtractorAgent(BaseAgent[State]):
             )
         )
 
-    @require_fields('resume_document')
+    validation_system_prompt: SystemMessage = (
+            SystemMessage(
+                content = 
+                    "You are a helpful assistant that validates the extracted resume profile. " \
+                    "Your only task is to determine if the resume profile contains amount of garbled text or other forms of corruption. " \
+                    "Please validate the extracted resume profile and return whether it's valid or not, along with the reason for the validation result." \
+                    "Here follows the extracted resume profile that needs to be validated: "
+            )
+        )
+
+    @require_fields('resume_document', 'model', index=1)
     def _set_up_node(self, state: State) -> State:
         """
         Set up the initial state for the ResumeExtractorAgent.
         """
+
+        logger.debug("Setting up the ResumeExtractorAgent with the provided resume document and model selection.")
 
         model_selection = state['model'](state) if callable(state['model']) else state['model']
         state['structured_output_model'] = load_chat_model(model_selection).with_structured_output(ResumeProfile)
@@ -44,12 +56,14 @@ class ResumeExtractorAgent(BaseAgent[State]):
         if model_selection.supports_image_input:
             try:
                 state["resume_images"] = resume_document.convert_resume_to_image_base64()
+                logger.debug(f"Converted resume document to images for image-based extraction. Number of images: {len(state['resume_images'])}")
             except Exception as e:
                 raise ResumePreviewConversionError(f"Failed to convert resume to image: {e}")
         
         if not model_selection.supports_image_input:
             try:
                 state["resume_text"] = resume_document.extract_text()
+                logger.debug("Extracted text from resume for text-based extraction.")
             except Exception as e:
                 raise ResumePreviewConversionError(f"Failed to extract text from resume: {e}")
             
@@ -72,6 +86,7 @@ class ResumeExtractorAgent(BaseAgent[State]):
             raise ResumePreviewConversionError("No resume images available for extraction.")
 
         # Call the model with the system message and the resume images
+        logger.debug(f"Invoking model for image-based extraction.")
         response = model.invoke([self.structured_output_system_prompt] + [
             {"type": "image_url", "image_url": image} for image in resume_images
         ])
@@ -90,12 +105,28 @@ class ResumeExtractorAgent(BaseAgent[State]):
         Check if the information extraction was successful by using llm to validate the extracted profile.
         """
 
-        txt = state["resume_text"]
-        if not txt:
-            logger.warning("No resume text available for validation.")
-            raise ResumePreviewConversionError("No resume text available for validation.")
-        result = detect_garbled_text(txt)
-        return not result.is_garbled
+        class Validation(BaseModel):
+            """
+            Validation schema for the extracted resume profile.
+            """
+            is_valid: bool = Field(description="Whether the extracted resume profile is valid or not.")
+            reason: str | None = Field(default=None, description="The reason for the validation result.")
+        
+        validator = load_chat_model(state["model"]).with_structured_output(Validation)
+        logger.debug(f"Invoking model for validation of the extracted resume profile.")
+        validation: Validation = validator.invoke([self.validation_system_prompt, HumanMessage(content=f"{state['resume_text']}")])
+
+        if not isinstance(validation, Validation):
+            # TODO: Later we can retry a few times before giving up.
+            logger.error(f"Validation result is not in the expected format: {validation}")
+            raise ValueError(f"Validation result is not in the expected format: {validation}")
+        
+        if not validation.is_valid:
+            logger.debug("Extracted resume profile is not valid. Reason: " + (validation.reason or "No reason provided."))
+        else:
+            logger.debug("Extracted resume profile is valid.")
+
+        return validation.is_valid
 
     def _extract_with_text_node(self, state: State) -> State:
         """
@@ -108,6 +139,7 @@ class ResumeExtractorAgent(BaseAgent[State]):
             raise ResumePreviewConversionError("No resume text available for extraction.")
 
         # Call the model with the system message and the resume text
+        logger.debug(f"Invoking model for text-based extraction.")
         response = model.invoke([self.structured_output_system_prompt, HumanMessage(content=resume_text)])
 
         return State(resume_profile=response)
@@ -118,6 +150,7 @@ class ResumeExtractorAgent(BaseAgent[State]):
         """
         
         resume_document = state["resume_document"]
+        logger.debug("Attempting to extract text from resume using OCR as a fallback.")
         resume_text = resume_document.extract_text_ocr()
 
         return State(resume_text=resume_text)
