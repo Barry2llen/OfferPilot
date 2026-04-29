@@ -173,11 +173,19 @@ class BaseInterupt(TypedDict):
     type: NotRequired[InteruptType]
     message: NotRequired[str | None]
 
+
+def get[T](type_: type[T], obj: dict[str, Any], key: str) -> T:
+    value = obj.get(key)
+    if not isinstance(value, type_):
+        raise TypeError(f"Expected {type_}, got {type(value)}")
+    return value
+
 __all__ = [
     "BaseAgentState",
     "BaseGraph",
     "BaseWorkflow",
     "BaseAgent",
     "InteruptType",
-    "BaseInterupt"
+    "BaseInterupt",
+    "get"
 ]
