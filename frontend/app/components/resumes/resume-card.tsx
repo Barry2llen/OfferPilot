@@ -52,9 +52,6 @@ export default function ResumeCard({
               {mediaLabel(resume.media_type)}
             </Badge>
           </div>
-          <p className="text-sm text-text-secondary leading-relaxed mb-2 line-clamp-2">
-            {resume.content_preview || "(无解析内容)"}
-          </p>
           <p className="text-xs text-text-muted">
             {formatTime(resume.upload_time)}
           </p>

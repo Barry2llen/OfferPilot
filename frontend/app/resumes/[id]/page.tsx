@@ -28,13 +28,6 @@ export default function ResumeDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [operating, setOperating] = useState(false);
 
-  const handleCopyText = useCallback(() => {
-    if (resume?.content) {
-      navigator.clipboard.writeText(resume.content);
-      addToast("已复制解析文本", "success");
-    }
-  }, [resume, addToast]);
-
   const handleReplace = useCallback(
     async () => {
       setReplaceOpen(false);
@@ -121,13 +114,6 @@ export default function ResumeDetailPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleCopyText}
-          >
-            复制文本
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
             onClick={() => setConfirmDelete(true)}
             className="text-error-text hover:bg-error-bg"
           >
@@ -181,19 +167,6 @@ export default function ResumeDetailPage() {
           )}
         </Card>
       )}
-
-      <Card>
-        <h2 className="font-display text-base font-semibold text-text-primary mb-3">
-          解析文本
-        </h2>
-        {resume.content ? (
-          <pre className="whitespace-pre-wrap text-sm text-text-secondary leading-relaxed font-sans">
-            {resume.content}
-          </pre>
-        ) : (
-          <p className="text-text-muted text-sm">暂无解析内容</p>
-        )}
-      </Card>
 
       <ConfirmDialog
         open={confirmDelete}

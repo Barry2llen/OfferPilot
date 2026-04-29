@@ -6,10 +6,12 @@ from typing import (
     TypedDict,
     Annotated,
     Literal,
-    NotRequired
+    NotRequired,
+    cast
 )
 from abc import ABC, abstractmethod
 
+from langgraph._internal._typing import StateLike
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
@@ -34,7 +36,7 @@ class BaseAgentState(TypedDict):
     model: Displace[MaybeCallable[ModelSelection]]
     messages: Annotated[list[BaseMessage], add_messages]
 
-class BaseGraph[State = BaseAgentState](ABC):
+class BaseGraph[State: StateLike = BaseAgentState](ABC):
     """Base graph"""
     @abstractmethod
     def get_graph(self) -> StateGraph[State]:
@@ -61,7 +63,7 @@ class BaseGraph[State = BaseAgentState](ABC):
             name=name
         )
 
-class BaseAgent[State = BaseAgentState](BaseGraph[State]):
+class BaseAgent[State: StateLike = BaseAgentState](BaseGraph[State]):
     """Base agent"""
 
     def __init__(
@@ -79,8 +81,8 @@ class BaseAgent[State = BaseAgentState](BaseGraph[State]):
         self.checkpointer = checkpointer
         self.cache = cache
         self.store = store
-        self.interrupt_before = interrupt_before
-        self.interrupt_after = interrupt_after
+        self.interrupt_before: All | list[str] | None = interrupt_before
+        self.interrupt_after: All | list[str] | None = interrupt_after
         self.debug = debug
         self.name = name
 
@@ -96,7 +98,7 @@ class BaseAgent[State = BaseAgentState](BaseGraph[State]):
             name=self.name
         )
 
-class BaseWorkflow[Result = Any, State = BaseAgentState](ABC):
+class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
     """
     Base class for all workflows.
     """
@@ -126,7 +128,8 @@ class BaseWorkflow[Result = Any, State = BaseAgentState](ABC):
         """
         Define how to run the workflow.
         """
-        return self.agent.invoke(self._construct_initial_state(*args, **kwargs))
+        result =  self.agent.invoke(self._construct_initial_state(*args, **kwargs))
+        return cast(State, result)
     
     def invoke(
         self,

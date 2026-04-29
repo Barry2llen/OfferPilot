@@ -13,7 +13,6 @@ export interface ResumeListItem {
   upload_time: string;
   original_filename: string | null;
   media_type: string | null;
-  content_preview: string;
   has_file: boolean;
   preview_url: string | null;
 }
@@ -21,7 +20,6 @@ export interface ResumeListItem {
 export interface ResumeDetail {
   id: number;
   file_path: string | null;
-  content: string;
   upload_time: string;
   original_filename: string | null;
   media_type: string | null;
