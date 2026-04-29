@@ -7,7 +7,7 @@ from schemas.resume_document import ResumeDocument
 from ...base import BaseAgentState
 from ...annotations.types import Displace
 
-class State(BaseAgentState):
+class State(BaseAgentState, total=False):
     """
     State for the ResumeExtractorAgent. Inherits from BaseAgentState.
     """
@@ -21,7 +21,7 @@ class State(BaseAgentState):
 
     # Otherwise, the second choice is to extract text directly from the resume document to get information
     # If the extraction is bad, we should fall back to OCR on the rendered images to get the text, which is the third choice
-    resume_text: Displace[str | None]
+    resume_text: Displace[str]
 
     # As a result
-    resume_profile: Displace[ResumeProfile | None]
+    resume_profile: Displace[ResumeProfile]

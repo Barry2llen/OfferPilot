@@ -1,5 +1,5 @@
 
-from typing import override
+from typing import override, cast
 
 from schemas.model_selection import ModelSelection
 from schemas.resume_profile import ResumeProfile
@@ -28,9 +28,10 @@ class ResumeExtractWorkflow(BaseWorkflow[ResumeProfile, State]):
         )
     
     @override
-    @require_fields('resume_document', index=1)
+    @require_fields('resume_profile', index=1)
     def _get_result(self, state: State) -> ResumeProfile:
-        return state["resume_profile"]
+        resume_profile =  state.get("resume_profile")
+        return cast(ResumeProfile, resume_profile)
     
 __all__ = [
     "ResumeExtractWorkflow"

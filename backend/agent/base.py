@@ -28,7 +28,7 @@ from .annotations.types import (
 from utils.stream import render_stream_events, StreamEventHandler
 from schemas.model_selection import ModelSelection
 
-class BaseAgentState(TypedDict):
+class BaseAgentState(TypedDict, total=False):
     """
     Base class for agent state. All agent states should inherit from this class.
     """
@@ -103,8 +103,8 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
     Base class for all workflows.
     """
 
-    def __init__(self, agent: CompiledStateGraph[State]):
-        self.agent = agent
+    def __init__(self, agent: BaseAgent[State]):
+        self.agent = agent.get_agent()
 
     @abstractmethod
     def _construct_initial_state(self, *args, **kwargs) -> State:
