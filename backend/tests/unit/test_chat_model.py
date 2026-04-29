@@ -1,10 +1,40 @@
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from pydantic import BaseModel, ConfigDict
 
 from agent.models.chat import DeepSeekThinkingChatModel, load_chat_model
 from exceptions import ChatModelLoadError
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
+
+
+class DemoStructuredOutput(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "name": "张三",
+                    "is_valid": True,
+                }
+            ]
+        }
+    )
+
+    name: str
+    is_valid: bool
+
+
+def _response_format_kwargs(runnable: object) -> dict[str, object]:
+    candidates = [
+        getattr(runnable, "first", None),
+        *getattr(runnable, "middle", []),
+        getattr(runnable, "last", None),
+    ]
+    for candidate in candidates:
+        kwargs = getattr(candidate, "kwargs", None)
+        if isinstance(kwargs, dict) and "response_format" in kwargs:
+            return kwargs
+    return {}
 
 
 def test_load_chat_model_rejects_unsupported_provider() -> None:
@@ -52,6 +82,60 @@ def test_load_chat_model_uses_deepseek_provider_model() -> None:
 
     assert isinstance(model, DeepSeekThinkingChatModel)
     load_chat_model.cache_clear()
+
+
+def test_deepseek_reasoner_structured_output_uses_json_mode() -> None:
+    model = DeepSeekThinkingChatModel(
+        model="deepseek-reasoner",
+        api_key="sk-test",
+    )
+
+    runnable = model.with_structured_output(DemoStructuredOutput)
+
+    kwargs = _response_format_kwargs(runnable)
+    assert kwargs["response_format"] == {"type": "json_object"}
+    assert kwargs["ls_structured_output_format"]["kwargs"] == {"method": "json_mode"}
+
+
+def test_deepseek_v4_flash_structured_output_uses_json_mode() -> None:
+    model = DeepSeekThinkingChatModel(
+        model="deepseek-v4-flash",
+        api_key="sk-test",
+    )
+
+    runnable = model.with_structured_output(DemoStructuredOutput)
+
+    kwargs = _response_format_kwargs(runnable)
+    assert kwargs["response_format"] == {"type": "json_object"}
+    assert kwargs["ls_structured_output_format"]["kwargs"] == {"method": "json_mode"}
+
+
+def test_deepseek_reasoner_structured_output_prepends_json_prompt() -> None:
+    model = DeepSeekThinkingChatModel(
+        model="deepseek-reasoner",
+        api_key="sk-test",
+    )
+    runnable = model.with_structured_output(DemoStructuredOutput)
+
+    messages = runnable.first.invoke([HumanMessage(content="解析这份简历")])
+
+    assert "json" in messages[0].content.lower()
+    assert "EXAMPLE JSON OUTPUT" in messages[0].content
+    assert '"name": "张三"' in messages[0].content
+    assert messages[1].content == "解析这份简历"
+
+
+def test_deepseek_chat_structured_output_uses_json_mode() -> None:
+    model = DeepSeekThinkingChatModel(
+        model="deepseek-chat",
+        api_key="sk-test",
+    )
+
+    runnable = model.with_structured_output(DemoStructuredOutput)
+
+    kwargs = _response_format_kwargs(runnable)
+    assert kwargs["response_format"] == {"type": "json_object"}
+    assert kwargs["ls_structured_output_format"]["kwargs"] == {"method": "json_mode"}
 
 
 def test_openai_compatible_deepseek_url_does_not_use_deepseek_provider(
