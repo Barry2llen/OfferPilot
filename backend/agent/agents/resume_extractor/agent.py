@@ -85,10 +85,22 @@ class ResumeExtractorAgent(BaseAgent[State]):
         if not resume_images:
             raise ResumePreviewConversionError("No resume images available for extraction.")
 
+        message_content = [
+            {
+                "type": "text",
+                "text": "Please extract structured information from these resume images.",
+            },
+            *[
+                {"type": "image_url", "image_url": {"url": image}}
+                for image in resume_images
+            ],
+        ]
+
         # Call the model with the system message and the resume images
         logger.debug(f"Invoking model for image-based extraction.")
-        response = model.invoke([self.structured_output_system_prompt] + [
-            {"type": "image_url", "image_url": image} for image in resume_images
+        response = model.invoke([
+            self.structured_output_system_prompt,
+            HumanMessage(content=message_content),
         ])
         
         return State(resume_profile=response)
