@@ -1,5 +1,5 @@
 
-from schemas.resume_profile import ResumeProfile
+from schemas.resume import Resume
 
 from ..base import BaseAgentState
 
@@ -9,4 +9,4 @@ class JobTaskState(BaseAgentState):
     """
 
     resume_id: str | None
-    resume_profile: ResumeProfile | None
+    resume: Resume | None

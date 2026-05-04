@@ -40,8 +40,8 @@ class BaseAgentState(TypedDict, total=False):
 
 class BaseGraph[State: StateLike = BaseAgentState](ABC):
 
-    def __init__(self):
-        self.config: Config = load_config()
+    def __init__(self, *args, config: Config = None, **kwargs):
+        self.config: Config = config if config is not None else load_config()
 
     """Base graph"""
     @abstractmethod

@@ -8,7 +8,7 @@ from langgraph.graph.state import StateGraph
 from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
-from backend.exceptions.agent import ModelCallExecutionError
+from exceptions.agent import ModelCallExecutionError
 from utils.logger import logger
 from schemas.command import BaseCommand
 from exceptions.resume import ResumePreviewConversionError
@@ -16,12 +16,10 @@ from exceptions.validation import ValidationError
 from schemas.resume import (
     Resume,
     ResumeFacts,
-    ResumeFact,
     ResumeSectionEx,
     ResumeSections,
     ResumeSection
 )
-from backend.schemas.command import BaseCommand
 from .prompt import (
     validation_system_prompt,
     section_extraction_system_prompt,
@@ -257,5 +255,13 @@ class ResumeExtractorAgent(BaseAgent[State]):
     @override
     def get_graph(self) -> StateGraph[State]:
         graph = StateGraph[State](State)
-        # TODO: complete the graph construction with proper edges and nodes
+        graph.add_node("set_up", self._set_up_node)
+        graph.add_node("extract_section", self._extract_section_node)
+        graph.add_node("extract_facts", self._extract_facts_node)
+
+        graph.add_edge(START, "set_up")
+        graph.add_edge("set_up", "extract_section")
+        graph.add_edge("extract_section", "extract_facts")
+        graph.add_edge("extract_facts", END)
+
         return graph

@@ -2,7 +2,7 @@
 from typing import override, cast
 
 from schemas.model_selection import ModelSelection
-from schemas.resume_profile import ResumeProfile
+from schemas.resume import Resume
 from schemas.resume_document import ResumeDocument
 from ...base import BaseWorkflow
 from ...annotations.types import MaybeCallable
@@ -10,7 +10,7 @@ from ...nodes.wrappers import require_fields
 from ...agents.resume_extractor import State
 from ...agents.resume_extractor import ResumeExtractorAgent
 
-class ResumeExtractWorkflow(BaseWorkflow[ResumeProfile, State]):
+class ResumeExtractWorkflow(BaseWorkflow[Resume, State]):
     
     def __init__(self):
         super().__init__(ResumeExtractorAgent())
@@ -28,10 +28,10 @@ class ResumeExtractWorkflow(BaseWorkflow[ResumeProfile, State]):
         )
     
     @override
-    @require_fields('resume_profile', index=1)
-    def _get_result(self, state: State) -> ResumeProfile:
-        resume_profile =  state.get("resume_profile")
-        return cast(ResumeProfile, resume_profile)
+    @require_fields('resume', index=1)
+    def _get_result(self, state: State) -> Resume:
+        resume = state.get("resume")
+        return cast(Resume, resume)
     
 __all__ = [
     "ResumeExtractWorkflow"
