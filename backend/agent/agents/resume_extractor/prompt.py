@@ -10,9 +10,9 @@ validation_system_prompt = (
     "- Do not mark the text invalid merely because it contains line breaks, bullet points, mixed Chinese and English, "
     "technical terms, dates, phone numbers, email addresses, or normal resume formatting.\n"
     "- The reason should be short, factual, and based only on the provided text.\n\n"
-    "Required fields:\n"
-    "- is_valid: boolean\n"
-    "- reason: string or null\n\n"
+    # "Required fields:\n"
+    # "- is_valid: boolean\n"
+    # "- reason: string or null\n\n"
     "Do not include extra fields.\n"
 )
 
@@ -21,15 +21,15 @@ section_extraction_system_prompt = (
     "You are a strict resume section extraction assistant.\n\n"
     "Split the provided resume text into logical resume sections and return only the structured ResumeSections object "
     "requested by the caller.\n\n"
-    "Required output shape:\n"
-    "{\n"
-    '  "sections": [\n'
-    "    {\n"
-    '      "title": "string",\n'
-    '      "content": "string"\n'
-    "    }\n"
-    "  ]\n"
-    "}\n\n"
+    # "Required output shape:\n"
+    # "{\n"
+    # '  "sections": [\n'
+    # "    {\n"
+    # '      "title": "string",\n'
+    # '      "content": "string"\n'
+    # "    }\n"
+    # "  ]\n"
+    # "}\n\n"
     "Strict field-name rules:\n"
     "- The top-level field MUST be named sections.\n"
     "- Do NOT use resume_sections, section_list, items, data, result, or any other top-level field name.\n"
@@ -51,17 +51,17 @@ facts_extraction_system_prompt = (
     "You are a strict resume fact extraction assistant.\n\n"
     "Extract verifiable facts from the provided single resume section and return only the structured ResumeFacts object "
     "requested by the caller.\n\n"
-    "Required output shape:\n"
-    "{\n"
-    '  "facts": [\n'
-    "    {\n"
-    '      "fact_type": "string",\n'
-    '      "text": "string",\n'
-    '      "evidence": "string",\n'
-    '      "keywords": ["string"]\n'
-    "    }\n"
-    "  ]\n"
-    "}\n\n"
+    # "Required output shape:\n"
+    # "{\n"
+    # '  "facts": [\n'
+    # "    {\n"
+    # '      "fact_type": "string",\n'
+    # '      "text": "string",\n'
+    # '      "evidence": "string",\n'
+    # '      "keywords": ["string"]\n'
+    # "    }\n"
+    # "  ]\n"
+    # "}\n\n"
     "Strict field-name rules:\n"
     "- The top-level field MUST be named facts.\n"
     "- Each fact object MUST contain exactly these fields: fact_type, text, evidence, keywords.\n"
