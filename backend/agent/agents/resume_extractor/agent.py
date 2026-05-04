@@ -1,44 +1,40 @@
-from pydantic import BaseModel, Field
+
+import asyncio
 from typing import override
 
+from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
 from langchain.messages import HumanMessage, SystemMessage
+from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
+from backend.exceptions.agent import ModelCallExecutionError
 from utils.logger import logger
+from schemas.command import BaseCommand
 from exceptions.resume import ResumePreviewConversionError
-from schemas.resume_profile import ResumeProfile
+from exceptions.validation import ValidationError
+from schemas.resume import (
+    Resume,
+    ResumeFacts,
+    ResumeFact,
+    ResumeSectionEx,
+    ResumeSections,
+    ResumeSection
+)
+from backend.schemas.command import BaseCommand
+from .prompt import (
+    validation_system_prompt,
+    section_extraction_system_prompt,
+    facts_extraction_system_prompt
+)
 from .state import State
-from ...base import BaseAgent
+from .model import TextValidation
+from ...events import ModelCallErrorEvent, ProgressUpdateEvent
+from ...base import BaseAgent, BaseInterupt
 from ...nodes.wrappers import require_fields
 from ...models import load_chat_model
 
 class ResumeExtractorAgent(BaseAgent[State]):
-    """
-    Agent for extracting structured information from resumes.
-    The agent will first try to use a model that supports image input to extract information from the resume images.
-    If the model does not support image input, it will fall back to using text extraction.
-    If the text extraction fails, it will then try to use OCR on the resume images to extract text and then use that text for information extraction.
-    """
-
-    structured_output_system_prompt: SystemMessage = (
-            SystemMessage(
-                content = 
-                    "You are a helpful assistant that extracts structured information from resumes." \
-                    "Please extract the relevant information from the provided resume and return it in a structured format." \
-                    "Here follows the resume information that needs to be extracted: "
-            )
-        )
-
-    validation_system_prompt: SystemMessage = (
-            SystemMessage(
-                content = 
-                    "You are a helpful assistant that validates the extracted resume profile. " \
-                    "Your only task is to determine if the resume profile contains amount of garbled text or other forms of corruption. " \
-                    "Please validate the extracted resume profile and return whether it's valid or not, along with the reason for the validation result." \
-                    "Here follows the extracted resume profile that needs to be validated: "
-            )
-        )
 
     @require_fields('resume_document', 'model', index=1)
     def _set_up_node(self, state: State) -> State:
@@ -46,157 +42,220 @@ class ResumeExtractorAgent(BaseAgent[State]):
         Set up the initial state for the ResumeExtractorAgent.
         """
 
-        logger.debug("Setting up the ResumeExtractorAgent with the provided resume document and model selection.")
+        dispatch_custom_event("on_progress_update", ProgressUpdateEvent(
+            progress=0.0,
+        ))
 
         model_selection = state['model'](state) if callable(state['model']) else state['model']
-        state['structured_output_model'] = load_chat_model(model_selection).with_structured_output(ResumeProfile)
-
         resume_document = state["resume_document"]
 
-        if model_selection.supports_image_input:
-            try:
-                state["resume_images"] = resume_document.convert_resume_to_image_base64()
-                logger.debug(f"Converted resume document to images for image-based extraction. Number of images: {len(state['resume_images'])}")
-            except Exception as e:
-                raise ResumePreviewConversionError(f"Failed to convert resume to image: {e}")
+        try:
+            resume_text = resume_document.extract_text()
+            logger.debug("Extracted text from resume for text-based extraction.")
+        except Exception as e:
+            raise ResumePreviewConversionError(f"Failed to extract text from resume: {e}")
         
-        if not model_selection.supports_image_input:
-            try:
-                state["resume_text"] = resume_document.extract_text()
-                logger.debug("Extracted text from resume for text-based extraction.")
-            except Exception as e:
-                raise ResumePreviewConversionError(f"Failed to extract text from resume: {e}")
+        try:
+            resume_images = resume_document.convert_resume_to_image_base64()
+            logger.debug(f"Converted resume document to images for image-based extraction. Number of images: {len(resume_images)}")
+        except Exception as e:
+            raise ResumePreviewConversionError(f"Failed to convert resume to image: {e}")
+        
+        # Check text extraction result.
+        validator = load_chat_model(model_selection).with_structured_output(TextValidation)
+        while True:
+            flag = False
+            max_retries = self.config.model_call_retry_attempts
+            for _ in range(max_retries):
+                try:
+                    logger.debug(f"Invoking model for validation of the extracted resume text.")
+                    validation = validator.invoke([
+                        SystemMessage(content=validation_system_prompt),
+                        HumanMessage(content=resume_text)
+                    ])
+
+                    if not isinstance(validation, TextValidation):
+                        logger.debug(f"Validation result is not in the expected format, result: {validation}")
+                        raise ValidationError(f"Validation result is not in the expected format.")
+                    
+                    if validation.is_valid:
+                        logger.debug(f"Extracted resume text seems to be valid, reason: {validation.reason or 'No reason provided.'}")
+                    else:
+                        logger.debug(f"Extracted resume text seems to be invalid, reason: {validation.reason or 'No reason provided.'}")
+
+                    flag = True
+                    break
+                except Exception as e:
+                    logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
+                    dispatch_custom_event("on_model_call_error", ModelCallErrorEvent(
+                        error=str(e),
+                        attempt=_+1,
+                        max_attempts=max_retries
+                    ))
+
+            if flag:
+                break
+
+            logger.error(f"Model call failed after {max_retries} retries.")
             
-        return state
+            resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Model call failed after {max_retries} retries for extracting sections from the resume text."))
 
-    def _if_supports_image(self, state: State) -> bool:
-        """
-        Check if the selected model supports image input.
-        """
-        return state["model"].supports_image_input if state.get("model") else False
-
-    def _extract_with_image_node(self, state: State) -> State:
-        """
-        Extract information from the resume using the model that supports image input.
-        """
-        model = state["structured_output_model"]
-        resume_images = state["resume_images"]
-
-        if not resume_images:
-            raise ResumePreviewConversionError("No resume images available for extraction.")
-
-        message_content = [
-            {
-                "type": "text",
-                "text": "Please extract structured information from these resume images.",
-            },
-            *[
-                {"type": "image_url", "image_url": {"url": image}}
-                for image in resume_images
-            ],
-        ]
-
-        # Call the model with the system message and the resume images
-        logger.debug(f"Invoking model for image-based extraction.")
-        response = model.invoke([
-            self.structured_output_system_prompt,
-            HumanMessage(content=message_content),
-        ])
-        
-        return State(resume_profile=response)
-
-    def _image_not_support_node(self, state: State) -> State:
-        """
-        Handle the case when the model does not support image input.
-        """
-        # do nothing here, just a placeholder node to make the graph complete
-        return {}
-
-    def _if_extraction_succeeded(self, state: State) -> bool:
-        """
-        Check if the information extraction was successful by using llm to validate the extracted profile.
-        """
-
-        class Validation(BaseModel):
-            """
-            Validation schema for the extracted resume profile.
-            """
-            is_valid: bool = Field(description="Whether the extracted resume profile is valid or not.")
-            reason: str | None = Field(default=None, description="The reason for the validation result.")
-        
-        validator = load_chat_model(state["model"]).with_structured_output(Validation)
-        logger.debug(f"Invoking model for validation of the extracted resume profile.")
-        validation: Validation = validator.invoke([self.validation_system_prompt, HumanMessage(content=f"{state['resume_text']}")])
-
-        if not isinstance(validation, Validation):
-            # TODO: Later we can retry a few times before giving up.
-            logger.error(f"Validation result is not in the expected format: {validation}")
-            raise ValueError(f"Validation result is not in the expected format: {validation}")
-        
+            match resp['type']:
+                case 'retry':
+                    continue
+                case _:
+                    raise ModelCallExecutionError(
+                        "Model call failed after "
+                        f"{max_retries} retries and code received interrupt with type "
+                        f"{resp['type']} and message {resp.get('prompt', '')}"
+                    )
+                
+        # fall back to OCR-based extraction if text-based extraction is invalid
         if not validation.is_valid:
-            logger.debug("Extracted resume profile is not valid. Reason: " + (validation.reason or "No reason provided."))
-        else:
-            logger.debug("Extracted resume profile is valid.")
-
-        return validation.is_valid
-
-    def _extract_with_text_node(self, state: State) -> State:
-        """
-        Extract information from the resume using the model that supports text input.
-        """
-        model = state["structured_output_model"]
-        resume_text = state["resume_text"]
-
-        if not resume_text:
-            raise ResumePreviewConversionError("No resume text available for extraction.")
-
-        # Call the model with the system message and the resume text
-        logger.debug(f"Invoking model for text-based extraction.")
-        response = model.invoke([self.structured_output_system_prompt, HumanMessage(content=resume_text)])
-
-        return State(resume_profile=response)
-
-    def _extract_text_ocr_node(self, state: State) -> State:
-        """
-        Extract information from the resume using OCR on the resume images.
-        """
-        
-        resume_document = state["resume_document"]
-        logger.debug("Attempting to extract text from resume using OCR as a fallback.")
-        resume_text = resume_document.extract_text_ocr()
-
-        return State(resume_text=resume_text)
+            logger.debug("Falling back to OCR-based extraction due to invalid text-based extraction.")
+            try:
+                resume_text = resume_document.extract_text_ocr()
+            except Exception as e:
+                logger.error(f"Failed to extract text from resume using OCR: {e}")
+                raise ResumePreviewConversionError(f"Failed to extract text from resume using OCR: {e}")
+            
+        return State(
+            resume_images=resume_images,
+            resume_text=resume_text,
+        )
     
+    def _extract_section_node(self, state: State) -> State:
+        """
+        Extract sections from the resume text.
+        """
+
+        model_selection = state['model'](state) if callable(state['model']) else state['model']
+        resume_text = state['resume_text']
+
+        logger.debug("Extracting sections from the resume text.")
+
+        extractor = load_chat_model(model_selection).with_structured_output(ResumeSections)
+        while True:
+            flag = False
+            max_retries = self.config.model_call_retry_attempts
+            for _ in range(max_retries):
+                try:
+                    logger.debug(f"Invoking model for extracting sections from the resume text.")
+                    sections: ResumeSections = extractor.invoke([
+                        SystemMessage(content=section_extraction_system_prompt),
+                        HumanMessage(content=resume_text)
+                    ])
+
+                    if not isinstance(sections, ResumeSections):
+                        logger.debug(f"Sections result is not in the expected format, result: {sections}")
+                        raise ValidationError(f"Sections result is not in the expected format.")
+
+                    flag = True
+                    break
+                except Exception as e:
+                    logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
+                    dispatch_custom_event("on_model_call_error", ModelCallErrorEvent(
+                        error=str(e),
+                        attempt=_+1,
+                        max_attempts=max_retries
+                    ))
+
+            if flag:
+                break
+
+            logger.error(f"Model call failed after {max_retries} retries.")
+            
+            resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Model call failed after {max_retries} retries for extracting sections from the resume text."))
+
+            match resp['type']:
+                case 'retry':
+                    continue
+                case _:
+                    raise ModelCallExecutionError(
+                        "Model call failed after "
+                        f"{max_retries} retries and code received interrupt with type "
+                        f"{resp['type']} and message {resp.get('prompt', '')}"
+                    )
+                
+        return State(
+            sections=sections.sections
+        ) 
+    
+    async def _extract_facts_node(self, state: State) -> State:
+        """
+        Extract facts from each resume section.
+        """
+
+        logger.debug("Extracting facts from each resume section.")
+
+        model_selection = state['model'](state) if callable(state['model']) else state['model']
+        sections = state['sections']
+        sections_with_facts = []
+        extractor = load_chat_model(model_selection).with_structured_output(ResumeFacts)
+
+        async def _extract_facts_for_section(section: ResumeSectionEx) -> ResumeSection:
+            section_text = str(section)
+            while True:
+                try:
+                    logger.debug(f"Invoking model for extracting facts from section: {section.title}")
+                    facts: ResumeFacts = await extractor.ainvoke([
+                        SystemMessage(content=facts_extraction_system_prompt),
+                        HumanMessage(content=section_text)
+                    ])
+
+                    if not isinstance(facts, ResumeFacts):
+                        logger.debug(f"Facts result is not in the expected format, result: {facts}")
+                        raise ValidationError(f"Facts result is not in the expected format.")
+
+                    return ResumeSection(
+                        title=section.title,
+                        content=section.content,
+                        facts=facts.facts
+                    )
+                except Exception as e:
+                    logger.error(f"Error calling model for section {section.title}:\n{e}")
+                    await adispatch_custom_event("on_model_call_error", ModelCallErrorEvent(
+                        error=str(e),
+                        attempt=1,
+                        max_attempts=1,
+                        additional_data={"section_title": section.title}
+                    ))
+                    return None
+
+        while True:
+            max_retries = self.config.model_call_retry_attempts
+            for _ in range(max_retries):
+                results = await asyncio.gather(*(_extract_facts_for_section(section) for section in sections))
+
+                sections_with_facts.extend([result for result in results if result is not None])
+                if all(result is not None for result in results):
+                    return State(
+                        resume=Resume(
+                            raw_text=state['resume_text'],
+                            document=state['resume_document'],
+                            sections=sections_with_facts
+                        )
+                    )
+
+                error_indexes = [i for i, result in enumerate(results) if result is None]
+                sections = [sections[i] for i in error_indexes]
+
+                logger.debug(f"Error occurred while extracting facts for some sections: {[section.title for section in sections]}. Retrying for these sections, attempt {_+1}/{max_retries}.")
+
+            resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Model call failed after {max_retries} retries for extracting facts from some sections of the resume."))
+
+            match resp['type']:
+                case 'retry':
+                    continue
+                case _:
+                    raise ModelCallExecutionError(
+                        "Model call failed after "
+                        f"{max_retries} retries and code received interrupt with type "
+                        f"{resp['type']} and message {resp.get('prompt', '')}"
+                    )
+
     @override
     def get_graph(self) -> StateGraph[State]:
         graph = StateGraph[State](State)
-
-        graph.add_node("set_up", self._set_up_node)
-        graph.add_node("extract_with_image", self._extract_with_image_node)
-        graph.add_node("extract_with_text", self._extract_with_text_node)
-        graph.add_node("extract_text_ocr", self._extract_text_ocr_node)
-        graph.add_node("image_not_support", self._image_not_support_node)
-
-        graph.add_edge(START, "set_up")
-        graph.add_conditional_edges(
-            "set_up",
-            self._if_supports_image,
-            {
-                True: "extract_with_image",
-                False: "image_not_support"  
-            }
-        )
-        graph.add_conditional_edges(
-            "image_not_support",
-            self._if_extraction_succeeded,
-            {
-                True: "extract_with_text",
-                False: "extract_text_ocr"
-            }
-        )
-        graph.add_edge("extract_text_ocr", "extract_with_text")
-
-        graph.add_edge("extract_with_image", END)
-        graph.add_edge("extract_with_text", END)
-
+        # TODO: complete the graph construction with proper edges and nodes
         return graph

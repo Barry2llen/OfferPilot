@@ -25,6 +25,8 @@ from .annotations.types import (
     Displace,
     MaybeCallable
 )
+from schemas.config.base import Config
+from schemas.config import load_config
 from utils.stream import render_stream_events, StreamEventHandler
 from schemas.model_selection import ModelSelection
 
@@ -37,6 +39,10 @@ class BaseAgentState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
 
 class BaseGraph[State: StateLike = BaseAgentState](ABC):
+
+    def __init__(self):
+        self.config: Config = load_config()
+
     """Base graph"""
     @abstractmethod
     def get_graph(self) -> StateGraph[State]:

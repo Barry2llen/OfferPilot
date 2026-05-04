@@ -10,6 +10,7 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
+from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from exceptions import AgentStateError, ModelCallExecutionError
 from ..models import load_chat_model
@@ -18,8 +19,7 @@ from ..base import (
     BaseAgentState,
     BaseInterupt
 )
-from schemas.config.base import Config
-from schemas.config import load_config
+from ..events import ToolCallErrorEvent, ModelCallErrorEvent
 from schemas.command import BaseCommand
 from utils.logger import logger
 
@@ -30,13 +30,11 @@ class ModelCallGraph(BaseGraph):
             self,
             *args,
             system_prompts: list[BaseMessage] | None = None,
-            config: Config | None = None,
             tools: Sequence[BaseTool] | None = None,
             **kwargs
         ):
         
         super().__init__(*args, **kwargs)
-        self.config = load_config() if config is None else config
         self.tools = tools or tuple[BaseTool]()
         self.tools_dict = {tool.name: tool for tool in self.tools}
         self.system_prompts = system_prompts or []
@@ -81,6 +79,12 @@ class ModelCallGraph(BaseGraph):
                 result = await self.tools_dict[name].ainvoke(tool_call)
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
+                await adispatch_custom_event("on_tool_call_error", ToolCallErrorEvent(
+                    error=str(e),
+                    tool_name=name,
+                    args=args,
+                    tool_call_id=tool_call_id
+                ))
                 return ToolMessage(
                     content=f"Error calling tool {name} with args {args}: {e}",
                     tool_call_id=tool_call_id,
@@ -126,6 +130,11 @@ class ModelCallGraph(BaseGraph):
                     response = model.invoke(self.system_prompts + state.get('messages', []))
                     return BaseAgentState(messages=[response])
                 except Exception as e:
+                    dispatch_custom_event("on_model_call_error", ModelCallErrorEvent(
+                        error=str(e),
+                        attempt=_+1,
+                        max_attempts=max_retries
+                    ))
                     logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
 
             logger.error(f"Model call failed after {max_retries} retries.")
