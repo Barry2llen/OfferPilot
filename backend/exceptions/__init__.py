@@ -25,6 +25,9 @@ from .resume import (
     UnsupportedResumeFileError,
     UnsupportedResumePreviewFileError,
 )
+from .validation import (
+    ValidationError
+)
 
 __all__ = [
     "AgentError",
@@ -53,4 +56,5 @@ __all__ = [
     "UnsupportedModelProviderError",
     "UnsupportedResumeFileError",
     "UnsupportedResumePreviewFileError",
+    "ValidationError"
 ]

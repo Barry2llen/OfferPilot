@@ -50,7 +50,6 @@ def _build_resume(file_path: Path | None) -> ResumeDocument:
     return ResumeDocument(
         id=1,
         file_path=str(file_path) if file_path is not None else None,
-        content="resume",
         upload_time=datetime.now(),
         original_filename=file_path.name if file_path is not None else None,
         media_type=None,

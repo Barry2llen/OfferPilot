@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -685,28 +685,35 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
         metadata: CheckpointMetadata,
         writes: Sequence[GraphCheckpointWriteORM],
     ) -> CheckpointTuple:
-        checkpoint_config = {
-            "configurable": {
-                "thread_id": row.thread_id,
-                "checkpoint_ns": row.checkpoint_ns,
-                "checkpoint_id": row.checkpoint_id,
-            }
-        }
-        return CheckpointTuple(
-            config=checkpoint_config if config is None else checkpoint_config,
-            checkpoint=checkpoint,
-            metadata=metadata,
-            parent_config=(
+        checkpoint_config = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": row.thread_id,
+                    "checkpoint_ns": row.checkpoint_ns,
+                    "checkpoint_id": row.checkpoint_id,
+                }
+            },
+        )
+        parent_config = (
+            cast(
+                RunnableConfig,
                 {
                     "configurable": {
                         "thread_id": row.thread_id,
                         "checkpoint_ns": row.checkpoint_ns,
                         "checkpoint_id": row.parent_checkpoint_id,
                     }
-                }
-                if row.parent_checkpoint_id
-                else None
-            ),
+                },
+            )
+            if row.parent_checkpoint_id
+            else None
+        )
+        return CheckpointTuple(
+            config=checkpoint_config,
+            checkpoint=checkpoint,
+            metadata=metadata,
+            parent_config=parent_config,
             pending_writes=[
                 (
                     write.task_id,
@@ -734,7 +741,7 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
             blob.channel: self.serde.loads_typed((blob.value_type, blob.value_payload))
             for blob in blobs
         }
-        return {**checkpoint, "channel_values": channel_values}
+        return cast(Checkpoint, {**checkpoint, "channel_values": channel_values})
 
     async def _adeserialize_checkpoint(
         self,
@@ -753,7 +760,7 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
             blob.channel: self.serde.loads_typed((blob.value_type, blob.value_payload))
             for blob in blobs
         }
-        return {**checkpoint, "channel_values": channel_values}
+        return cast(Checkpoint, {**checkpoint, "channel_values": channel_values})
 
     def _cleanup_orphan_blobs(
         self,

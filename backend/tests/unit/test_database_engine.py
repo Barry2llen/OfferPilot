@@ -207,7 +207,6 @@ def test_initialize_tables_creates_expected_resume_columns(
     assert {
         "id",
         "file_path",
-        "content",
         "upload_time",
         "original_filename",
         "media_type",

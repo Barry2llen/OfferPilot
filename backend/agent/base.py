@@ -6,10 +6,12 @@ from typing import (
     TypedDict,
     Annotated,
     Literal,
-    NotRequired
+    NotRequired,
+    cast
 )
 from abc import ABC, abstractmethod
 
+from langgraph._internal._typing import StateLike
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
@@ -23,10 +25,12 @@ from .annotations.types import (
     Displace,
     MaybeCallable
 )
+from schemas.config.base import Config
+from schemas.config import load_config
 from utils.stream import render_stream_events, StreamEventHandler
 from schemas.model_selection import ModelSelection
 
-class BaseAgentState(TypedDict):
+class BaseAgentState(TypedDict, total=False):
     """
     Base class for agent state. All agent states should inherit from this class.
     """
@@ -34,16 +38,11 @@ class BaseAgentState(TypedDict):
     model: Displace[MaybeCallable[ModelSelection]]
     messages: Annotated[list[BaseMessage], add_messages]
 
-    def _to_base(self) -> BaseAgentState:
-        """
-        Convert the state to a BaseAgentState. This is useful for converting from a subclass to the base class.
-        """
-        return BaseAgentState(
-            model=self['model'],
-            messages=self['messages']
-        )
+class BaseGraph[State: StateLike = BaseAgentState](ABC):
 
-class BaseGraph[State = BaseAgentState](ABC):
+    def __init__(self, *args, config: Config = None, **kwargs):
+        self.config: Config = config if config is not None else load_config()
+
     """Base graph"""
     @abstractmethod
     def get_graph(self) -> StateGraph[State]:
@@ -70,7 +69,7 @@ class BaseGraph[State = BaseAgentState](ABC):
             name=name
         )
 
-class BaseAgent[State = BaseAgentState](BaseGraph[State]):
+class BaseAgent[State: StateLike = BaseAgentState](BaseGraph[State]):
     """Base agent"""
 
     def __init__(
@@ -88,8 +87,8 @@ class BaseAgent[State = BaseAgentState](BaseGraph[State]):
         self.checkpointer = checkpointer
         self.cache = cache
         self.store = store
-        self.interrupt_before = interrupt_before
-        self.interrupt_after = interrupt_after
+        self.interrupt_before: All | list[str] | None = interrupt_before
+        self.interrupt_after: All | list[str] | None = interrupt_after
         self.debug = debug
         self.name = name
 
@@ -105,13 +104,13 @@ class BaseAgent[State = BaseAgentState](BaseGraph[State]):
             name=self.name
         )
 
-class BaseWorkflow[Result = Any, State = BaseAgentState](ABC):
+class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
     """
     Base class for all workflows.
     """
 
-    def __init__(self, agent: CompiledStateGraph[State]):
-        self.agent = agent
+    def __init__(self, agent: BaseAgent[State]):
+        self.agent = agent.get_agent()
 
     @abstractmethod
     def _construct_initial_state(self, *args, **kwargs) -> State:
@@ -135,7 +134,8 @@ class BaseWorkflow[Result = Any, State = BaseAgentState](ABC):
         """
         Define how to run the workflow.
         """
-        return self.agent.invoke(self._construct_initial_state(*args, **kwargs))
+        result =  self.agent.invoke(self._construct_initial_state(*args, **kwargs))
+        return cast(State, result)
     
     def invoke(
         self,
@@ -179,11 +179,19 @@ class BaseInterupt(TypedDict):
     type: NotRequired[InteruptType]
     message: NotRequired[str | None]
 
+
+def get[T](type_: type[T], obj: dict[str, Any], key: str) -> T:
+    value = obj.get(key)
+    if not isinstance(value, type_):
+        raise TypeError(f"Expected {type_}, got {type(value)}")
+    return value
+
 __all__ = [
     "BaseAgentState",
     "BaseGraph",
     "BaseWorkflow",
     "BaseAgent",
     "InteruptType",
-    "BaseInterupt"
+    "BaseInterupt",
+    "get"
 ]

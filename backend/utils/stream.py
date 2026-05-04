@@ -54,7 +54,7 @@ async def render_stream_events(
     return result
 
 __all__ = [
-    render_stream_events,
-    StreamEventHandler,
-    StreamEventName
+    "render_stream_events",
+    "StreamEventHandler",
+    "StreamEventName"
 ]

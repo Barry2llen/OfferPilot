@@ -23,7 +23,6 @@ class ResumeDetail(BaseModel):
                 {
                     "id": 1,
                     "file_path": "data/resumes/2f8f0a8e1d4047d7a1cf9fd649c95ed3.pdf",
-                    "content": "张三\n五年前端开发经验\n负责企业后台与数据可视化项目交付。",
                     "upload_time": "2026-04-18T17:00:00",
                     "original_filename": "zhangsan_resume.pdf",
                     "media_type": "application/pdf",
@@ -39,10 +38,6 @@ class ResumeDetail(BaseModel):
         default=None,
         description="服务端保存的简历文件路径。通常为相对项目根目录的存储路径。",
         examples=["data/resumes/2f8f0a8e1d4047d7a1cf9fd649c95ed3.pdf"],
-    )
-    content: str = Field(
-        description="从简历文件中解析得到的完整文本内容。",
-        examples=["张三\n五年前端开发经验\n负责企业后台与数据可视化项目交付。"],
     )
     upload_time: datetime = Field(
         description="简历上传时间，采用 ISO 8601 格式。",
@@ -183,7 +178,6 @@ class ResumeListItem(BaseModel):
                     "upload_time": "2026-04-18T17:05:00",
                     "original_filename": "lisi_resume.png",
                     "media_type": "image/png",
-                    "content_preview": "李四，三年 Java 开发经验，熟悉 Spring Boot 与微服务治理。",
                     "has_file": True,
                     "preview_url": "/resumes/2/file",
                 }
@@ -210,10 +204,6 @@ class ResumeListItem(BaseModel):
         default=None,
         description="上传文件的媒体类型。",
         examples=["image/png"],
-    )
-    content_preview: str = Field(
-        description="解析文本的预览内容，最长返回前 200 个字符。",
-        examples=["李四，三年 Java 开发经验，熟悉 Spring Boot 与微服务治理。"],
     )
     has_file: bool = Field(
         description="是否仍然保留原始简历文件。",

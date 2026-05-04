@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Callable
+from typing import Callable, Generator
 
 from utils.logger import logger
 
@@ -27,5 +27,24 @@ def require_fields(
                 logger.error(f"Missing required fields for node '{func.__name__}': {missing_fields}")
                 raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
             return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def retry(
+    max_retries: int,
+) -> Callable:
+    """
+    Decorator to retry a function if exceptions occur.
+    """
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    yield func(*args, **kwargs), attempt
+                except Exception as e:
+                    yield e, attempt
+            logger.debug(f"Function '{func.__name__}' failed after {max_retries} retries.")
+            return None, max_retries
         return wrapper
     return decorator

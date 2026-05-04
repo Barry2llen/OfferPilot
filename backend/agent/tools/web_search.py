@@ -1,8 +1,35 @@
+import json
+from typing import Any, cast
+
 from langchain_core.tools import BaseTool, tool
 from pydantic import Field
 
 from schemas.config import Config, load_config
 from utils.logger import logger
+
+
+def _to_jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_to_jsonable(item) for item in value]
+
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return _to_jsonable(model_dump())
+
+    if hasattr(value, "__dict__"):
+        return _to_jsonable(vars(value))
+
+    try:
+        json.dumps(value)
+    except TypeError:
+        return str(value)
+    return value
+
+
+def _to_json_string(value: Any) -> str:
+    return json.dumps(_to_jsonable(value), ensure_ascii=False)
 
 
 async def get_web_search_tools(
@@ -24,6 +51,7 @@ async def get_web_search_tools(
         return list(await get_web_search_mcp_tools())
 
     from exa_py import AsyncExa
+    from exa_py.api import ContentsOptions
 
     exa = AsyncExa(target_config.exa_api_key)
 
@@ -41,11 +69,11 @@ async def get_web_search_tools(
             lt=100,
             description="The number of search results to return",
         ),
-        include_domains: list[str] = Field(
+        include_domains: list[str] | None = Field(
             default=None,
             description="Domains to include in the search.",
         ),
-        exclude_domains: list[str] = Field(
+        exclude_domains: list[str] | None = Field(
             default=None,
             description="Domains to exclude from the search.",
         ),
@@ -54,7 +82,7 @@ async def get_web_search_tools(
         Search the web for current information and return ready-to-use content.
         """
 
-        return await exa.search(
+        response = await exa.search(
             query,
             num_results=num_results,
             type=target_config.web_search.type,
@@ -62,13 +90,14 @@ async def get_web_search_tools(
             user_location="CN",
             include_domains=include_domains,
             exclude_domains=exclude_domains,
-            contents={
+            contents=cast(ContentsOptions, {
                 "highlights": {
                     "max_characters": target_config.web_search.max_characters,
                     "guiding_query": target_config.web_search.guiding_query,
                 }
-            },
+            }),
         )
+        return _to_json_string(response)
 
     @tool
     async def web_fetch_exa(
@@ -78,20 +107,21 @@ async def get_web_search_tools(
         Read webpage content as clean markdown.
         """
 
-        return await exa.get_contents(urls)
+        response = await exa.get_contents(urls)
+        return _to_json_string(response)
 
     @tool
     async def find_similar_exa(
         url: str = Field(description="The URL to find similar pages for."),
-        num_results: int = Field(
+        num_results: int | None = Field(
             default=None,
             description="Number of results to return. Default is None.",
         ),
-        include_domains: list[str] = Field(
+        include_domains: list[str] | None = Field(
             default=None,
             description="Domains to include in the search.",
         ),
-        exclude_domains: list[str] = Field(
+        exclude_domains: list[str] | None = Field(
             default=None,
             description="Domains to exclude from the search.",
         ),
@@ -104,13 +134,14 @@ async def get_web_search_tools(
         Find pages similar to a known URL.
         """
 
-        return await exa.find_similar(
+        response = await exa.find_similar(
             url,
             num_results=num_results,
             include_domains=include_domains,
             exclude_domains=exclude_domains,
             exclude_source_domain=exclude_source_domain,
         )
+        return _to_json_string(response)
 
     return [web_search_exa, web_fetch_exa, find_similar_exa]
 

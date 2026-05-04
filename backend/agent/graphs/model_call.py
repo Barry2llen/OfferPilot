@@ -10,6 +10,7 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
+from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from exceptions import AgentStateError, ModelCallExecutionError
 from ..models import load_chat_model
@@ -18,10 +19,31 @@ from ..base import (
     BaseAgentState,
     BaseInterupt
 )
-from schemas.config.base import Config
-from schemas.config import load_config
+from ..events import ToolCallErrorEvent, ModelCallErrorEvent
 from schemas.command import BaseCommand
 from utils.logger import logger
+
+
+def _is_missing_parent_run_error(error: RuntimeError) -> bool:
+    return "parent run id" in str(error)
+
+
+def _dispatch_custom_event_safely(name: str, data: object) -> None:
+    try:
+        dispatch_custom_event(name, data)
+    except RuntimeError as error:
+        if not _is_missing_parent_run_error(error):
+            raise
+        logger.debug(f"Skipping custom event {name}: {error}")
+
+
+async def _adispatch_custom_event_safely(name: str, data: object) -> None:
+    try:
+        await adispatch_custom_event(name, data)
+    except RuntimeError as error:
+        if not _is_missing_parent_run_error(error):
+            raise
+        logger.debug(f"Skipping custom event {name}: {error}")
 
 
 class ModelCallGraph(BaseGraph):
@@ -30,13 +52,11 @@ class ModelCallGraph(BaseGraph):
             self,
             *args,
             system_prompts: list[BaseMessage] | None = None,
-            config: Config | None = None,
             tools: Sequence[BaseTool] | None = None,
             **kwargs
         ):
         
         super().__init__(*args, **kwargs)
-        self.config = load_config() if config is None else config
         self.tools = tools or tuple[BaseTool]()
         self.tools_dict = {tool.name: tool for tool in self.tools}
         self.system_prompts = system_prompts or []
@@ -51,17 +71,20 @@ class ModelCallGraph(BaseGraph):
             logger.warning("No tools provided, skipping tool node.")
             return state
         
-        messages = state['messages']
+        messages = state.get("messages")
 
         if not messages:
             logger.warning("No messages in state, skipping tool node.")
             return state
         
-        if messages[-1].type != 'ai' or not hasattr(messages[-1], 'tool_calls') or not messages[-1].tool_calls:
+        if messages[-1].type != 'ai':
             logger.warning("Last message is not a tool call, skipping tool node.")
             return state
         
-        tool_calls: list[ToolCall] = messages[-1].tool_calls
+        tool_calls: list[ToolCall] = getattr(messages[-1], 'tool_calls', None) or []
+        if not tool_calls:
+            logger.warning("Last AI message has no tool calls, skipping tool node.")
+            return state
 
         async def _call_tool(tool_call: ToolCall) -> ToolMessage:
             name = tool_call["name"]
@@ -81,6 +104,12 @@ class ModelCallGraph(BaseGraph):
                 result = await self.tools_dict[name].ainvoke(tool_call)
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
+                await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(
+                    error=str(e),
+                    tool_name=name,
+                    args=args,
+                    tool_call_id=tool_call_id
+                ))
                 return ToolMessage(
                     content=f"Error calling tool {name} with args {args}: {e}",
                     tool_call_id=tool_call_id,
@@ -109,7 +138,7 @@ class ModelCallGraph(BaseGraph):
         logger.debug(f"Calling model with state: {state}")
         
         try:
-            model_selection = state['model']
+            model_selection = state.get('model')
             if callable(model_selection):
                 model_selection = model_selection(state=state)
             model = load_chat_model(model_selection).bind_tools(self.tools)
@@ -122,10 +151,15 @@ class ModelCallGraph(BaseGraph):
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
                 try:
-                    logger.debug(f"Invoking model with system prompts: {self.system_prompts} and messages: {state['messages']}")
-                    response = model.invoke(self.system_prompts + state['messages'])
+                    logger.debug(f"Invoking model with system prompts: {self.system_prompts} and messages: {state.get('messages')}")
+                    response = model.invoke(self.system_prompts + state.get('messages', []))
                     return BaseAgentState(messages=[response])
                 except Exception as e:
+                    _dispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
+                        error=str(e),
+                        attempt=_+1,
+                        max_attempts=max_retries
+                    ))
                     logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
 
             logger.error(f"Model call failed after {max_retries} retries.")
@@ -146,7 +180,7 @@ class ModelCallGraph(BaseGraph):
         Decide next action node. This node is responsible for deciding the next action based on the state.messages.
         """
 
-        messages = state['messages']
+        messages = state.get("messages")
 
         if not messages:
             logger.error("No messages in state, this should not happen.")
@@ -156,7 +190,8 @@ class ModelCallGraph(BaseGraph):
             logger.error("Last message is not from AI, this should not happen.")
             raise AgentStateError("Last message is not from AI, this should not happen.")
         
-        return 'end' if not hasattr(messages[-1], 'tool_calls') or not messages[-1].tool_calls else 'tool'
+        tool_calls = getattr(messages[-1], 'tool_calls', None) or []
+        return 'tool' if tool_calls else 'end'
             
     def get_graph(self) -> StateGraph[BaseAgentState]:
         
