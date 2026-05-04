@@ -70,7 +70,7 @@ facts_extraction_system_prompt = (
     "- Do NOT include extra fields.\n"
     "- keywords MUST be a list of strings. If there are no useful keywords, use an empty list.\n\n"
     "Fact extraction rules:\n"
-    "- Use only the provided section.\n"
+    "- Use only the input section.\n"
     "- Do not infer, embellish, translate, normalize, or add outside knowledge.\n"
     "- Extract concrete, verifiable facts only.\n"
     "- Keep text close to the original statement.\n"
