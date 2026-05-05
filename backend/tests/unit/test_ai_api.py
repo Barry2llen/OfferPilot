@@ -136,6 +136,45 @@ def test_ai_chat_endpoint_generates_thread_id_when_missing(
     assert response.json()["content"] == "generated thread"
 
 
+def test_ai_chat_endpoint_falls_back_to_reasoning_content_when_content_is_empty(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            def invoke(self, state: dict, config: dict) -> dict:
+                return {
+                    "messages": [
+                        AIMessage(
+                            content="",
+                            additional_kwargs={
+                                "reasoning_content": "你好！今天有什么可以帮你的吗？"
+                            },
+                        )
+                    ]
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": selection_id,
+                "prompt": "你好",
+                "thread_id": "thread-reasoning-fallback",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "thread_id": "thread-reasoning-fallback",
+        "content": "你好！今天有什么可以帮你的吗？",
+    }
+
+
 def test_ai_chat_endpoint_returns_structured_multimodal_content(
     temporary_app_config: Config,
 ) -> None:
@@ -310,6 +349,50 @@ def test_ai_chat_history_endpoint_returns_normalized_messages(
             "content": "OfferPilot 是一个求职辅助服务。",
         },
     ]
+
+
+def test_ai_chat_history_uses_reasoning_content_when_assistant_content_is_empty(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="你好"),
+                AIMessage(
+                    content="",
+                    additional_kwargs={
+                        "reasoning_content": "你好！今天有什么可以帮你的吗？"
+                    },
+                ),
+            ],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history-reasoning"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-history-reasoning", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+
+        list_response = client.get("/ai/chats", params={"limit": 10, "offset": 0})
+        detail_response = client.get("/ai/chats/thread-history-reasoning/history")
+
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert list_payload["items"][0]["thread_id"] == "thread-history-reasoning"
+    assert list_payload["items"][0]["last_message_preview"] == "你好！今天有什么可以帮你的吗？"
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["last_message_preview"] == "你好！今天有什么可以帮你的吗？"
+    assert detail_payload["messages"][-1] == {
+        "role": "assistant",
+        "type": "ai",
+        "content": "你好！今天有什么可以帮你的吗？",
+    }
 
 
 def test_ai_chat_history_endpoint_returns_404_for_missing_thread(
@@ -510,6 +593,73 @@ def test_ai_chat_stream_endpoint_returns_reasoning_event(
     assert (
         'event: final\ndata: {"thread_id": "thread-reasoning", '
         '"content": "最终答案"}'
+        in response.text
+    )
+
+
+def test_ai_chat_stream_endpoint_falls_back_to_reasoning_content_when_final_content_is_empty(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_chat_model_stream",
+                    "data": {
+                        "chunk": AIMessageChunk(
+                            content="",
+                            additional_kwargs={
+                                "reasoning_content": "你好！今天有什么可以帮你的吗？"
+                            },
+                        )
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {
+                        "output": {
+                            "messages": [
+                                AIMessage(
+                                    content="",
+                                    additional_kwargs={
+                                        "reasoning_content": "你好！今天有什么可以帮你的吗？"
+                                    },
+                                )
+                            ]
+                        }
+                    },
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "你好",
+                "thread_id": "thread-stream-reasoning-fallback",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: reasoning\ndata: {"thread_id": "thread-stream-reasoning-fallback", '
+        '"content": "你好！今天有什么可以帮你的吗？"}'
+        in response.text
+    )
+    assert (
+        'event: final\ndata: {"thread_id": "thread-stream-reasoning-fallback", '
+        '"content": "你好！今天有什么可以帮你的吗？"}'
         in response.text
     )
 

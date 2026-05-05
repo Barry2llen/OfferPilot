@@ -131,9 +131,16 @@ def _message_type(message: Any) -> str:
 
 def _message_content(message: Any) -> Any:
     if isinstance(message, BaseMessage):
-        return message.content
+        if _has_display_content(message.content):
+            return message.content
+        reasoning_content = _message_reasoning_content(message)
+        return reasoning_content or message.content
     if isinstance(message, dict) and "content" in message:
-        return message["content"]
+        content = message["content"]
+        if _has_display_content(content):
+            return content
+        reasoning_content = _message_reasoning_content(message)
+        return reasoning_content or content
     return message
 
 
@@ -143,6 +150,25 @@ def _message_attr(message: Any, attr: str) -> Any:
     if isinstance(message, dict):
         return message.get(attr)
     return None
+
+
+def _message_reasoning_content(message: Any) -> str:
+    additional_kwargs = _message_attr(message, "additional_kwargs")
+    if not isinstance(additional_kwargs, dict):
+        return ""
+
+    reasoning_content = additional_kwargs.get("reasoning_content")
+    if isinstance(reasoning_content, str) and reasoning_content.strip():
+        return reasoning_content
+    return ""
+
+
+def _has_display_content(content: Any) -> bool:
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list | tuple):
+        return len(content) > 0
+    return content is not None
 
 
 def _message_text(message: Any) -> str:

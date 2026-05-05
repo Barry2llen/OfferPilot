@@ -69,9 +69,35 @@ def _extract_content(messages: list[BaseMessage]) -> Any:
 
     last_message = messages[-1]
     content = last_message.content
-    if isinstance(content, str):
-        return content
+    if _has_display_content(content):
+        if isinstance(content, str):
+            return content
+        return _to_jsonable(content)
+
+    reasoning_content = _extract_message_reasoning(last_message)
+    if reasoning_content:
+        return reasoning_content
+
     return _to_jsonable(content)
+
+
+def _has_display_content(content: Any) -> bool:
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list | tuple):
+        return len(content) > 0
+    return content is not None
+
+
+def _extract_message_reasoning(message: Any) -> str:
+    additional_kwargs = getattr(message, "additional_kwargs", None)
+    if not isinstance(additional_kwargs, dict):
+        return ""
+
+    reasoning_content = additional_kwargs.get("reasoning_content")
+    if isinstance(reasoning_content, str) and reasoning_content.strip():
+        return reasoning_content
+    return ""
 
 
 def _to_jsonable(value: Any) -> Any:

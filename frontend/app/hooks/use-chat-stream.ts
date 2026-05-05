@@ -250,15 +250,20 @@ export function useChatStream() {
               }
 
               case "final": {
+                const explicitFinalContent = formatDisplayContent(event.data.content);
                 const finalContent =
-                  formatDisplayContent(event.data.content) || accumulatedText || "";
+                  explicitFinalContent || accumulatedText || accumulatedReasoning || "";
+                const reasoningContent =
+                  explicitFinalContent || accumulatedText
+                    ? accumulatedReasoning || undefined
+                    : undefined;
                 if (finalContent) {
                   setMessages((prev) => [
                     ...prev,
                     {
                       role: "assistant",
                       content: finalContent,
-                      reasoning: accumulatedReasoning || undefined,
+                      reasoning: reasoningContent,
                     },
                   ]);
                 }
