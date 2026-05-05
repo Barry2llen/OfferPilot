@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Sidebar from "@/app/components/layout/sidebar";
 import ContextBar from "@/app/components/layout/context-bar";
+import ResumeUploadStatus from "@/app/components/resumes/resume-upload-status";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -20,6 +21,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <ContextBar />
         <main className="flex-1 overflow-y-auto">{children}</main>
+        <ResumeUploadStatus />
       </div>
     </div>
   );

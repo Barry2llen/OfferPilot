@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppProvider } from "@/app/lib/context/app-context";
+import { ResumeUploadProvider } from "@/app/lib/context/resume-upload-context";
 import { ToastProvider } from "@/app/components/ui/toast";
 import AppShell from "@/app/components/layout/app-shell";
 import "./globals.css";
@@ -19,7 +20,9 @@ export default function RootLayout({
       <body className="h-full bg-surface-primary text-text-primary font-sans">
         <AppProvider>
           <ToastProvider>
-            <AppShell>{children}</AppShell>
+            <ResumeUploadProvider>
+              <AppShell>{children}</AppShell>
+            </ResumeUploadProvider>
           </ToastProvider>
         </AppProvider>
       </body>

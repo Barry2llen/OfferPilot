@@ -1,5 +1,3 @@
-import asyncio
-import json
 from collections.abc import AsyncGenerator
 from collections.abc import Generator
 from typing import Any
@@ -7,10 +5,8 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from agent.workflows.resume_extract import ResumeExtractWorkflow
 from db.repositories import ModelSelectionRepository, ResumeDocumentRepository, ResumeExtractionRepository
 from exceptions import (
     EmptyResumeContentError,
@@ -25,6 +21,8 @@ from schemas.resume_document import (
     ResumeListItem,
 )
 from services import ModelSelectionService, ResumeService, UploadedResumeFile
+from services.resume_extraction_jobs import ResumeExtractionJobManager
+from utils.stream import render_sse_event
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -75,23 +73,8 @@ async def _read_upload_file(file: UploadFile) -> bytes:
         await file.close()
 
 
-def _to_jsonable(value: Any) -> Any:
-    if isinstance(value, BaseModel):
-        return value.model_dump(mode="json")
-    if isinstance(value, dict):
-        return {str(key): _to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_to_jsonable(item) for item in value]
-
-    try:
-        json.dumps(value)
-    except TypeError:
-        return str(value)
-    return value
-
-
 def _sse(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
+    return render_sse_event(event, data)
 
 
 def _get_model_selection(selection_id: int, session: Session):
@@ -112,89 +95,12 @@ def _resume_document_from_detail(detail: ResumeDetail) -> ResumeDocument:
 async def _stream_resume_extraction(
     *,
     request: Request,
-    service: ResumeService,
     resume_id: int,
-    selection_id: int,
-    selection: Any,
-    resume_document: ResumeDocument,
-    initial_detail: ResumeDetail,
+    job_id: str,
 ) -> AsyncGenerator[str, None]:
-    yield _sse("resume", {"resume": initial_detail})
-
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
-    workflow = ResumeExtractWorkflow(config=request.app.state.config)
-
-    async def handle_custom_event(event: dict[str, Any]) -> None:
-        name = str(event.get("name") or "")
-        data = event.get("data") if isinstance(event.get("data"), dict) else {}
-
-        if name == "on_progress_update":
-            await queue.put(
-                _sse(
-                    "progress",
-                    {
-                        "resume_id": resume_id,
-                        "progress": data.get("progress", 0),
-                        "message": data.get("message"),
-                        "additional_data": data.get("additional_data") or {},
-                    },
-                )
-            )
-            return
-
-        if name == "on_model_call_error":
-            await queue.put(
-                _sse(
-                    "model_error",
-                    {
-                        "resume_id": resume_id,
-                        "attempt": data.get("attempt"),
-                        "max_attempts": data.get("max_attempts"),
-                        "detail": data.get("error"),
-                        "additional_data": data.get("additional_data") or {},
-                    },
-                )
-            )
-
-    async def run_workflow() -> None:
-        try:
-            parsed_resume = await workflow.astream_events(
-                selection,
-                resume_document,
-                handlers={"on_custom_event": handle_custom_event},
-            )
-            final_detail = service.complete_extraction(
-                resume_id,
-                selection_id,
-                parsed_resume,
-            )
-            await queue.put(_sse("final", {"resume": final_detail}))
-        except Exception as error:
-            detail = str(error)
-            service.fail_extraction(resume_id, selection_id, detail)
-            await queue.put(
-                _sse(
-                    "error",
-                    {
-                        "resume_id": resume_id,
-                        "detail": detail,
-                        "parse_status": "failed",
-                    },
-                )
-            )
-        finally:
-            await queue.put(None)
-
-    task = asyncio.create_task(run_workflow())
-    try:
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            yield item
-    finally:
-        if not task.done():
-            task.cancel()
+    manager: ResumeExtractionJobManager = request.app.state.resume_extraction_jobs
+    async for item in manager.stream(resume_id, job_id):
+        yield item
 
 
 @router.get(
@@ -247,6 +153,7 @@ async def get_resume(
     description=(
         "上传 PDF、DOCX、PNG、JPG 或 JPEG 格式的简历文件。"
         "服务会保存原文件和文件元数据，并使用指定模型选择记录流式解析简历内容。"
+        "解析任务会在服务端后台继续运行，SSE 连接断开不会取消已开始的解析。"
     ),
     response_description="返回 text/event-stream 事件流。",
     responses={
@@ -298,15 +205,20 @@ async def upload_resume_file(
     ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
+    manager: ResumeExtractionJobManager = request.app.state.resume_extraction_jobs
+    job_id = await manager.start(
+        resume_id=detail.id,
+        selection_id=selection_id,
+        selection=selection,
+        resume_document=_resume_document_from_detail(processing_detail),
+        initial_event=_sse("resume", {"resume": processing_detail}),
+    )
+
     return StreamingResponse(
         _stream_resume_extraction(
             request=request,
-            service=service,
             resume_id=detail.id,
-            selection_id=selection_id,
-            selection=selection,
-            resume_document=_resume_document_from_detail(processing_detail),
-            initial_detail=processing_detail,
+            job_id=job_id,
         ),
         media_type="text/event-stream",
     )
@@ -318,6 +230,7 @@ async def upload_resume_file(
     description=(
         "使用新的简历文件替换指定记录对应的原始文件。"
         "替换成功后会更新文件名和媒体类型，并使用指定模型选择记录流式重新解析简历内容。"
+        "解析任务会在服务端后台继续运行，SSE 连接断开不会取消已开始的解析。"
     ),
     response_description="返回 text/event-stream 事件流。",
     responses={
@@ -377,15 +290,20 @@ async def replace_resume_file(
     ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
+    manager: ResumeExtractionJobManager = request.app.state.resume_extraction_jobs
+    job_id = await manager.start(
+        resume_id=detail.id,
+        selection_id=selection_id,
+        selection=selection,
+        resume_document=_resume_document_from_detail(processing_detail),
+        initial_event=_sse("resume", {"resume": processing_detail}),
+    )
+
     return StreamingResponse(
         _stream_resume_extraction(
             request=request,
-            service=service,
             resume_id=detail.id,
-            selection_id=selection_id,
-            selection=selection,
-            resume_document=_resume_document_from_detail(processing_detail),
-            initial_detail=processing_detail,
+            job_id=job_id,
         ),
         media_type="text/event-stream",
     )

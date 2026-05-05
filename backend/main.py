@@ -15,6 +15,7 @@ from db.engine import (
     dispose_database_manager,
 )
 from schemas.config import Config, load_config
+from services.resume_extraction_jobs import ResumeExtractionJobManager
 
 
 class RootMessageResponse(BaseModel):
@@ -33,6 +34,10 @@ def create_app(config: Config | None = None) -> FastAPI:
         app.state.database = configure_database_manager(target_config.database)
         app.state.async_database = configure_async_database_manager(target_config.database)
         app.state.database.initialize_tables()
+        app.state.resume_extraction_jobs = ResumeExtractionJobManager(
+            config=target_config,
+            database=app.state.database,
+        )
         app.state.checkpointer = DatabaseCheckpointer(
             app.state.database,
             app.state.async_database,
@@ -43,6 +48,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             tools=await get_all_tools(target_config, allow_mcp_fallback=True),
         ).get_agent()
         yield
+        await app.state.resume_extraction_jobs.shutdown()
         await dispose_async_database_manager()
         dispose_database_manager()
 

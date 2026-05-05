@@ -1,4 +1,6 @@
+import asyncio
 import json
+import time
 from pathlib import Path
 
 import fitz
@@ -82,7 +84,7 @@ def _install_fake_resume_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
             )
 
     monkeypatch.setattr(
-        "api.routes.resume.ResumeExtractWorkflow",
+        "services.resume_extraction_jobs.ResumeExtractWorkflow",
         FakeResumeExtractWorkflow,
     )
 
@@ -96,7 +98,7 @@ def _install_failing_resume_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
             raise RuntimeError("extract failed")
 
     monkeypatch.setattr(
-        "api.routes.resume.ResumeExtractWorkflow",
+        "services.resume_extraction_jobs.ResumeExtractWorkflow",
         FailingResumeExtractWorkflow,
     )
 
@@ -113,6 +115,25 @@ def _sse_payload(response, event_name: str) -> dict:
         if event == event_name and data is not None:
             return data
     raise AssertionError(f"SSE event not found: {event_name}\n{response.text}")
+
+
+def _wait_for_parse_status(
+    client: TestClient,
+    resume_id: int,
+    status: str,
+    *,
+    timeout: float = 1.5,
+) -> dict:
+    deadline = time.monotonic() + timeout
+    last_payload: dict | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/resumes/{resume_id}")
+        assert response.status_code == 200
+        last_payload = response.json()
+        if last_payload["parse_status"] == status:
+            return last_payload
+        time.sleep(0.02)
+    raise AssertionError(f"Resume {resume_id} did not reach {status}: {last_payload}")
 
 
 def test_upload_resume_file_endpoint_with_pdf(
@@ -276,6 +297,135 @@ def test_upload_resume_file_endpoint_persists_failed_parse_status(
     assert detail.status_code == 200
     assert detail.json()["parse_status"] == "failed"
     assert detail.json()["parse_error"] == "extract failed"
+
+
+def test_upload_resume_file_keeps_parsing_after_stream_disconnect(
+    temporary_app_config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SlowResumeExtractWorkflow:
+        def __init__(self, config=None) -> None:
+            self.config = config
+
+        async def astream_events(self, selection, resume_document, handlers=None):
+            if handlers and "on_custom_event" in handlers:
+                await handlers["on_custom_event"](
+                    {
+                        "event": "on_custom_event",
+                        "name": "on_progress_update",
+                        "data": {"progress": 0.2, "message": "Started."},
+                    }
+                )
+            await asyncio.sleep(0.05)
+            return Resume(
+                raw_text="parsed after disconnect",
+                document=resume_document,
+                sections=[],
+            )
+
+    monkeypatch.setattr(
+        "services.resume_extraction_jobs.ResumeExtractWorkflow",
+        SlowResumeExtractWorkflow,
+    )
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+        with client.stream(
+            "POST",
+            "/resumes/files",
+            data={"selection_id": str(selection_id)},
+            files={"file": ("resume.png", b"fake-image", "image/png")},
+        ) as response:
+            assert response.status_code == 200
+
+        listed = client.get("/resumes").json()
+        detail = _wait_for_parse_status(client, listed[0]["id"], "parsed")
+
+    assert detail["raw_text"] == "parsed after disconnect"
+
+
+def test_upload_resume_file_persists_failed_status_after_stream_disconnect(
+    temporary_app_config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SlowFailingResumeExtractWorkflow:
+        def __init__(self, config=None) -> None:
+            self.config = config
+
+        async def astream_events(self, selection, resume_document, handlers=None):
+            await asyncio.sleep(0.05)
+            raise RuntimeError("failed after disconnect")
+
+    monkeypatch.setattr(
+        "services.resume_extraction_jobs.ResumeExtractWorkflow",
+        SlowFailingResumeExtractWorkflow,
+    )
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+        with client.stream(
+            "POST",
+            "/resumes/files",
+            data={"selection_id": str(selection_id)},
+            files={"file": ("resume.png", b"fake-image", "image/png")},
+        ) as response:
+            assert response.status_code == 200
+
+        listed = client.get("/resumes").json()
+        detail = _wait_for_parse_status(client, listed[0]["id"], "failed")
+
+    assert detail["parse_error"] == "failed after disconnect"
+
+
+def test_replace_resume_file_does_not_allow_old_job_to_overwrite_new_parse(
+    temporary_app_config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FilenameResumeExtractWorkflow:
+        def __init__(self, config=None) -> None:
+            self.config = config
+
+        async def astream_events(self, selection, resume_document, handlers=None):
+            filename = resume_document.original_filename or ""
+            if filename == "old.png":
+                await asyncio.sleep(0.2)
+                raw_text = "old parse result"
+            else:
+                await asyncio.sleep(0.01)
+                raw_text = "new parse result"
+            return Resume(raw_text=raw_text, document=resume_document, sections=[])
+
+    monkeypatch.setattr(
+        "services.resume_extraction_jobs.ResumeExtractWorkflow",
+        FilenameResumeExtractWorkflow,
+    )
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+        with client.stream(
+            "POST",
+            "/resumes/files",
+            data={"selection_id": str(selection_id)},
+            files={"file": ("old.png", b"old-image", "image/png")},
+        ) as response:
+            assert response.status_code == 200
+
+        created_id = client.get("/resumes").json()[0]["id"]
+
+        replaced = client.put(
+            f"/resumes/{created_id}/file",
+            data={"selection_id": str(selection_id)},
+            files={"file": ("new.png", b"new-image", "image/png")},
+        )
+        replaced_payload = _sse_payload(replaced, "final")["resume"]
+        time.sleep(0.25)
+        detail = client.get(f"/resumes/{created_id}").json()
+
+    assert replaced_payload["raw_text"] == "new parse result"
+    assert detail["raw_text"] == "new parse result"
 
 
 def test_replace_resume_file_endpoint(

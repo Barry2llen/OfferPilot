@@ -5,6 +5,8 @@ from typing import (
     Callable,
     Any
 )
+import json
+from pydantic import BaseModel
 from langchain_core.runnables.schema import StreamEvent
 
 """
@@ -53,7 +55,25 @@ async def render_stream_events(
                 result = res
     return result
 
+def _to_jsonable(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {str(key): _to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_to_jsonable(item) for item in value]
+
+    try:
+        json.dumps(value)
+    except TypeError:
+        return str(value)
+    return value
+
+def render_sse_event(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
+
 __all__ = [
+    "render_sse_event",
     "render_stream_events",
     "StreamEventHandler",
     "StreamEventName"
