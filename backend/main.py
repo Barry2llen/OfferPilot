@@ -16,6 +16,7 @@ from db.engine import (
 )
 from schemas.config import Config, load_config
 from services.resume_extraction_jobs import ResumeExtractionJobManager
+from utils.asyncio_windows import install_windows_connection_reset_filter
 
 
 class RootMessageResponse(BaseModel):
@@ -30,6 +31,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        install_windows_connection_reset_filter()
         app.state.config = target_config
         app.state.database = configure_database_manager(target_config.database)
         app.state.async_database = configure_async_database_manager(target_config.database)
