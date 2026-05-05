@@ -15,6 +15,12 @@ export interface ResumeListItem {
   media_type: string | null;
   has_file: boolean;
   preview_url: string | null;
+  parse_status: ResumeParseStatus;
+  parse_error: string | null;
+  parsed_at: string | null;
+  summary: string | null;
+  section_count: number;
+  fact_count: number;
 }
 
 export interface ResumeDetail {
@@ -25,6 +31,29 @@ export interface ResumeDetail {
   media_type: string | null;
   has_file: boolean;
   preview_url: string | null;
+  parse_status: ResumeParseStatus;
+  parse_error: string | null;
+  parsed_at: string | null;
+  summary: string | null;
+  section_count: number;
+  fact_count: number;
+  raw_text: string;
+  sections: ResumeSection[];
+}
+
+export type ResumeParseStatus = "unparsed" | "processing" | "parsed" | "failed";
+
+export interface ResumeFact {
+  fact_type: string;
+  text: string;
+  evidence: string;
+  keywords: string[];
+}
+
+export interface ResumeSection {
+  title: string;
+  content: string;
+  facts: ResumeFact[];
 }
 
 // ─── Model Providers ───
@@ -157,6 +186,20 @@ export interface SSEInterruptData {
   id?: string;
   type?: string;
   message: string;
+}
+
+// ─── Resume Upload / Extraction Events ───
+export type ResumeStreamEventType =
+  | "resume"
+  | "progress"
+  | "model_error"
+  | "final"
+  | "error";
+
+export interface ResumeStreamEvent {
+  event?: ResumeStreamEventType;
+  type?: ResumeStreamEventType;
+  data: Record<string, unknown>;
 }
 
 // ─── Agent Status ───

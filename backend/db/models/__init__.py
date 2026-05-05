@@ -9,6 +9,7 @@ from .graph_checkpoint import (
 from .model_selection import ModelSelectionORM
 from .model_provider import ModelProviderORM
 from .resume_document import ResumeDocumentORM
+from .resume_extraction import ResumeExtractionORM
 
 __all__ = [
     "Base",
@@ -19,4 +20,5 @@ __all__ = [
     "ModelProviderORM",
     "ModelSelectionORM",
     "ResumeDocumentORM",
+    "ResumeExtractionORM",
 ]

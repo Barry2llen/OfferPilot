@@ -2,6 +2,7 @@ from .checkpoint_repository import AsyncCheckpointRepository, CheckpointReposito
 from .model_selection_repository import ModelSelectionRepository
 from .model_provider_repository import ModelProviderRepository
 from .resume_document_repository import ResumeDocumentRepository
+from .resume_extraction_repository import ResumeExtractionRepository
 
 __all__ = [
     "AsyncCheckpointRepository",
@@ -9,4 +10,5 @@ __all__ = [
     "ModelProviderRepository",
     "ModelSelectionRepository",
     "ResumeDocumentRepository",
+    "ResumeExtractionRepository",
 ]

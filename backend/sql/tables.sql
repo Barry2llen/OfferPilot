@@ -34,6 +34,21 @@ CREATE TABLE IF NOT EXISTS tb_resume (
     media_type VARCHAR(255)
 );
 
+CREATE TABLE IF NOT EXISTS tb_resume_extraction (
+    resume_id INTEGER PRIMARY KEY,
+    status VARCHAR(32) NOT NULL DEFAULT 'unparsed',
+    raw_text TEXT,
+    sections JSON DEFAULT '[]' NOT NULL,
+    summary TEXT,
+    error_message TEXT,
+    model_selection_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP,
+    FOREIGN KEY (resume_id) REFERENCES tb_resume(id) ON DELETE CASCADE,
+    FOREIGN KEY (model_selection_id) REFERENCES tb_model_selection(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS tb_graph_checkpoint (
     thread_id VARCHAR(255) NOT NULL,
     checkpoint_ns VARCHAR(255) NOT NULL DEFAULT '',

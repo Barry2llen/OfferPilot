@@ -76,6 +76,7 @@ class BaseAgent[State: StateLike = BaseAgentState](BaseGraph[State]):
         self,
         checkpointer: Checkpointer = None,
         *,
+        config: Config | None = None,
         cache: BaseCache | None = None,
         store: BaseStore | None = None,
         interrupt_before: All | list[str] | None = None,
@@ -83,7 +84,7 @@ class BaseAgent[State: StateLike = BaseAgentState](BaseGraph[State]):
         debug: bool = False,
         name: str | None = None,
     ):
-        super().__init__()
+        super().__init__(config=config)
         self.checkpointer = checkpointer
         self.cache = cache
         self.store = store
@@ -168,9 +169,32 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         Run the workflow and stream events using the provided event handler.
         """
         state = self._construct_initial_state(*args, **kwargs)
-        event_stream = self.agent.astream_events(state)
-        await render_stream_events(event_stream, handlers=handlers)
-        return self._get_result(state)
+        final_state: State | None = None
+
+        async def capture_final_state(event: dict[str, Any]) -> None:
+            nonlocal final_state
+            data = event.get("data")
+            if not isinstance(data, dict):
+                return
+            output = data.get("output")
+            if isinstance(output, dict):
+                final_state = cast(State, output)
+
+        merged_handlers = dict(handlers or {})
+        existing_chain_end_handler = merged_handlers.get("on_chain_end")
+
+        async def on_chain_end(event: dict[str, Any]) -> None:
+            await capture_final_state(event)
+            if existing_chain_end_handler is None:
+                return
+            res = existing_chain_end_handler(event)
+            if isinstance(res, Awaitable):
+                await res
+
+        merged_handlers["on_chain_end"] = on_chain_end
+        event_stream = self.agent.astream_events(state, version="v2")
+        await render_stream_events(event_stream, handlers=merged_handlers)
+        return self._get_result(final_state or state)
     
     
 type InteruptType = Literal['error', 'question', 'warning', 'other']

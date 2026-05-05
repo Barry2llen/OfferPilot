@@ -4,8 +4,10 @@ import pytest
 from sqlalchemy import text
 
 from db.engine import DatabaseManager
-from db.repositories import ResumeDocumentRepository
+from db.repositories import ResumeDocumentRepository, ResumeExtractionRepository
 from exceptions import EmptyResumeContentError, UnsupportedResumeFileError
+from schemas.resume import Resume, ResumeFact, ResumeSection
+from schemas.resume_document import ResumeDocument
 from services.resume_service import ResumeService, UploadedResumeFile
 
 
@@ -51,6 +53,7 @@ def test_create_resume_from_file_persists_metadata(
     assert created.media_type == "image/png"
     assert created.has_file is True
     assert created.preview_url == f"/resumes/{created.id}/file"
+    assert created.parse_status == "unparsed"
     assert stored[1:] == ("resume.png", "image/png")
     assert stored[0] is not None
     assert _resolve_saved_path(stored[0]).exists()
@@ -231,3 +234,70 @@ def test_create_resume_from_file_rejects_empty_uploaded_file(
             )
 
     assert list(temporary_resume_upload_dir.glob("*")) == []
+
+
+def test_resume_extraction_lifecycle_persists_parse_result(
+    initialized_database_manager: DatabaseManager,
+    temporary_resume_upload_dir: Path,
+) -> None:
+    with initialized_database_manager.session_scope() as session:
+        service = ResumeService(
+            repository=ResumeDocumentRepository(session),
+            extraction_repository=ResumeExtractionRepository(session),
+            upload_dir=temporary_resume_upload_dir,
+        )
+        created = service.create_from_file(
+            UploadedResumeFile(
+                filename="resume.pdf",
+                content_type="application/pdf",
+                content=b"%PDF-1.4",
+            )
+        )
+        session.execute(
+            text(
+                "INSERT INTO tb_model_provider (name, provider) "
+                "VALUES ('default-openai', 'openai')"
+            )
+        )
+        session.execute(
+            text(
+                "INSERT INTO tb_model_selection "
+                "(id, provider_name, model_name, supports_image_input) "
+                "VALUES (1, 'default-openai', 'gpt-4o-mini', 0)"
+            )
+        )
+
+        processing = service.begin_extraction(created.id, 1)
+        completed = service.complete_extraction(
+            created.id,
+            1,
+            Resume(
+                raw_text="Jane Doe\nPython Engineer",
+                document=ResumeDocument.model_validate(created.model_dump()),
+                sections=[
+                    ResumeSection(
+                        title="技能",
+                        content="Python, FastAPI",
+                        facts=[
+                            ResumeFact(
+                                fact_type="skill",
+                                text="Python",
+                                evidence="Python, FastAPI",
+                                keywords=["Python"],
+                            )
+                        ],
+                    )
+                ],
+            ),
+        )
+        listed = service.list_resumes()
+
+    assert processing.parse_status == "processing"
+    assert completed.parse_status == "parsed"
+    assert completed.summary == "Jane Doe Python Engineer"
+    assert completed.section_count == 1
+    assert completed.fact_count == 1
+    assert completed.raw_text == "Jane Doe\nPython Engineer"
+    assert completed.sections[0]["facts"][0]["text"] == "Python"
+    assert listed[0].parse_status == "parsed"
+    assert listed[0].summary == "Jane Doe Python Engineer"

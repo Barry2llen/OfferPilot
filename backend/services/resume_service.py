@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
-from db.models import ResumeDocumentORM
-from db.repositories import ResumeDocumentRepository
+from db.models import ResumeDocumentORM, ResumeExtractionORM
+from db.repositories import ResumeDocumentRepository, ResumeExtractionRepository
 from exceptions import (
     EmptyResumeContentError,
     ResumeFileNotFoundError,
@@ -12,6 +14,7 @@ from exceptions import (
     UnsupportedResumeFileError,
 )
 from schemas.resume_document import ResumeDetail, ResumeListItem
+from schemas.resume import Resume
 
 
 @dataclass(slots=True)
@@ -35,9 +38,11 @@ class ResumeService:
         self,
         repository: ResumeDocumentRepository,
         upload_dir: str | Path,
+        extraction_repository: ResumeExtractionRepository | None = None,
     ) -> None:
         self._repository = repository
         self._upload_dir = Path(upload_dir)
+        self._extraction_repository = extraction_repository
 
     def list_resumes(self) -> list[ResumeListItem]:
         return [self._to_list_item(document) for document in self._repository.list_all()]
@@ -123,6 +128,8 @@ class ResumeService:
         file_path = document.file_path
 
         try:
+            if self._extraction_repository is not None:
+                self._extraction_repository.delete_by_resume_id(resume_id)
             deleted = self._repository.delete(resume_id)
             if not deleted:
                 raise ResumeNotFoundError(f"Resume not found: {resume_id}")
@@ -147,6 +154,89 @@ class ResumeService:
             filename=document.original_filename,
         )
 
+    def begin_extraction(self, resume_id: int, selection_id: int) -> ResumeDetail:
+        self._require_extraction_repository()
+        document = self._require_resume(resume_id)
+        extraction = ResumeExtractionORM(
+            resume_id=resume_id,
+            status="processing",
+            raw_text=None,
+            sections=[],
+            summary=None,
+            error_message=None,
+            model_selection_id=selection_id,
+            completed_at=None,
+        )
+
+        try:
+            self._extraction_repository.upsert(extraction)
+            self._extraction_repository.commit()
+        except Exception:
+            self._extraction_repository.rollback()
+            raise
+
+        return self._to_detail(document)
+
+    def complete_extraction(
+        self,
+        resume_id: int,
+        selection_id: int,
+        resume: Resume,
+    ) -> ResumeDetail:
+        self._require_extraction_repository()
+        document = self._require_resume(resume_id)
+        sections = [
+            section.model_dump(mode="json")
+            for section in resume.sections
+        ]
+        extraction = ResumeExtractionORM(
+            resume_id=resume_id,
+            status="parsed",
+            raw_text=resume.raw_text,
+            sections=sections,
+            summary=self._build_summary(resume.raw_text),
+            error_message=None,
+            model_selection_id=selection_id,
+            completed_at=datetime.now(),
+        )
+
+        try:
+            self._extraction_repository.upsert(extraction)
+            self._extraction_repository.commit()
+        except Exception:
+            self._extraction_repository.rollback()
+            raise
+
+        return self._to_detail(document)
+
+    def fail_extraction(
+        self,
+        resume_id: int,
+        selection_id: int,
+        error_message: str,
+    ) -> ResumeDetail:
+        self._require_extraction_repository()
+        document = self._require_resume(resume_id)
+        extraction = ResumeExtractionORM(
+            resume_id=resume_id,
+            status="failed",
+            raw_text=None,
+            sections=[],
+            summary=None,
+            error_message=error_message,
+            model_selection_id=selection_id,
+            completed_at=datetime.now(),
+        )
+
+        try:
+            self._extraction_repository.upsert(extraction)
+            self._extraction_repository.commit()
+        except Exception:
+            self._extraction_repository.rollback()
+            raise
+
+        return self._to_detail(document)
+
     def _build_target_path(self, suffix: str) -> Path:
         return self._upload_dir / f"{uuid4().hex}{suffix}"
 
@@ -168,6 +258,8 @@ class ResumeService:
 
     def _to_detail(self, document: ResumeDocumentORM) -> ResumeDetail:
         has_file = document.file_path is not None
+        extraction = self._get_extraction(document.id)
+        parse_payload = self._build_parse_payload(extraction, include_details=True)
         return ResumeDetail(
             id=document.id,
             file_path=document.file_path,
@@ -176,10 +268,13 @@ class ResumeService:
             media_type=document.media_type,
             has_file=has_file,
             preview_url=self._build_preview_url(document.id) if has_file else None,
+            **parse_payload,
         )
 
     def _to_list_item(self, document: ResumeDocumentORM) -> ResumeListItem:
         has_file = document.file_path is not None
+        extraction = self._get_extraction(document.id)
+        parse_payload = self._build_parse_payload(extraction, include_details=False)
         return ResumeListItem(
             id=document.id,
             file_path=document.file_path,
@@ -188,6 +283,7 @@ class ResumeService:
             media_type=document.media_type,
             has_file=has_file,
             preview_url=self._build_preview_url(document.id) if has_file else None,
+            **parse_payload,
         )
 
     def _require_resume(self, resume_id: int) -> ResumeDocumentORM:
@@ -198,6 +294,65 @@ class ResumeService:
 
     def _build_preview_url(self, resume_id: int) -> str:
         return f"/resumes/{resume_id}/file"
+
+    def _get_extraction(self, resume_id: int) -> ResumeExtractionORM | None:
+        if self._extraction_repository is None:
+            return None
+        return self._extraction_repository.get_by_resume_id(resume_id)
+
+    def _build_parse_payload(
+        self,
+        extraction: ResumeExtractionORM | None,
+        *,
+        include_details: bool,
+    ) -> dict[str, Any]:
+        if extraction is None:
+            payload: dict[str, Any] = {
+                "parse_status": "unparsed",
+                "parse_error": None,
+                "parsed_at": None,
+                "summary": None,
+                "section_count": 0,
+                "fact_count": 0,
+            }
+            if include_details:
+                payload.update({"raw_text": "", "sections": []})
+            return payload
+
+        sections = extraction.sections if isinstance(extraction.sections, list) else []
+        payload = {
+            "parse_status": extraction.status,
+            "parse_error": extraction.error_message,
+            "parsed_at": extraction.completed_at,
+            "summary": extraction.summary,
+            "section_count": len(sections),
+            "fact_count": self._count_facts(sections),
+        }
+        if include_details:
+            payload.update(
+                {
+                    "raw_text": extraction.raw_text or "",
+                    "sections": sections,
+                }
+            )
+        return payload
+
+    def _count_facts(self, sections: list[Any]) -> int:
+        count = 0
+        for section in sections:
+            if isinstance(section, dict) and isinstance(section.get("facts"), list):
+                count += len(section["facts"])
+        return count
+
+    def _build_summary(self, raw_text: str) -> str | None:
+        normalized = " ".join(raw_text.split())
+        if not normalized:
+            return None
+        return normalized[:180]
+
+    def _require_extraction_repository(self) -> None:
+        if self._extraction_repository is None:
+            raise RuntimeError("Resume extraction repository is required.")
 
     def _resolve_storage_path(
         self,

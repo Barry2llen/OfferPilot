@@ -32,6 +32,27 @@ function mediaLabel(type: string | null): string {
   return type;
 }
 
+function parseLabel(status: ResumeListItem["parse_status"]): string {
+  switch (status) {
+    case "parsed":
+      return "已解析";
+    case "processing":
+      return "解析中";
+    case "failed":
+      return "解析失败";
+    case "unparsed":
+    default:
+      return "未解析";
+  }
+}
+
+function parseVariant(status: ResumeListItem["parse_status"]) {
+  if (status === "parsed") return "success";
+  if (status === "failed") return "warning";
+  if (status === "processing") return "neutral";
+  return "neutral";
+}
+
 export default function ResumeCard({
   resume,
   onDelete,
@@ -51,10 +72,28 @@ export default function ResumeCard({
             <Badge variant="neutral" size="sm">
               {mediaLabel(resume.media_type)}
             </Badge>
+            <Badge variant={parseVariant(resume.parse_status)} size="sm">
+              {parseLabel(resume.parse_status)}
+            </Badge>
           </div>
           <p className="text-xs text-text-muted">
             {formatTime(resume.upload_time)}
           </p>
+          {resume.summary && (
+            <p className="mt-2 line-clamp-2 text-sm text-text-secondary">
+              {resume.summary}
+            </p>
+          )}
+          {resume.parse_error && (
+            <p className="mt-2 line-clamp-2 text-sm text-error-text">
+              {resume.parse_error}
+            </p>
+          )}
+          {resume.parse_status === "parsed" && (
+            <p className="mt-2 text-xs text-text-muted">
+              {resume.section_count} 个章节 · {resume.fact_count} 条事实
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           <div className="flex items-center gap-2">

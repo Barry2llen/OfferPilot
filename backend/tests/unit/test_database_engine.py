@@ -106,7 +106,7 @@ def test_initialize_tables_creates_expected_tables(
                     "SELECT name FROM sqlite_master "
                     "WHERE type = 'table' AND name IN "
                     "('tb_model_provider', 'tb_model_selection', 'tb_chat', "
-                    "'tb_resume', 'tb_graph_checkpoint', 'tb_graph_checkpoint_blob', "
+                    "'tb_resume', 'tb_resume_extraction', 'tb_graph_checkpoint', 'tb_graph_checkpoint_blob', "
                     "'tb_graph_checkpoint_write')"
                 )
             )
@@ -117,6 +117,7 @@ def test_initialize_tables_creates_expected_tables(
         "tb_model_selection",
         "tb_chat",
         "tb_resume",
+        "tb_resume_extraction",
         "tb_graph_checkpoint",
         "tb_graph_checkpoint_blob",
         "tb_graph_checkpoint_write",
@@ -211,6 +212,38 @@ def test_initialize_tables_creates_expected_resume_columns(
         "original_filename",
         "media_type",
     } <= columns
+
+
+def test_initialize_tables_creates_expected_resume_extraction_columns(
+    temporary_database_manager: DatabaseManager,
+) -> None:
+    temporary_database_manager.initialize_tables()
+
+    with temporary_database_manager.session_scope() as session:
+        columns = {
+            row[1]
+            for row in session.execute(text("PRAGMA table_info('tb_resume_extraction')"))
+        }
+        foreign_keys = list(
+            session.execute(text("PRAGMA foreign_key_list('tb_resume_extraction')"))
+        )
+
+    assert {
+        "resume_id",
+        "status",
+        "raw_text",
+        "sections",
+        "summary",
+        "error_message",
+        "model_selection_id",
+        "created_at",
+        "updated_at",
+        "completed_at",
+    } <= columns
+    assert any(
+        row[2] == "tb_resume" and row[3] == "resume_id" and row[4] == "id"
+        for row in foreign_keys
+    )
 
 
 def test_database_manager_dispose_reinitializes_engine(

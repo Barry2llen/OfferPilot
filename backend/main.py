@@ -56,7 +56,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         openapi_tags=[
             {
                 "name": "resumes",
-                "description": "简历文件管理接口，包含上传、替换、查询、预览和删除。",
+                "description": "简历文件管理接口，包含上传解析、替换解析、查询、预览和删除。",
             },
             {
                 "name": "model-config",

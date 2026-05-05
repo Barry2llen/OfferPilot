@@ -4,6 +4,7 @@ from typing import override, cast
 from schemas.model_selection import ModelSelection
 from schemas.resume import Resume
 from schemas.resume_document import ResumeDocument
+from schemas.config import Config
 from ...base import BaseWorkflow
 from ...annotations.types import MaybeCallable
 from ...nodes.wrappers import require_fields
@@ -12,8 +13,8 @@ from ...agents.resume_extractor import ResumeExtractorAgent
 
 class ResumeExtractWorkflow(BaseWorkflow[Resume, State]):
     
-    def __init__(self):
-        super().__init__(ResumeExtractorAgent())
+    def __init__(self, config: Config | None = None):
+        super().__init__(ResumeExtractorAgent(config=config))
 
     @override
     def _construct_initial_state(

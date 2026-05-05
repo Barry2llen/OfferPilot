@@ -3,6 +3,7 @@ import io
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
+from typing import Any, Literal
 
 import fitz
 from exceptions import (
@@ -15,6 +16,9 @@ from exceptions import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 from utils import document_parser
+
+
+type ResumeParseStatus = Literal["unparsed", "processing", "parsed", "failed"]
 
 class ResumeDetail(BaseModel):
     model_config = ConfigDict(
@@ -61,6 +65,61 @@ class ResumeDetail(BaseModel):
         default=None,
         description="用于在线预览原始简历文件的接口路径。",
         examples=["/resumes/1/file"],
+    )
+    parse_status: ResumeParseStatus = Field(
+        default="unparsed",
+        description="简历解析状态。unparsed 表示尚未解析，processing 表示解析中，parsed 表示解析成功，failed 表示解析失败。",
+        examples=["parsed"],
+    )
+    parse_error: str | None = Field(
+        default=None,
+        description="解析失败时的错误详情。解析成功或尚未解析时为空。",
+        examples=["Model call failed after 3 retries."],
+    )
+    parsed_at: datetime | None = Field(
+        default=None,
+        description="解析完成时间。仅解析成功或失败后返回。",
+        examples=["2026-04-18T17:02:00"],
+    )
+    summary: str | None = Field(
+        default=None,
+        description="解析结果摘要，通常取简历原文开头的简短文本。",
+        examples=["张三 高级后端开发工程师 Python, FastAPI"],
+    )
+    section_count: int = Field(
+        default=0,
+        description="已解析出的简历章节数量。",
+        examples=[4],
+    )
+    fact_count: int = Field(
+        default=0,
+        description="已解析出的事实数量。",
+        examples=[18],
+    )
+    raw_text: str = Field(
+        default="",
+        description="完整解析原文。列表接口不返回该字段，详情和解析 final 事件会返回。",
+        examples=["张三\n高级后端开发工程师\nPython, FastAPI"],
+    )
+    sections: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="结构化简历章节及 facts。列表接口不返回该字段，详情和解析 final 事件会返回。",
+        examples=[
+            [
+                {
+                    "title": "技能",
+                    "content": "Python, FastAPI",
+                    "facts": [
+                        {
+                            "fact_type": "skill",
+                            "text": "Python",
+                            "evidence": "Python, FastAPI",
+                            "keywords": ["Python"],
+                        }
+                    ],
+                }
+            ]
+        ],
     )
 
 
@@ -213,4 +272,34 @@ class ResumeListItem(BaseModel):
         default=None,
         description="用于在线预览原始简历文件的接口路径。",
         examples=["/resumes/2/file"],
+    )
+    parse_status: ResumeParseStatus = Field(
+        default="unparsed",
+        description="简历解析状态。",
+        examples=["parsed"],
+    )
+    parse_error: str | None = Field(
+        default=None,
+        description="解析失败时的错误详情。",
+        examples=["Failed to extract text from resume."],
+    )
+    parsed_at: datetime | None = Field(
+        default=None,
+        description="解析完成时间。",
+        examples=["2026-04-18T17:06:00"],
+    )
+    summary: str | None = Field(
+        default=None,
+        description="解析结果摘要。",
+        examples=["李四 前端工程师 React, Next.js"],
+    )
+    section_count: int = Field(
+        default=0,
+        description="已解析出的简历章节数量。",
+        examples=[3],
+    )
+    fact_count: int = Field(
+        default=0,
+        description="已解析出的事实数量。",
+        examples=[12],
     )

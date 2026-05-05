@@ -13,6 +13,7 @@ import Card from "@/app/components/ui/card";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Spinner from "@/app/components/ui/spinner";
 import ResumeUploader from "@/app/components/resumes/resume-uploader";
+import type { ResumeSection } from "@/app/lib/api/types";
 
 export default function ResumeDetailPage() {
   const params = useParams();
@@ -36,6 +37,16 @@ export default function ResumeDetailPage() {
     },
     [refetch, addToast]
   );
+
+  const handleCopyRawText = async () => {
+    if (!resume?.raw_text) return;
+    try {
+      await navigator.clipboard.writeText(resume.raw_text);
+      addToast("解析文本已复制", "success");
+    } catch {
+      addToast("复制失败", "error");
+    }
+  };
 
   const handleDelete = async () => {
     setOperating(true);
@@ -139,7 +150,16 @@ export default function ResumeDetailPage() {
           {replaceOpen ? (
             <ResumeUploader
               onUploaded={handleReplace}
-              uploadFile={(file) => resumesApi.replace(id, file)}
+              uploadFile={(file, selectionId, onEvent, onError, signal) =>
+                resumesApi.replace(
+                  id,
+                  file,
+                  selectionId,
+                  onEvent,
+                  onError,
+                  signal
+                )
+              }
             />
           ) : (
             <div className="rounded-xl overflow-hidden border border-border-light bg-surface-secondary">
@@ -167,6 +187,122 @@ export default function ResumeDetailPage() {
           )}
         </Card>
       )}
+
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="font-display text-base font-semibold text-text-primary">
+              解析结果
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge
+                variant={
+                  resume.parse_status === "parsed"
+                    ? "success"
+                    : resume.parse_status === "failed"
+                      ? "warning"
+                      : "neutral"
+                }
+              >
+                {resume.parse_status === "parsed"
+                  ? "已解析"
+                  : resume.parse_status === "failed"
+                    ? "解析失败"
+                    : resume.parse_status === "processing"
+                      ? "解析中"
+                      : "未解析"}
+              </Badge>
+              {resume.parsed_at && (
+                <span className="text-xs text-text-muted">
+                  {new Date(resume.parsed_at).toLocaleString("zh-CN")}
+                </span>
+              )}
+              {resume.parse_status === "parsed" && (
+                <span className="text-xs text-text-muted">
+                  {resume.section_count} 个章节 · {resume.fact_count} 条事实
+                </span>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!resume.raw_text}
+            onClick={handleCopyRawText}
+          >
+            复制解析文本
+          </Button>
+        </div>
+
+        {resume.parse_error ? (
+          <div className="rounded-lg bg-error-bg px-4 py-3 text-sm text-error-text">
+            {resume.parse_error}
+          </div>
+        ) : resume.parse_status !== "parsed" ? (
+          <div className="rounded-lg bg-surface-secondary px-4 py-8 text-center text-sm text-text-muted">
+            上传或替换文件后会在这里显示解析文本和结构化章节
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {resume.summary && (
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-text-primary">
+                  摘要
+                </h3>
+                <p className="text-sm text-text-secondary">{resume.summary}</p>
+              </div>
+            )}
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-text-primary">
+                完整文本
+              </h3>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-secondary p-4 text-sm text-text-secondary">
+                {resume.raw_text}
+              </pre>
+            </div>
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-text-primary">
+                结构化章节
+              </h3>
+              {resume.sections.map((section: ResumeSection, index: number) => (
+                <section
+                  key={`${section.title}-${index}`}
+                  className="rounded-lg border border-border-light p-4"
+                >
+                  <h4 className="font-display text-sm font-semibold text-text-primary">
+                    {section.title || `章节 ${index + 1}`}
+                  </h4>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-text-secondary">
+                    {section.content}
+                  </p>
+                  {section.facts.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {section.facts.map((fact, factIndex) => (
+                        <div
+                          key={`${fact.fact_type}-${factIndex}`}
+                          className="rounded-lg bg-surface-secondary px-3 py-2"
+                        >
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            <Badge variant="info">{fact.fact_type}</Badge>
+                            <span className="text-sm text-text-primary">
+                              {fact.text}
+                            </span>
+                          </div>
+                          {fact.keywords.length > 0 && (
+                            <p className="text-xs text-text-muted">
+                              {fact.keywords.join("、")}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
 
       <ConfirmDialog
         open={confirmDelete}
