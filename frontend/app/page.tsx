@@ -181,7 +181,7 @@ export default function Home() {
               </h1>
               <p className="text-sm text-text-secondary mb-6 max-w-md">
                 {hasNoModel
-                  ? "请先配置模型供应商和模型选择，然后开始对话"
+                  ? "请先完成模型配置，然后开始对话"
                   : "输入求职相关任务，开始一轮新的 AI 对话或继续当前会话"}
               </p>
               {hasNoModel ? (
@@ -189,7 +189,7 @@ export default function Home() {
                   href="/settings/providers"
                   className={buttonClassName()}
                 >
-                  前往配置模型
+                  前往模型配置
                 </Link>
               ) : (
                 <QuickTasks onPrompt={handleQuickPrompt} disabled={isStreaming} />

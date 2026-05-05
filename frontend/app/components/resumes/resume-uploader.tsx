@@ -219,7 +219,7 @@ export default function ResumeUploader({
             href="/settings/providers"
             className={buttonClassName({ variant: "secondary", size: "sm" })}
           >
-            配置模型
+            模型配置
           </Link>
         )}
       </div>

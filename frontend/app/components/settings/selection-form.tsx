@@ -12,6 +12,8 @@ import type {
 
 interface SelectionFormProps {
   initial?: ModelSelectionResponse;
+  providers?: ModelProviderResponse[];
+  defaultProviderName?: string;
   onSubmit: (data: ModelSelectionCreate | ModelSelectionUpdate) => Promise<void>;
   onCancel: () => void;
   submitting: boolean;
@@ -19,27 +21,36 @@ interface SelectionFormProps {
 
 export default function SelectionForm({
   initial,
+  providers: providedProviders,
+  defaultProviderName,
   onSubmit,
   onCancel,
   submitting,
 }: SelectionFormProps) {
   const [providerName, setProviderName] = useState(
-    initial?.provider.name || ""
+    initial?.provider.name || defaultProviderName || ""
   );
   const [modelName, setModelName] = useState(initial?.model_name || "");
   const [supportsImage, setSupportsImage] = useState(
     initial?.supports_image_input || false
   );
-  const [providers, setProviders] = useState<ModelProviderResponse[]>([]);
+  const [fetchedProviders, setFetchedProviders] = useState<
+    ModelProviderResponse[]
+  >([]);
 
   const isEdit = !!initial;
+  const providers = providedProviders ?? fetchedProviders;
 
   useEffect(() => {
+    if (providedProviders) {
+      return;
+    }
+
     modelProvidersApi
       .list()
-      .then(setProviders)
+      .then(setFetchedProviders)
       .catch(() => {});
-  }, []);
+  }, [providedProviders]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
