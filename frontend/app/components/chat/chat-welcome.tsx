@@ -9,23 +9,6 @@ interface ChatWelcomeProps {
   onPrompt: (prompt: string) => void;
 }
 
-const capabilities = [
-  {
-    icon: "📊",
-    title: "分析简历",
-    description: "帮你找到核心竞争力",
-  },
-  {
-    icon: "✨",
-    title: "优化表述",
-    description: "让项目经历更有说服力",
-  },
-  {
-    icon: "🔍",
-    title: "查漏补缺",
-    description: "全面检查简历完整度",
-  },
-];
 
 export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) {
   return (
@@ -65,24 +48,7 @@ export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) 
           </div>
         ) : (
           <>
-            <div className="mt-6 grid grid-cols-3 gap-3">
-              {capabilities.map((item) => (
-                <div
-                  key={item.title}
-                  className="rounded-2xl bg-surface-secondary p-4"
-                >
-                  <div className="text-lg leading-none">{item.icon}</div>
-                  <h2 className="mt-2 text-sm font-semibold text-text-primary">
-                    {item.title}
-                  </h2>
-                  <p className="mt-1 text-xs text-text-muted">
-                    {item.description}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6 flex justify-center">
+            <div className="mt-8 flex justify-center w-full">
               <QuickTasks onPrompt={onPrompt} disabled={false} />
             </div>
 

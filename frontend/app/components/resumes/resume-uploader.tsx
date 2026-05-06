@@ -146,10 +146,35 @@ export default function ResumeUploader({
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`text-center py-10 px-6 rounded-2xl transition-colors ${
+        className={`text-center py-10 px-6 rounded-2xl transition-colors relative overflow-hidden ${
           dragging ? "bg-primary-200/30" : ""
         }`}
       >
+        {running && task && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center px-6 transition-all duration-300">
+            <p className="text-sm text-text-primary font-medium mb-4">
+              正在处理「{task.fileName}」
+            </p>
+            <div className="w-full max-w-xs h-2 overflow-hidden rounded-full bg-surface-secondary mb-3 shadow-inner">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  task.error ? "bg-error-text" : "bg-primary-500"
+                }`}
+                style={{ width: `${Math.round(task.progress * 100)}%` }}
+              />
+            </div>
+            {task.message && (
+              <p className="text-xs text-text-secondary animate-pulse">{task.message}</p>
+            )}
+            {task.modelError && (
+              <p className="text-xs text-warning-text mt-1">{task.modelError}</p>
+            )}
+            {task.error && (
+              <p className="text-xs text-error-text mt-1">{task.error}</p>
+            )}
+          </div>
+        )}
+
         <div className="mb-4">
           <svg
             className="w-10 h-10 mx-auto text-text-muted"
@@ -166,9 +191,7 @@ export default function ResumeUploader({
           </svg>
         </div>
         <p className="text-sm text-text-primary font-medium mb-1">
-          {running
-            ? `正在处理「${task?.fileName}」`
-            : "拖拽简历文件到此处，或点击选择"}
+          拖拽简历文件到此处，或点击选择
         </p>
         <p className="text-xs text-text-muted mb-4">
           支持 PDF、DOCX、PNG、JPG、JPEG 格式，上传后会自动解析
@@ -190,27 +213,7 @@ export default function ResumeUploader({
         </Button>
       </div>
 
-      {task && (
-        <div className="mt-5 space-y-3">
-          <div className="h-2 overflow-hidden rounded-full bg-surface-secondary">
-            <div
-              className={`h-full transition-all ${
-                task.error ? "bg-error-text" : "bg-info-text"
-              }`}
-              style={{ width: `${Math.round(task.progress * 100)}%` }}
-            />
-          </div>
-          {task.message && (
-            <p className="text-xs text-text-secondary">{task.message}</p>
-          )}
-          {task.modelError && (
-            <p className="text-xs text-warning-text">{task.modelError}</p>
-          )}
-          {task.error && (
-            <p className="text-xs text-error-text">{task.error}</p>
-          )}
-        </div>
-      )}
+
     </Card>
   );
 }

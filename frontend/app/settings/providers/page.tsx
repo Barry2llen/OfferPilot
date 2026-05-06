@@ -57,6 +57,7 @@ export default function ProvidersPage() {
 
   const [providerDrawerOpen, setProviderDrawerOpen] = useState(false);
   const [selectionDrawerOpen, setSelectionDrawerOpen] = useState(false);
+  const [highlightProvider, setHighlightProvider] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] =
     useState<ModelProviderResponse | null>(null);
   const [editingSelection, setEditingSelection] =
@@ -104,8 +105,11 @@ export default function ProvidersPage() {
           );
           addToast("供应商配置已更新", "success");
         } else {
-          await modelProvidersApi.create(data as ModelProviderCreate);
+          const createData = data as ModelProviderCreate;
+          await modelProvidersApi.create(createData);
           addToast("供应商配置已创建", "success");
+          setHighlightProvider(createData.name);
+          setTimeout(() => setHighlightProvider(null), 3000);
         }
         setProviderDrawerOpen(false);
         refetch();
@@ -243,6 +247,7 @@ export default function ProvidersPage() {
               onDelete={setConfirmProviderDelete}
               onAddModel={() => handleSelectionCreate(provider.name)}
               deleting={deletingProvider === provider.name}
+              highlight={highlightProvider === provider.name}
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">

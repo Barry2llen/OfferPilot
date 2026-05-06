@@ -109,10 +109,10 @@ export default function SelectionForm({
               type="checkbox"
               checked={supportsImage}
               onChange={(e) => setSupportsImage(e.target.checked)}
-              className="sr-only peer"
+              className="sr-only"
             />
-            <div className="w-9 h-5 bg-border-default rounded-full peer-checked:bg-primary-500 transition-colors" />
-            <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm peer-checked:translate-x-4 transition-transform" />
+            <div className={`w-9 h-5 rounded-full transition-colors ${supportsImage ? "bg-primary-500" : "bg-border-default"}`} />
+            <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${supportsImage ? "translate-x-4" : "translate-x-0"}`} />
           </div>
           <span className="text-sm font-medium text-text-primary">
             支持图片输入

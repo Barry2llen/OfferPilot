@@ -117,6 +117,7 @@ export default function Home() {
         <ChatSidebar
           onSelectThread={handleSelectThread}
           activeThreadId={state.currentThreadId}
+          onClose={() => setSidebarOpen(false)}
         />
       )}
 

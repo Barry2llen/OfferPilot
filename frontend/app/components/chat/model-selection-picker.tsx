@@ -281,6 +281,7 @@ export default function ModelSelectionPicker({
           }
         }}
         disabled={isDisabled}
+        title={disabled ? "生成中无法切换模型" : undefined}
         className="flex h-9 w-60 max-w-[52vw] items-center gap-2 rounded-full bg-surface-secondary px-4 text-left text-sm text-text-primary shadow-sm outline-none transition hover:bg-border-light focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary-500/25 disabled:cursor-not-allowed disabled:text-text-muted disabled:shadow-none"
       >
         <span className="min-w-0 flex-1 truncate">

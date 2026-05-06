@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -74,13 +75,7 @@ export default function MarkdownContent({
       return <hr className={`my-3 border-0 border-t ${borderClass}`} />;
     },
     pre({ children }) {
-      return (
-        <pre
-          className={`my-2 max-w-full overflow-x-auto rounded-lg ${codeClass} p-3 text-xs leading-relaxed`}
-        >
-          {children}
-        </pre>
-      );
+      return <CodeBlockWrapper codeClass={codeClass}>{children}</CodeBlockWrapper>;
     },
     code({ children, className }) {
       return (
@@ -117,6 +112,45 @@ export default function MarkdownContent({
       <Markdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </Markdown>
+    </div>
+  );
+}
+
+function CodeBlockWrapper({ children, codeClass }: { children: React.ReactNode; codeClass: string }) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (preRef.current) {
+      navigator.clipboard.writeText(preRef.current.innerText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="relative group my-2">
+      <pre
+        ref={preRef}
+        className={`max-w-full overflow-x-auto rounded-lg ${codeClass} p-3 text-xs leading-relaxed`}
+      >
+        {children}
+      </pre>
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 p-1.5 rounded-md bg-black/20 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/40 hover:text-white"
+        title="复制代码"
+      >
+        {copied ? (
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        )}
+      </button>
     </div>
   );
 }

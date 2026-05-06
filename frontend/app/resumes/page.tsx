@@ -89,10 +89,12 @@ export default function ResumesPage() {
       </div>
 
       {data && data.length === 0 ? (
-        <div className="text-center py-16 border-2 border-dashed border-border-default rounded-[20px]">
-          <p className="text-text-muted text-sm mb-3">
-            暂无简历，上传你的第一份简历
-          </p>
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-border-default rounded-[20px] bg-surface-primary">
+          <svg className="w-16 h-16 text-border-default mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <p className="text-sm font-medium text-text-primary mb-1">暂无简历</p>
+          <p className="text-xs text-text-muted">上传你的第一份简历，开始 AI 解析</p>
         </div>
       ) : (
         <div className="space-y-3">

@@ -13,6 +13,7 @@ interface ProviderCardProps {
   onAddModel?: (provider: ModelProviderResponse) => void;
   deleting: boolean;
   children?: ReactNode;
+  highlight?: boolean;
 }
 
 export default function ProviderCard({
@@ -22,9 +23,10 @@ export default function ProviderCard({
   onAddModel,
   deleting,
   children,
+  highlight = false,
 }: ProviderCardProps) {
   return (
-    <Card>
+    <Card className={`transition-all duration-1000 ${highlight ? "ring-2 ring-primary-500 bg-primary-50 shadow-brand-glow" : ""}`}>
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">

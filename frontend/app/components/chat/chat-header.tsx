@@ -1,7 +1,24 @@
 "use client";
 
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
-import type { ModelSelectionResponse } from "@/app/lib/api/types";
+import type { ModelSelectionResponse, AgentStatus } from "@/app/lib/api/types";
+import { useAppContext } from "@/app/lib/context/app-context";
+
+const statusLabels: Record<AgentStatus, string> = {
+  idle: "就绪",
+  generating: "生成中",
+  tool_calling: "工具调用中",
+  interrupted: "已中断",
+  error: "错误",
+};
+
+const statusColors: Record<AgentStatus, string> = {
+  idle: "bg-success-text",
+  generating: "bg-primary-500 animate-pulse",
+  tool_calling: "bg-sky-blue animate-pulse",
+  interrupted: "bg-warning-text",
+  error: "bg-error-text",
+};
 
 interface ChatHeaderProps {
   threadId: string | null;
@@ -24,6 +41,8 @@ export default function ChatHeader({
   isStreaming,
   onModelChange,
 }: ChatHeaderProps) {
+  const { state } = useAppContext();
+
   return (
     <div className="min-h-12 shrink-0 border-b border-border-light bg-white px-4 py-2">
       <div className="flex flex-wrap items-center gap-3">
@@ -53,6 +72,15 @@ export default function ChatHeader({
         <h2 className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-text-primary">
           {threadId ? "AI 对话" : "新对话"}
         </h2>
+
+        <div className="flex shrink-0 items-center gap-1.5 mr-2">
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${statusColors[state.agentStatus]}`}
+          />
+          <span className="text-xs text-text-muted">
+            {statusLabels[state.agentStatus]}
+          </span>
+        </div>
 
         <ModelSelectionPicker
           models={models}
