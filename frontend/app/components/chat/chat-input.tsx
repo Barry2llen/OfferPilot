@@ -48,7 +48,7 @@ export default function ChatInput({
   return (
     <div className="shrink-0 bg-gradient-to-t from-white via-white to-white/75 px-4 pb-5 pt-3 sm:px-6">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="rounded-3xl bg-white p-2 shadow-[0_14px_40px_rgba(15,23,42,0.14)] transition-shadow focus-within:shadow-[0_16px_48px_rgba(37,99,235,0.18)]">
+        <div className="rounded-3xl bg-white p-2 shadow-[0_14px_40px_rgba(15,23,42,0.12)] transition-shadow focus-within:shadow-[0_0_0_2px_rgba(20,86,240,0.15),0_14px_40px_rgba(44,30,116,0.16)]">
           <div className="flex items-end gap-3 rounded-[1.25rem] bg-surface-secondary/80 p-2 pl-4">
             <textarea
               ref={textareaRef}

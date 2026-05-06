@@ -12,7 +12,7 @@ import FormDrawer from "@/app/components/ui/form-drawer";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Badge from "@/app/components/ui/badge";
 import Button from "@/app/components/ui/button";
-import Spinner from "@/app/components/ui/spinner";
+import { Skeleton } from "@/app/components/ui/skeleton";
 import type {
   ModelProviderResponse,
   ModelProviderCreate,
@@ -179,9 +179,18 @@ export default function ProvidersPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="flex items-center justify-center py-20">
-          <Spinner size="lg" />
+      <div className="max-w-4xl mx-auto p-6 lg:py-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
+            <Skeleton className="h-4 w-56 rounded-lg" />
+          </div>
+          <Skeleton className="h-10 w-28 rounded-xl" />
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map((item) => (
+            <Skeleton key={item} className="h-32 rounded-[20px]" />
+          ))}
         </div>
       </div>
     );

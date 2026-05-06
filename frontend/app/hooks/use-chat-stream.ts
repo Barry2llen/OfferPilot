@@ -164,8 +164,15 @@ export function useChatStream() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const pendingTokenRef = useRef("");
+  const rafIdRef = useRef<number | null>(null);
 
   const clearStreamingState = useCallback(() => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    pendingTokenRef.current = "";
     setLiveMessages([]);
     setStreamingText("");
     setStreamingReasoning("");
@@ -210,6 +217,30 @@ export function useChatStream() {
         setLiveMessages([...currentLiveMessages]);
       };
 
+      const cancelPendingTokenFrame = () => {
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
+        pendingTokenRef.current = "";
+      };
+
+      const flushTokenFrame = () => {
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
+        if (
+          pendingTokenRef.current &&
+          currentAssistantIndex !== null &&
+          currentLiveMessages[currentAssistantIndex]?.role === "assistant"
+        ) {
+          setStreamingText(currentLiveMessages[currentAssistantIndex].content);
+          publishLiveMessages();
+        }
+        pendingTokenRef.current = "";
+      };
+
       const ensureAssistantMessage = () => {
         if (
           currentAssistantIndex === null ||
@@ -222,6 +253,7 @@ export function useChatStream() {
       };
 
       const endAssistantSegment = () => {
+        flushTokenFrame();
         currentAssistantIndex = null;
         setStreamingText("");
         setStreamingReasoning("");
@@ -280,8 +312,17 @@ export function useChatStream() {
                   const assistantMessage = currentLiveMessages[assistantIndex];
                   assistantMessage.content += token;
                   visibleAssistantText += token;
-                  setStreamingText(assistantMessage.content);
-                  publishLiveMessages();
+                  pendingTokenRef.current += token;
+                  if (rafIdRef.current === null) {
+                    rafIdRef.current = requestAnimationFrame(() => {
+                      rafIdRef.current = null;
+                      if (pendingTokenRef.current) {
+                        setStreamingText(assistantMessage.content);
+                        publishLiveMessages();
+                        pendingTokenRef.current = "";
+                      }
+                    });
+                  }
                 }
                 break;
               }
@@ -291,6 +332,7 @@ export function useChatStream() {
                 if (!reasoning) {
                   break;
                 }
+                flushTokenFrame();
                 accumulatedReasoning += reasoning;
                 const assistantIndex = ensureAssistantMessage();
                 const assistantMessage = currentLiveMessages[assistantIndex];
@@ -397,6 +439,7 @@ export function useChatStream() {
               }
 
               case "interrupt": {
+                cancelPendingTokenFrame();
                 setAgentStatus("interrupted");
                 setInterrupt({
                   interruptId: (event.data.id as string) || "",
@@ -408,6 +451,7 @@ export function useChatStream() {
               }
 
               case "final": {
+                flushTokenFrame();
                 const explicitFinalContent = formatDisplayContent(event.data.content);
                 const finalContent =
                   explicitFinalContent || visibleAssistantText || "";
@@ -451,6 +495,7 @@ export function useChatStream() {
               }
 
               case "error": {
+                cancelPendingTokenFrame();
                 const errMsg =
                   (event.data.detail as string) ||
                   (event.data.message as string) ||
@@ -463,6 +508,11 @@ export function useChatStream() {
             }
           },
           (error: Error) => {
+            if (rafIdRef.current !== null) {
+              cancelAnimationFrame(rafIdRef.current);
+              rafIdRef.current = null;
+            }
+            pendingTokenRef.current = "";
             setStreamError(error.message);
             setAgentStatus("error");
             setIsStreaming(false);
@@ -475,6 +525,11 @@ export function useChatStream() {
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== "AbortError") {
+          if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+          }
+          pendingTokenRef.current = "";
           setStreamError(err.message);
           setAgentStatus("error");
           setIsStreaming(false);
@@ -491,6 +546,11 @@ export function useChatStream() {
 
   const stopStream = useCallback(() => {
     abortRef.current?.abort();
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    pendingTokenRef.current = "";
     setIsStreaming(false);
     setAgentStatus("idle");
   }, [setAgentStatus]);

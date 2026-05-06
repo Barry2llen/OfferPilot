@@ -8,7 +8,7 @@ import ResumeCard from "@/app/components/resumes/resume-card";
 import ResumeUploader from "@/app/components/resumes/resume-uploader";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Button from "@/app/components/ui/button";
-import Spinner from "@/app/components/ui/spinner";
+import { ResumeCardSkeleton, Skeleton } from "@/app/components/ui/skeleton";
 import type { ResumeListItem } from "@/app/lib/api/types";
 
 export default function ResumesPage() {
@@ -45,9 +45,16 @@ export default function ResumesPage() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto p-6">
-        <div className="flex items-center justify-center py-20">
-          <Spinner size="lg" />
+      <div className="max-w-2xl mx-auto p-6 lg:py-8">
+        <div className="mb-6">
+          <Skeleton className="mb-2 h-8 w-24 rounded-lg" />
+          <Skeleton className="h-4 w-48 rounded-lg" />
+        </div>
+        <Skeleton className="mb-6 h-48 rounded-[20px]" />
+        <div className="space-y-3">
+          {[1, 2, 3].map((item) => (
+            <ResumeCardSkeleton key={item} />
+          ))}
         </div>
       </div>
     );

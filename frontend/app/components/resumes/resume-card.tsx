@@ -63,7 +63,7 @@ export default function ResumeCard({
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <h3 className="font-display text-base font-semibold text-text-primary truncate max-w-[200px]">
+            <h3 className="min-w-0 flex-1 truncate font-display text-base font-semibold text-text-primary">
               {resume.original_filename || `简历 #${resume.id}`}
             </h3>
             <Badge variant={resume.has_file ? "success" : "warning"} size="sm">

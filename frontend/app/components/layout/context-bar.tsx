@@ -24,9 +24,9 @@ export default function ContextBar() {
 
   return (
     <div className="h-10 bg-white border-b border-border-light flex items-center px-4 gap-4 text-xs text-text-secondary shrink-0">
-      <div className="flex-1" />
+      <div className="min-w-0 flex-1" />
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         <span
           className={`w-1.5 h-1.5 rounded-full ${statusColors[state.agentStatus]}`}
         />

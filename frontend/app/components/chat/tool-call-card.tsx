@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import type { ToolCallEntry } from "@/app/hooks/use-chat-stream";
 
 type ToolStatus = ToolCallEntry["status"];
@@ -107,17 +108,25 @@ export default function ToolCallCard({
           )}
         </button>
 
-        {canExpand && expanded && (
-          <div className="border-t border-border-light px-3 py-2">
-            {searchResults.length > 0 ? (
-              <SearchResultList results={searchResults} />
-            ) : showSearchEmpty ? (
-              <SearchEmptyState output={entry.output} />
-            ) : (
-              <ToolRawDetails entry={entry} />
-            )}
-          </div>
-        )}
+        <AnimatePresence>
+          {canExpand && expanded && (
+            <motion.div
+              className="overflow-hidden border-t border-border-light px-3 py-2"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+            >
+              {searchResults.length > 0 ? (
+                <SearchResultList results={searchResults} />
+              ) : showSearchEmpty ? (
+                <SearchEmptyState output={entry.output} />
+              ) : (
+                <ToolRawDetails entry={entry} />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

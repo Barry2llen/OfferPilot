@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import type {
   ChatMessage as ChatMessageType,
   ToolCallEntry,
@@ -43,7 +44,12 @@ export default function ChatMessage({ message }: Props) {
   }
 
   return (
-    <div className={`flex py-2 ${isUser ? "justify-end" : "justify-start"}`}>
+    <motion.div
+      className={`flex py-2 ${isUser ? "justify-end" : "justify-start"}`}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
       <div
         className={`max-w-[min(80%,48rem)] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isUser
@@ -56,7 +62,7 @@ export default function ChatMessage({ message }: Props) {
         )}
         <MarkdownContent content={message.content} inverse={isUser} />
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -73,7 +79,12 @@ export function StreamingAssistantMessage({
   waiting,
 }: StreamingAssistantMessageProps) {
   return (
-    <div className="flex justify-start py-2">
+    <motion.div
+      className="flex justify-start py-2"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
       <div className="max-w-[min(80%,48rem)] rounded-2xl rounded-bl-md bg-surface-secondary px-4 py-2.5 text-sm leading-relaxed text-text-primary">
         {reasoning && <ReasoningDisclosure content={reasoning} />}
         {content ? (
@@ -85,7 +96,7 @@ export function StreamingAssistantMessage({
           <WaitingIndicator label={reasoning ? "正在组织回复" : "正在思考"} />
         ) : null}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

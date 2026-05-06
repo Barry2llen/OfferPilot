@@ -24,14 +24,6 @@ const navItems = [
   },
 ];
 
-const futureItems = [
-  { label: "JD 分析" },
-  { label: "简历优化" },
-  { label: "模拟面试" },
-  { label: "求职跟踪" },
-  { label: "知识库" },
-];
-
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
@@ -82,43 +74,35 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 title={item.label}
               >
                 <item.icon className="w-4 h-4 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
-                {!item.active && !collapsed && (
-                  <span className="ml-auto text-[10px] text-text-muted bg-border-light px-1.5 py-0.5 rounded-full">
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-200 ${
+                    collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+                  }`}
+                >
+                  {item.label}
+                </span>
+                {!item.active && (
+                  <span
+                    className={`ml-auto overflow-hidden whitespace-nowrap rounded-full bg-border-light px-1.5 py-0.5 text-[10px] text-text-muted transition-all duration-200 ${
+                      collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+                    }`}
+                  >
                     规划中
                   </span>
                 )}
               </Link>
             );
           })}
-
-          <div className="pt-4 pb-1">
-            <div className="px-3">
-              {!collapsed && (
-                <p className="text-[11px] font-medium text-text-muted uppercase tracking-wider mb-2">
-                  后续功能
-                </p>
-              )}
-            </div>
-            {futureItems.map((item) => (
-              <div
-                key={item.label}
-                className="flex items-center gap-3 px-3 py-1.5 text-sm text-text-muted/50 opacity-40 pointer-events-none"
-                title={collapsed ? item.label : undefined}
-              >
-                <span className="w-4 h-4 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
-              </div>
-            ))}
-          </div>
         </nav>
 
         <div className="p-3 border-t border-border-light">
-          {!collapsed && (
-            <p className="text-[10px] text-text-muted text-center">
-              OfferPilot v0.1
-            </p>
-          )}
+          <p
+            className={`overflow-hidden text-center text-[10px] text-text-muted transition-all duration-200 ${
+              collapsed ? "h-0 opacity-0" : "h-auto opacity-100"
+            }`}
+          >
+            OfferPilot v0.1
+          </p>
           <button
             onClick={onToggle}
             className="hidden lg:block w-full mt-1 p-1 rounded-lg hover:bg-black/[0.03] transition-colors"

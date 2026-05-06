@@ -66,7 +66,7 @@ export default function ChatSidebar({
   return (
     <div className="w-64 shrink-0 border-r border-border-light flex flex-col h-full bg-white">
       <div className="p-3 border-b border-border-light">
-        <Button variant="secondary" size="sm" onClick={handleNewChat} className="w-full">
+        <Button variant="secondary" size="sm" onClick={handleNewChat} className="w-full" pill>
           新对话
         </Button>
       </div>
