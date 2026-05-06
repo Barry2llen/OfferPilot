@@ -7,31 +7,6 @@ from pydantic import Field
 from schemas.config import Config, load_config
 from utils.logger import logger
 
-
-def _to_jsonable(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(key): _to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_to_jsonable(item) for item in value]
-
-    model_dump = getattr(value, "model_dump", None)
-    if callable(model_dump):
-        return _to_jsonable(model_dump())
-
-    if hasattr(value, "__dict__"):
-        return _to_jsonable(vars(value))
-
-    try:
-        json.dumps(value)
-    except TypeError:
-        return str(value)
-    return value
-
-
-def _to_json_string(value: Any) -> str:
-    return json.dumps(_to_jsonable(value), ensure_ascii=False)
-
-
 async def get_web_search_tools(
     config: Config | None = None,
     *,
@@ -97,7 +72,7 @@ async def get_web_search_tools(
                 }
             }),
         )
-        return _to_json_string(response)
+        return str(response.results)
 
     @tool
     async def web_fetch_exa(
@@ -108,7 +83,7 @@ async def get_web_search_tools(
         """
 
         response = await exa.get_contents(urls)
-        return _to_json_string(response)
+        return str(response.results)
 
     @tool
     async def find_similar_exa(
@@ -141,7 +116,7 @@ async def get_web_search_tools(
             exclude_domains=exclude_domains,
             exclude_source_domain=exclude_source_domain,
         )
-        return _to_json_string(response)
+        return str(response.results)
 
     return [web_search_exa, web_fetch_exa, find_similar_exa]
 
