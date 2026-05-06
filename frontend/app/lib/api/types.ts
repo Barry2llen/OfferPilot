@@ -116,6 +116,7 @@ export interface AIChatHistoryMessage {
   role: string;
   type: string;
   content: string | unknown;
+  reasoning?: string | null;
   name?: string | null;
   tool_call_id?: string | null;
   status?: string | null;

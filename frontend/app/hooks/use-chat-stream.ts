@@ -23,6 +23,9 @@ export interface ChatMessage {
   toolCallId?: string;
   toolName?: string;
   toolStatus?: string;
+  toolInput?: Record<string, unknown>;
+  toolOutput?: unknown;
+  toolError?: string;
 }
 
 function extractTextContent(content: unknown): string {
@@ -82,10 +85,75 @@ function findLastRunningToolCallIndex(
   return -1;
 }
 
+function findLastRunningToolMessageIndex(
+  messages: ChatMessage[],
+  name: string
+): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (
+      message.role === "tool" &&
+      message.toolName === name &&
+      message.toolStatus === "running"
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function toolCallToMessage(entry: ToolCallEntry): ChatMessage {
+  return {
+    role: "tool",
+    content: formatDisplayContent(entry.output ?? entry.error ?? entry.input ?? ""),
+    toolName: entry.name,
+    toolStatus: entry.status,
+    toolInput: entry.input,
+    toolOutput: entry.output,
+    toolError: entry.error,
+  };
+}
+
+function mergeReasoning(existing: string | undefined, next: string): string {
+  if (!existing) {
+    return next;
+  }
+  if (!next || existing === next) {
+    return existing;
+  }
+  return `${existing}\n\n${next}`;
+}
+
+function cloneMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => ({ ...message }));
+}
+
+function normalizeHistoryMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message, index) => {
+    if (message.role !== "assistant") {
+      return message;
+    }
+
+    const nextMessage = messages[index + 1];
+    const content = message.content.trim();
+    if (nextMessage?.role !== "tool" || !content) {
+      return message;
+    }
+
+    return {
+      ...message,
+      content: "",
+      reasoning: mergeReasoning(message.reasoning, message.content),
+    };
+  });
+}
+
 export function useChatStream() {
   const { setThreadId, setAgentStatus, bumpChatHistoryVersion } =
     useAppActions();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [streamingReasoning, setStreamingReasoning] = useState("");
   const [toolCalls, setToolCalls] = useState<ToolCallEntry[]>([]);
@@ -98,6 +166,7 @@ export function useChatStream() {
   const abortRef = useRef<AbortController | null>(null);
 
   const clearStreamingState = useCallback(() => {
+    setLiveMessages([]);
     setStreamingText("");
     setStreamingReasoning("");
     setToolCalls([]);
@@ -133,6 +202,50 @@ export function useChatStream() {
       let accumulatedText = "";
       let accumulatedReasoning = "";
       const currentToolCalls: ToolCallEntry[] = [];
+      let currentLiveMessages: ChatMessage[] = [];
+      let currentAssistantIndex: number | null = null;
+      let visibleAssistantText = "";
+
+      const publishLiveMessages = () => {
+        setLiveMessages([...currentLiveMessages]);
+      };
+
+      const ensureAssistantMessage = () => {
+        if (
+          currentAssistantIndex === null ||
+          currentLiveMessages[currentAssistantIndex]?.role !== "assistant"
+        ) {
+          currentLiveMessages.push({ role: "assistant", content: "" });
+          currentAssistantIndex = currentLiveMessages.length - 1;
+        }
+        return currentAssistantIndex;
+      };
+
+      const endAssistantSegment = () => {
+        currentAssistantIndex = null;
+        setStreamingText("");
+        setStreamingReasoning("");
+      };
+
+      const foldCurrentAssistantContentIntoReasoning = () => {
+        if (currentAssistantIndex === null) {
+          return;
+        }
+        const assistantMessage = currentLiveMessages[currentAssistantIndex];
+        if (assistantMessage?.role !== "assistant" || !assistantMessage.content.trim()) {
+          return;
+        }
+        const content = assistantMessage.content;
+        assistantMessage.reasoning = assistantMessage.reasoning
+          ? `${assistantMessage.reasoning}\n\n${content}`
+          : content;
+        assistantMessage.content = "";
+        visibleAssistantText = visibleAssistantText.endsWith(content)
+          ? visibleAssistantText.slice(0, -content.length)
+          : visibleAssistantText.replace(content, "");
+        setStreamingText("");
+        setStreamingReasoning(assistantMessage.reasoning);
+      };
 
       try {
         await aiChatApi.streamChat(
@@ -162,7 +275,14 @@ export function useChatStream() {
                   event.data.content ?? event.data.token ?? ""
                 );
                 accumulatedText += token;
-                setStreamingText(accumulatedText);
+                if (token) {
+                  const assistantIndex = ensureAssistantMessage();
+                  const assistantMessage = currentLiveMessages[assistantIndex];
+                  assistantMessage.content += token;
+                  visibleAssistantText += token;
+                  setStreamingText(assistantMessage.content);
+                  publishLiveMessages();
+                }
                 break;
               }
 
@@ -172,12 +292,18 @@ export function useChatStream() {
                   break;
                 }
                 accumulatedReasoning += reasoning;
-                setStreamingReasoning(accumulatedReasoning);
+                const assistantIndex = ensureAssistantMessage();
+                const assistantMessage = currentLiveMessages[assistantIndex];
+                assistantMessage.reasoning = `${assistantMessage.reasoning ?? ""}${reasoning}`;
+                setStreamingReasoning(assistantMessage.reasoning);
+                publishLiveMessages();
                 break;
               }
 
               case "tool_start": {
                 setAgentStatus("tool_calling");
+                foldCurrentAssistantContentIntoReasoning();
+                endAssistantSegment();
                 const name = (event.data.tool_name as string) || "unknown_tool";
                 const input = event.data.input as
                   | Record<string, unknown>
@@ -189,6 +315,8 @@ export function useChatStream() {
                 };
                 currentToolCalls.push(entry);
                 setToolCalls([...currentToolCalls]);
+                currentLiveMessages.push(toolCallToMessage(entry));
+                publishLiveMessages();
                 break;
               }
 
@@ -210,6 +338,21 @@ export function useChatStream() {
                   });
                 }
                 setToolCalls([...currentToolCalls]);
+                const toolMessageIndex = findLastRunningToolMessageIndex(
+                  currentLiveMessages,
+                  name
+                );
+                const toolEntry =
+                  idx >= 0
+                    ? currentToolCalls[idx]
+                    : currentToolCalls[currentToolCalls.length - 1];
+                if (toolMessageIndex >= 0) {
+                  currentLiveMessages[toolMessageIndex] = toolCallToMessage(toolEntry);
+                } else {
+                  currentLiveMessages.push(toolCallToMessage(toolEntry));
+                }
+                publishLiveMessages();
+                endAssistantSegment();
                 setAgentStatus("generating");
                 break;
               }
@@ -234,6 +377,21 @@ export function useChatStream() {
                   });
                 }
                 setToolCalls([...currentToolCalls]);
+                const toolMessageIndex = findLastRunningToolMessageIndex(
+                  currentLiveMessages,
+                  name
+                );
+                const toolEntry =
+                  idx >= 0
+                    ? currentToolCalls[idx]
+                    : currentToolCalls[currentToolCalls.length - 1];
+                if (toolMessageIndex >= 0) {
+                  currentLiveMessages[toolMessageIndex] = toolCallToMessage(toolEntry);
+                } else {
+                  currentLiveMessages.push(toolCallToMessage(toolEntry));
+                }
+                publishLiveMessages();
+                endAssistantSegment();
                 setAgentStatus("generating");
                 break;
               }
@@ -252,23 +410,40 @@ export function useChatStream() {
               case "final": {
                 const explicitFinalContent = formatDisplayContent(event.data.content);
                 const finalContent =
-                  explicitFinalContent || accumulatedText || accumulatedReasoning || "";
+                  explicitFinalContent || visibleAssistantText || "";
                 const reasoningContent =
                   explicitFinalContent || accumulatedText
                     ? accumulatedReasoning || undefined
                     : undefined;
-                if (finalContent) {
-                  setMessages((prev) => [
-                    ...prev,
-                    {
+                const lastLiveMessage =
+                  currentLiveMessages[currentLiveMessages.length - 1];
+                const lastMessageHasVisibleAssistantContent =
+                  lastLiveMessage?.role === "assistant" &&
+                  lastLiveMessage.content.trim();
+                if (finalContent && !lastMessageHasVisibleAssistantContent) {
+                  if (lastLiveMessage?.role === "assistant") {
+                    lastLiveMessage.content = finalContent;
+                    if (!lastLiveMessage.reasoning && reasoningContent) {
+                      lastLiveMessage.reasoning = reasoningContent;
+                    }
+                  } else {
+                    currentLiveMessages.push({
                       role: "assistant",
                       content: finalContent,
                       reasoning: reasoningContent,
-                    },
-                  ]);
+                    });
+                  }
                 }
+                const completedLiveMessages = cloneMessages(currentLiveMessages);
+                if (completedLiveMessages.length > 0) {
+                  setMessages((prev) => [...prev, ...completedLiveMessages]);
+                }
+                currentLiveMessages = [];
+                currentAssistantIndex = null;
+                setLiveMessages([]);
                 setStreamingText("");
                 setStreamingReasoning("");
+                setToolCalls([]);
                 setAgentStatus("idle");
                 setIsStreaming(false);
                 bumpChatHistoryVersion();
@@ -333,11 +508,13 @@ export function useChatStream() {
       const msgs: ChatMessage[] = historyMessages.map((m) => ({
         role: m.role as ChatMessage["role"],
         content: formatDisplayContent(m.content),
+        reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
         toolCallId: m.tool_call_id ?? undefined,
         toolName: m.name ?? undefined,
         toolStatus: m.status ?? undefined,
+        toolOutput: m.role === "tool" ? m.content : undefined,
       }));
-      setMessages(msgs);
+      setMessages(normalizeHistoryMessages(msgs));
       clearStreamingState();
     },
     [clearStreamingState]
@@ -345,6 +522,7 @@ export function useChatStream() {
 
   return {
     messages,
+    liveMessages,
     streamingText,
     streamingReasoning,
     toolCalls,

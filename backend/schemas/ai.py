@@ -109,6 +109,11 @@ class AIChatHistoryMessage(BaseModel):
         description="消息内容。字符串内容会原样返回，复杂内容保持 JSON 可序列化结构。",
         examples=["这份简历的主要优势是项目经历完整、技术栈清晰。"],
     )
+    reasoning: str | None = Field(
+        default=None,
+        description="模型推理或工具调用前的中间思考内容，前端应折叠展示。",
+        examples=["我需要先检索最新资料。"],
+    )
     name: str | None = Field(
         default=None,
         description="消息名称，通常用于工具消息或带名称的模型消息。",

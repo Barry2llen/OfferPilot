@@ -303,7 +303,7 @@ def test_ai_chat_history_endpoint_returns_normalized_messages(
                 ToolMessage(
                     content="搜索结果",
                     tool_call_id="call-1",
-                    name="web_search_exa",
+                    name="custom_tool",
                     status="success",
                 ),
                 AIMessage(content="OfferPilot 是一个求职辅助服务。"),
@@ -333,13 +333,14 @@ def test_ai_chat_history_endpoint_returns_normalized_messages(
         {
             "role": "assistant",
             "type": "ai",
-            "content": "我会先搜索。",
+            "content": "",
+            "reasoning": "我会先搜索。",
         },
         {
             "role": "tool",
             "type": "tool",
             "content": "搜索结果",
-            "name": "web_search_exa",
+            "name": "custom_tool",
             "tool_call_id": "call-1",
             "status": "success",
         },
@@ -351,7 +352,7 @@ def test_ai_chat_history_endpoint_returns_normalized_messages(
     ]
 
 
-def test_ai_chat_history_uses_reasoning_content_when_assistant_content_is_empty(
+def test_ai_chat_history_returns_reasoning_content_when_assistant_content_is_empty(
     temporary_app_config: Config,
 ) -> None:
     app = create_app(temporary_app_config)
@@ -391,8 +392,120 @@ def test_ai_chat_history_uses_reasoning_content_when_assistant_content_is_empty(
     assert detail_payload["messages"][-1] == {
         "role": "assistant",
         "type": "ai",
-        "content": "你好！今天有什么可以帮你的吗？",
+        "content": "",
+        "reasoning": "你好！今天有什么可以帮你的吗？",
     }
+
+
+def test_ai_chat_history_summarizes_web_search_tool_messages(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="搜索 DeepSeek"),
+                ToolMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": (
+                                "Title: DeepSeek News\n"
+                                "URL: https://example.com/deepseek\n"
+                                "Favicon: https://example.com/favicon.ico\n"
+                                "Text: private page text"
+                            ),
+                        }
+                    ],
+                    tool_call_id="call-search",
+                    name="web_search",
+                    status="success",
+                ),
+                AIMessage(content="搜索完成。"),
+            ],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history-search"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-history-search", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+
+        response = client.get("/ai/chats/thread-history-search/history")
+
+    assert response.status_code == 200
+    tool_message = response.json()["messages"][1]
+    assert tool_message == {
+        "role": "tool",
+        "type": "tool",
+        "content": [
+            {
+                "url": "https://example.com/deepseek",
+                "title": "DeepSeek News",
+                "favicon": "https://example.com/favicon.ico",
+            }
+        ],
+        "name": "web_search",
+        "tool_call_id": "call-search",
+        "status": "success",
+    }
+    assert "private page text" not in response.text
+
+
+def test_ai_chat_history_summarizes_web_fetch_tool_messages(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="读取 DeepSeek 文档"),
+                ToolMessage(
+                    content=(
+                        "[Result(url='https://api-docs.deepseek.com/zh-cn/', "
+                        "title='DeepSeek API Docs', "
+                        "favicon='https://api-docs.deepseek.com/favicon.ico', "
+                        "text='private page text')]"
+                    ),
+                    tool_call_id="call-fetch",
+                    name="web_fetch_exa",
+                    status="success",
+                ),
+                AIMessage(content="读取完成。"),
+            ],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history-fetch"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-history-fetch", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+
+        response = client.get("/ai/chats/thread-history-fetch/history")
+
+    assert response.status_code == 200
+    tool_message = response.json()["messages"][1]
+    assert tool_message == {
+        "role": "tool",
+        "type": "tool",
+        "content": [
+            {
+                "url": "https://api-docs.deepseek.com/zh-cn/",
+                "title": "DeepSeek API Docs",
+                "favicon": "https://api-docs.deepseek.com/favicon.ico",
+            }
+        ],
+        "name": "web_fetch_exa",
+        "tool_call_id": "call-fetch",
+        "status": "success",
+    }
+    assert "private page text" not in response.text
 
 
 def test_ai_chat_history_endpoint_returns_404_for_missing_thread(
@@ -988,6 +1101,279 @@ def test_ai_chat_stream_endpoint_summarizes_search_tool_message_text_output(
         in response.text
     )
     assert "private highlight" not in response.text
+    assert "private page text" not in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_mcp_web_search_text_blocks(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "web_search",
+                    "data": {
+                        "output": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Title: MCP Example A\n"
+                                    "URL: https://example.com/mcp-a\n"
+                                    "Favicon: https://example.com/favicon.ico\n"
+                                    "Text: private page text\n\n"
+                                    "Title: MCP Example B\n"
+                                    "URL: https://example.com/mcp-b\n"
+                                    "Favicon: None"
+                                ),
+                            }
+                        ]
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-mcp-web-search-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-mcp-web-search-summary", '
+        '"tool_name": "web_search", "output": [{"url": "https://example.com/mcp-a", '
+        '"title": "MCP Example A", "favicon": "https://example.com/favicon.ico"}, '
+        '{"url": "https://example.com/mcp-b", "title": "MCP Example B"}]}'
+        in response.text
+    )
+    assert "private page text" not in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_web_search_json_string_output(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "web_search",
+                    "data": {
+                        "output": (
+                            '[{"url": "https://example.com/json", '
+                            '"title": "JSON Result", '
+                            '"favicon": "https://example.com/favicon.ico", '
+                            '"text": "private page text"}]'
+                        )
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-web-search-json-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-web-search-json-summary", '
+        '"tool_name": "web_search", "output": [{"url": "https://example.com/json", '
+        '"title": "JSON Result", "favicon": "https://example.com/favicon.ico"}]}'
+        in response.text
+    )
+    assert "private page text" not in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_single_web_search_result_object(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "web_search",
+                    "data": {
+                        "output": {
+                            "url": "https://example.com/single",
+                            "title": "Single Result",
+                            "favicon": "https://example.com/favicon.ico",
+                            "text": "private page text",
+                        }
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-web-search-single-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-web-search-single-summary", '
+        '"tool_name": "web_search", "output": [{"url": "https://example.com/single", '
+        '"title": "Single Result", "favicon": "https://example.com/favicon.ico"}]}'
+        in response.text
+    )
+    assert "private page text" not in response.text
+
+
+def test_ai_chat_stream_endpoint_returns_search_empty_marker_instead_of_empty_list(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "web_search",
+                    "data": {"output": []},
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-web-search-empty-marker",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-web-search-empty-marker", '
+        '"tool_name": "web_search", "output": {"message": "未提取到可展示的搜索链接"}}'
+        in response.text
+    )
+    assert '"output": []' not in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_web_fetch_tool_output(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "web_fetch_exa",
+                    "data": {
+                        "output": (
+                            "[Result(url='https://api-docs.deepseek.com/zh-cn/', "
+                            "title='DeepSeek API Docs', "
+                            "favicon='https://api-docs.deepseek.com/favicon.ico', "
+                            "text='private page text')]"
+                        )
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-web-fetch-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-web-fetch-summary", '
+        '"tool_name": "web_fetch_exa", "output": '
+        '[{"url": "https://api-docs.deepseek.com/zh-cn/", '
+        '"title": "DeepSeek API Docs", '
+        '"favicon": "https://api-docs.deepseek.com/favicon.ico"}]}'
+        in response.text
+    )
     assert "private page text" not in response.text
 
 

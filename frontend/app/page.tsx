@@ -11,7 +11,6 @@ import ChatMessage, {
 } from "@/app/components/chat/chat-message";
 import ChatInput from "@/app/components/chat/chat-input";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
-import AgentTimeline from "@/app/components/chat/agent-timeline";
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
 import QuickTasks from "@/app/components/chat/quick-tasks";
 import Button, { buttonClassName } from "@/app/components/ui/button";
@@ -24,9 +23,9 @@ export default function Home() {
 
   const {
     messages,
+    liveMessages,
     streamingText,
     streamingReasoning,
-    toolCalls,
     interrupt,
     streamError,
     isStreaming,
@@ -47,7 +46,7 @@ export default function Home() {
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText, streamingReasoning]);
+  }, [messages, liveMessages, streamingText, streamingReasoning]);
 
   useEffect(() => {
     let mounted = true;
@@ -125,6 +124,8 @@ export default function Home() {
   );
 
   const hasNoModel = state.currentModelSelection === null;
+  const hasAnyMessages =
+    messages.length > 0 || liveMessages.length > 0 || isStreaming;
 
   return (
     <div className="flex h-full">
@@ -169,7 +170,7 @@ export default function Home() {
             <div className="flex items-center justify-center py-20">
               <Spinner size="lg" />
             </div>
-          ) : messages.length === 0 ? (
+          ) : !hasAnyMessages ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <div className="w-14 h-14 rounded-full bg-brand-blue/10 flex items-center justify-center mb-4">
                 <svg className="w-7 h-7 text-brand-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -201,11 +202,23 @@ export default function Home() {
                 <ChatMessage key={i} message={msg} />
               ))}
 
-              {/* Streaming assistant message */}
-              {(isStreaming || streamingText || streamingReasoning) && (
+              {liveMessages.map((msg, i) =>
+                msg.role === "assistant" ? (
+                  <StreamingAssistantMessage
+                    key={`live-${i}`}
+                    content={msg.content}
+                    reasoning={msg.reasoning ?? ""}
+                    waiting={isStreaming && i === liveMessages.length - 1}
+                  />
+                ) : (
+                  <ChatMessage key={`live-${i}`} message={msg} />
+                )
+              )}
+
+              {isStreaming && liveMessages.length === 0 && (
                 <StreamingAssistantMessage
-                  content={streamingText}
-                  reasoning={streamingReasoning}
+                  content=""
+                  reasoning=""
                   waiting={isStreaming}
                 />
               )}
@@ -235,13 +248,6 @@ export default function Home() {
             </div>
           )}
         </div>
-
-        {/* Agent timeline */}
-        <AgentTimeline
-          toolCalls={toolCalls}
-          streamingText={streamingText}
-          isStreaming={isStreaming}
-        />
 
         {/* Input */}
         <ChatInput

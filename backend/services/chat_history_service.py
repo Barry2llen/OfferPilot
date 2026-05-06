@@ -12,6 +12,7 @@ from schemas.ai import (
     AIChatHistoryMessage,
     AIChatHistorySummary,
 )
+from utils.tool_outputs import summarize_tool_output
 
 
 _ROLE_BY_MESSAGE_TYPE = {
@@ -54,7 +55,7 @@ class ChatHistoryService:
             return None
 
         messages = self._get_messages(row.thread_id)
-        normalized_messages = [_to_history_message(message) for message in messages]
+        normalized_messages = _to_history_messages(messages)
         summary = _build_summary(row, messages)
         return AIChatHistoryDetailResponse(
             **summary.model_dump(),
@@ -107,13 +108,44 @@ def _build_title(thread_id: str, messages: list[Any]) -> str:
     return thread_id
 
 
-def _to_history_message(message: Any) -> AIChatHistoryMessage:
+def _to_history_messages(messages: list[Any]) -> list[AIChatHistoryMessage]:
+    normalized: list[AIChatHistoryMessage] = []
+    for index, message in enumerate(messages):
+        next_message = messages[index + 1] if index + 1 < len(messages) else None
+        normalized.append(_to_history_message(message, next_message))
+    return normalized
+
+
+def _to_history_message(
+    message: Any,
+    next_message: Any | None = None,
+) -> AIChatHistoryMessage:
     message_type = _message_type(message)
+    message_name = _message_attr(message, "name")
+    content = _message_content(message)
+    reasoning = _message_reasoning_content(message)
+    if message_type == "ai" and _message_type(next_message) == "tool":
+        folded_reasoning = _content_text(content) or reasoning
+        if folded_reasoning:
+            reasoning = (
+                f"{reasoning}\n\n{folded_reasoning}"
+                if reasoning and folded_reasoning != reasoning
+                else folded_reasoning
+            )
+            content = ""
+    elif message_type == "ai" and not _has_display_content(content) and reasoning:
+        content = ""
+
+    if message_type == "tool" and message_name is not None:
+        content = summarize_tool_output(str(message_name), content)
+
     payload: dict[str, Any] = {
         "role": _ROLE_BY_MESSAGE_TYPE.get(message_type, message_type),
         "type": message_type,
-        "content": _jsonable(_message_content(message)),
+        "content": _jsonable(content),
     }
+    if reasoning:
+        payload["reasoning"] = reasoning
     for attr in ("name", "tool_call_id", "status"):
         value = _message_attr(message, attr)
         if value is not None:
@@ -131,16 +163,9 @@ def _message_type(message: Any) -> str:
 
 def _message_content(message: Any) -> Any:
     if isinstance(message, BaseMessage):
-        if _has_display_content(message.content):
-            return message.content
-        reasoning_content = _message_reasoning_content(message)
-        return reasoning_content or message.content
+        return message.content
     if isinstance(message, dict) and "content" in message:
-        content = message["content"]
-        if _has_display_content(content):
-            return content
-        reasoning_content = _message_reasoning_content(message)
-        return reasoning_content or content
+        return message["content"]
     return message
 
 
@@ -173,6 +198,16 @@ def _has_display_content(content: Any) -> bool:
 
 def _message_text(message: Any) -> str:
     content = _message_content(message)
+    text = _content_text(content)
+    if text:
+        return text
+    reasoning = _message_reasoning_content(message)
+    if reasoning:
+        return reasoning
+    return json.dumps(_jsonable(content), ensure_ascii=False)
+
+
+def _content_text(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -184,7 +219,7 @@ def _message_text(message: Any) -> str:
                 parts.append(item["text"])
         if parts:
             return "".join(parts)
-    return json.dumps(_jsonable(content), ensure_ascii=False)
+    return ""
 
 
 def _jsonable(value: Any) -> Any:
