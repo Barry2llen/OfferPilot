@@ -115,38 +115,8 @@ function toolCallToMessage(entry: ToolCallEntry): ChatMessage {
   };
 }
 
-function mergeReasoning(existing: string | undefined, next: string): string {
-  if (!existing) {
-    return next;
-  }
-  if (!next || existing === next) {
-    return existing;
-  }
-  return `${existing}\n\n${next}`;
-}
-
 function cloneMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => ({ ...message }));
-}
-
-function normalizeHistoryMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message, index) => {
-    if (message.role !== "assistant") {
-      return message;
-    }
-
-    const nextMessage = messages[index + 1];
-    const content = message.content.trim();
-    if (nextMessage?.role !== "tool" || !content) {
-      return message;
-    }
-
-    return {
-      ...message,
-      content: "",
-      reasoning: mergeReasoning(message.reasoning, message.content),
-    };
-  });
 }
 
 export function useChatStream() {
@@ -259,26 +229,6 @@ export function useChatStream() {
         setStreamingReasoning("");
       };
 
-      const foldCurrentAssistantContentIntoReasoning = () => {
-        if (currentAssistantIndex === null) {
-          return;
-        }
-        const assistantMessage = currentLiveMessages[currentAssistantIndex];
-        if (assistantMessage?.role !== "assistant" || !assistantMessage.content.trim()) {
-          return;
-        }
-        const content = assistantMessage.content;
-        assistantMessage.reasoning = assistantMessage.reasoning
-          ? `${assistantMessage.reasoning}\n\n${content}`
-          : content;
-        assistantMessage.content = "";
-        visibleAssistantText = visibleAssistantText.endsWith(content)
-          ? visibleAssistantText.slice(0, -content.length)
-          : visibleAssistantText.replace(content, "");
-        setStreamingText("");
-        setStreamingReasoning(assistantMessage.reasoning);
-      };
-
       try {
         await aiChatApi.streamChat(
           {
@@ -344,7 +294,6 @@ export function useChatStream() {
 
               case "tool_start": {
                 setAgentStatus("tool_calling");
-                foldCurrentAssistantContentIntoReasoning();
                 endAssistantSegment();
                 const name = (event.data.tool_name as string) || "unknown_tool";
                 const input = event.data.input as
@@ -453,8 +402,14 @@ export function useChatStream() {
               case "final": {
                 flushTokenFrame();
                 const explicitFinalContent = formatDisplayContent(event.data.content);
+                const hasVisibleAssistantContent = currentLiveMessages.some(
+                  (message) =>
+                    message.role === "assistant" && Boolean(message.content.trim())
+                );
                 const finalContent =
-                  explicitFinalContent || visibleAssistantText || "";
+                  explicitFinalContent ||
+                  (hasVisibleAssistantContent ? "" : visibleAssistantText) ||
+                  "";
                 const reasoningContent =
                   explicitFinalContent || accumulatedText
                     ? accumulatedReasoning || undefined
@@ -574,7 +529,7 @@ export function useChatStream() {
         toolStatus: m.status ?? undefined,
         toolOutput: m.role === "tool" ? m.content : undefined,
       }));
-      setMessages(normalizeHistoryMessages(msgs));
+      setMessages(msgs);
       clearStreamingState();
     },
     [clearStreamingState]

@@ -110,30 +110,17 @@ def _build_title(thread_id: str, messages: list[Any]) -> str:
 
 def _to_history_messages(messages: list[Any]) -> list[AIChatHistoryMessage]:
     normalized: list[AIChatHistoryMessage] = []
-    for index, message in enumerate(messages):
-        next_message = messages[index + 1] if index + 1 < len(messages) else None
-        normalized.append(_to_history_message(message, next_message))
+    for message in messages:
+        normalized.append(_to_history_message(message))
     return normalized
 
 
-def _to_history_message(
-    message: Any,
-    next_message: Any | None = None,
-) -> AIChatHistoryMessage:
+def _to_history_message(message: Any) -> AIChatHistoryMessage:
     message_type = _message_type(message)
     message_name = _message_attr(message, "name")
     content = _message_content(message)
     reasoning = _message_reasoning_content(message)
-    if message_type == "ai" and _message_type(next_message) == "tool":
-        folded_reasoning = _content_text(content) or reasoning
-        if folded_reasoning:
-            reasoning = (
-                f"{reasoning}\n\n{folded_reasoning}"
-                if reasoning and folded_reasoning != reasoning
-                else folded_reasoning
-            )
-            content = ""
-    elif message_type == "ai" and not _has_display_content(content) and reasoning:
+    if message_type == "ai" and not _has_display_content(content) and reasoning:
         content = ""
 
     if message_type == "tool" and message_name is not None:

@@ -334,8 +334,7 @@ def test_ai_chat_history_endpoint_returns_normalized_messages(
         {
             "role": "assistant",
             "type": "ai",
-            "content": "",
-            "reasoning": "我会先搜索。",
+            "content": "我会先搜索。",
         },
         {
             "role": "tool",
@@ -395,6 +394,53 @@ def test_ai_chat_history_returns_reasoning_content_when_assistant_content_is_emp
         "type": "ai",
         "content": "",
         "reasoning": "你好！今天有什么可以帮你的吗？",
+    }
+
+
+def test_ai_chat_history_keeps_assistant_content_and_reasoning_separate(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="搜索 DeepSeek"),
+                AIMessage(
+                    content="好的，我先搜索。",
+                    additional_kwargs={"reasoning_content": "需要先查询最新信息。"},
+                ),
+                ToolMessage(
+                    content="搜索结果",
+                    tool_call_id="call-search",
+                    name="custom_tool",
+                    status="success",
+                ),
+            ],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history-split-reasoning"}},
+            checkpoint,
+            {
+                "source": "input",
+                "step": -1,
+                "run_id": "run-history-split-reasoning",
+                "parents": {},
+            },
+            checkpoint["channel_versions"],
+        )
+
+        response = client.get("/ai/chats/thread-history-split-reasoning/history")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"][1] == {
+        "role": "assistant",
+        "type": "ai",
+        "content": "好的，我先搜索。",
+        "reasoning": "需要先查询最新信息。",
     }
 
 

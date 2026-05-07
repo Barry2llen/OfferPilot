@@ -117,7 +117,9 @@ export function StreamingAssistantMessage({
         {content ? (
           <div className="flex items-end gap-1">
             <MarkdownContent content={content} className="min-w-0 flex-1" />
-            <span className="mb-1 inline-block h-4 w-1.5 shrink-0 animate-pulse bg-primary-500 align-middle" />
+            {waiting && (
+              <span className="mb-1 inline-block h-4 w-1.5 shrink-0 animate-pulse bg-primary-500 align-middle" />
+            )}
           </div>
         ) : waiting ? (
           <WaitingIndicator label={reasoning ? "正在组织回复" : "正在思考"} />
