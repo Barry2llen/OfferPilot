@@ -31,15 +31,6 @@ export default function ChatInput({
     }
   }, [input]);
 
-  useEffect(() => {
-    const handleSetInput = (e: CustomEvent<string>) => {
-      setInput(e.detail);
-      textareaRef.current?.focus();
-    };
-    window.addEventListener("op:set-input", handleSetInput as EventListener);
-    return () => window.removeEventListener("op:set-input", handleSetInput as EventListener);
-  }, []);
-
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed || disabled) return;

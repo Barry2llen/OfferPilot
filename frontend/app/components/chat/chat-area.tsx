@@ -10,6 +10,9 @@ import Button from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
 import type { ChatMessage as ChatMessageType } from "@/app/hooks/use-chat-stream";
 
+const AUTO_SCROLL_THRESHOLD_PX = 48;
+const SHOW_SCROLL_BUTTON_THRESHOLD_PX = 240;
+
 interface ChatAreaProps {
   messages: ChatMessageType[];
   liveMessages: ChatMessageType[];
@@ -36,26 +39,32 @@ export default function ChatArea({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const hasAnyMessages =
     messages.length > 0 || liveMessages.length > 0 || isStreaming;
 
   useEffect(() => {
     if (isAutoScrollEnabled) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({
+        behavior: isStreaming ? "auto" : "smooth",
+      });
     }
   }, [messages, liveMessages, isStreaming, interrupt, streamError, isAutoScrollEnabled]);
 
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    // If user is near the bottom (within 20px), enable auto scroll, else disable
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 20;
-    setIsAutoScrollEnabled(isNearBottom);
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    setIsAutoScrollEnabled(distanceFromBottom <= AUTO_SCROLL_THRESHOLD_PX);
+    setShowScrollToBottom(
+      distanceFromBottom >= SHOW_SCROLL_BUTTON_THRESHOLD_PX
+    );
   };
 
   const scrollToBottom = () => {
     setIsAutoScrollEnabled(true);
+    setShowScrollToBottom(false);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -131,7 +140,7 @@ export default function ChatArea({
       )}
 
       {/* Scroll to bottom button */}
-      {!isAutoScrollEnabled && hasAnyMessages && (
+      {showScrollToBottom && hasAnyMessages && (
         <div className="sticky bottom-4 flex justify-center w-full z-10 pointer-events-none">
           <button
             onClick={scrollToBottom}

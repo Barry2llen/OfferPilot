@@ -47,7 +47,6 @@ export default function ChatSidebar({
     setThreadId(null);
     dispatch({ type: "SET_AGENT_STATUS", payload: "idle" });
     onSelectThread("");
-    if (onClose) onClose();
   };
 
   const handleDelete = async (threadId: string, e: React.MouseEvent) => {
@@ -179,7 +178,6 @@ export default function ChatSidebar({
                             type="button"
                             onClick={() => {
                               onSelectThread(chat.thread_id);
-                              if (onClose) onClose();
                             }}
                             className="flex-1 min-w-0 text-left"
                           >
