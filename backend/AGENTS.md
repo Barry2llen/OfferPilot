@@ -85,6 +85,7 @@
 - `database`：默认 SQLite，路径为 `./data/offer_pilot.db`；可切换 PostgreSQL。
 - `resume_upload_dir`：默认 `./data/resumes`。
 - `model_call_retry_attempts`：模型调用失败时的内部重试次数。
+- `graph_recursion_limit`：LangGraph 运行时递归上限，默认 100。
 - `web_search`：Exa 搜索类型、返回内容长度和 guiding query。
 - `exa_api_key`：存在时启用 Exa Web 搜索工具；缺失时默认禁用工具并记录 warning。
 - `debug`：控制调试日志行为。

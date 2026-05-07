@@ -60,8 +60,11 @@ def _make_thread_id(thread_id: str | None) -> str:
     return thread_id or uuid4().hex
 
 
-def _agent_config(thread_id: str) -> dict:
-    return {"configurable": {"thread_id": thread_id}}
+def _agent_config(thread_id: str, *, recursion_limit: int) -> dict:
+    return {
+        "configurable": {"thread_id": thread_id},
+        "recursion_limit": recursion_limit,
+    }
 
 
 def _extract_content(messages: list[BaseMessage]) -> Any:
@@ -352,7 +355,10 @@ async def chat(
         final_state = await run_in_threadpool(
             request.app.state.supervisor_agent.invoke,
             state,
-            _agent_config(thread_id),
+            _agent_config(
+                thread_id,
+                recursion_limit=request.app.state.config.graph_recursion_limit,
+            ),
         )
     except (ChatModelLoadError, ModelCallExecutionError, ValueError) as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
@@ -423,7 +429,10 @@ async def chat_stream(
         try:
             async for event in request.app.state.supervisor_agent.astream_events(
                 agent_input,
-                _agent_config(thread_id),
+                _agent_config(
+                    thread_id,
+                    recursion_limit=request.app.state.config.graph_recursion_limit,
+                ),
                 version="v2",
             ):
                 event_name = event.get("event")

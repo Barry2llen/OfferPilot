@@ -25,6 +25,7 @@ def test_default_config_uses_sqlite() -> None:
     assert config.database.type == "sqlite"
     assert config.database.path == "./data/offer_pilot.db"
     assert config.resume_upload_dir == "./data/resumes"
+    assert config.graph_recursion_limit == 100
     assert isinstance(config.cors, CorsConfig)
     assert config.cors.allow_origins == ["*"]
     assert config.cors.allow_methods == ["*"]
@@ -37,7 +38,30 @@ def test_config_loads_example(sample_config: Config) -> None:
     assert sample_config.database.type == "sqlite"
     assert sample_config.database.path == "./data/offer_pilot.db"
     assert sample_config.resume_upload_dir == "./data/resumes"
+    assert sample_config.graph_recursion_limit == 100
     assert sample_config.cors.allow_origins == ["*"]
+
+
+def test_config_validation_rejects_invalid_graph_recursion_limit() -> None:
+    with pytest.raises(ValidationError):
+        Config(graph_recursion_limit=0)
+
+
+def test_load_config_parses_graph_recursion_limit(
+    workspace_tmp_dir: Path,
+    yaml_loader: YAML,
+) -> None:
+    config_path = workspace_tmp_dir / "graph-recursion-limit.yaml"
+    with config_path.open("w", encoding="utf-8") as file:
+        yaml_loader.dump({"graph_recursion_limit": 250}, file)
+
+    load_config.cache_clear()
+    try:
+        config = load_config(str(config_path))
+    finally:
+        load_config.cache_clear()
+
+    assert config.graph_recursion_limit == 250
 
 
 def test_postgresql_config_parses_correctly() -> None:

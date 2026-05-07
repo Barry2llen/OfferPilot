@@ -91,6 +91,8 @@ class ModelCallGraph(BaseGraph):
             args = tool_call["args"]
             tool_call_id = tool_call.get("id") or ""
 
+            logger.debug(f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})")
+
             if name not in self.tools_dict:
                 logger.debug(f"Tool {name} not found in provided tools.")
                 return ToolMessage(
@@ -134,8 +136,6 @@ class ModelCallGraph(BaseGraph):
         Model call node. This node is responsible for calling the model and getting the response.
         It switchs the model based on the state.model and calls the model with the state.messages.
         """
-
-        logger.debug(f"Calling model with state: {state}")
         
         try:
             model_selection = state.get('model')
@@ -151,7 +151,7 @@ class ModelCallGraph(BaseGraph):
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
                 try:
-                    logger.debug(f"Invoking model with system prompts: {self.system_prompts} and messages: {state.get('messages')}")
+                    #logger.debug(f"Invoking model with system prompts '{self.system_prompts}' and messages:\n{state.get('messages')}")
                     response = model.invoke(self.system_prompts + state.get('messages', []))
                     return BaseAgentState(messages=[response])
                 except Exception as e:

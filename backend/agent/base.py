@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import (
     Any,
+    Awaitable,
     TypedDict,
     Annotated,
     Literal,
@@ -111,7 +112,11 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
     """
 
     def __init__(self, agent: BaseAgent[State]):
+        self.config = agent.config
         self.agent = agent.get_agent()
+
+    def _graph_config(self) -> dict[str, Any]:
+        return {"recursion_limit": self.config.graph_recursion_limit}
 
     @abstractmethod
     def _construct_initial_state(self, *args, **kwargs) -> State:
@@ -135,7 +140,10 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         """
         Define how to run the workflow.
         """
-        result =  self.agent.invoke(self._construct_initial_state(*args, **kwargs))
+        result = self.agent.invoke(
+            self._construct_initial_state(*args, **kwargs),
+            self._graph_config(),
+        )
         return cast(State, result)
     
     def invoke(
@@ -192,7 +200,11 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
                 await res
 
         merged_handlers["on_chain_end"] = on_chain_end
-        event_stream = self.agent.astream_events(state, version="v2")
+        event_stream = self.agent.astream_events(
+            state,
+            self._graph_config(),
+            version="v2",
+        )
         await render_stream_events(event_stream, handlers=merged_handlers)
         return self._get_result(final_state or state)
     

@@ -33,6 +33,11 @@ class Config(BaseModel):
     debug: bool = False
 
     model_call_retry_attempts: int = 3
+    graph_recursion_limit: int = Field(
+        default=100,
+        ge=1,
+        description="LangGraph runtime recursion_limit config value.",
+    )
 
     exa_api_key: str | None = None
 

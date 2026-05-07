@@ -130,7 +130,7 @@ npm run build
 - `resume_upload_dir`：默认 `./data/resumes`。
 - `cors`：本地开发默认允许跨域。
 - `exa_api_key`：存在时启用 Exa Web Search 工具；缺失时禁用相关工具。
-- `web_search`、`model_call_retry_attempts`、`debug`：用于 Agent 工具、重试和调试行为。
+- `web_search`、`model_call_retry_attempts`、`graph_recursion_limit`、`debug`：用于 Agent 工具、重试、LangGraph 递归上限和调试行为。
 
 前端运行时配置：
 

@@ -104,7 +104,10 @@ def test_ai_chat_endpoint_invokes_supervisor_and_persists_checkpoint(
     }
     assert seen[0][0]["model"].id == selection_id
     assert seen[0][0]["messages"][0].content == "hello"
-    assert seen[0][1] == {"configurable": {"thread_id": "thread-ai"}}
+    assert seen[0][1] == {
+        "configurable": {"thread_id": "thread-ai"},
+        "recursion_limit": 100,
+    }
     assert saved is not None
     assert saved.checkpoint["channel_values"]["messages"] == ["checkpointed"]
 
@@ -135,6 +138,41 @@ def test_ai_chat_endpoint_generates_thread_id_when_missing(
     assert response.status_code == 200
     assert response.json()["thread_id"]
     assert response.json()["content"] == "generated thread"
+
+
+def test_ai_chat_endpoint_uses_configured_graph_recursion_limit(
+    temporary_app_config: Config,
+) -> None:
+    temporary_app_config.graph_recursion_limit = 250
+    app = create_app(temporary_app_config)
+    seen_configs: list[dict] = []
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            def invoke(self, state: dict, config: dict) -> dict:
+                seen_configs.append(config)
+                return {"messages": [AIMessage(content="configured limit")]}
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-recursion-limit",
+            },
+        )
+
+    assert response.status_code == 200
+    assert seen_configs == [
+        {
+            "configurable": {"thread_id": "thread-recursion-limit"},
+            "recursion_limit": 250,
+        }
+    ]
 
 
 def test_ai_chat_endpoint_falls_back_to_reasoning_content_when_content_is_empty(
@@ -660,7 +698,10 @@ def test_ai_chat_stream_endpoint_returns_sse_final_event(
                 version: str,
             ):
                 assert version == "v2"
-                assert config == {"configurable": {"thread_id": "thread-stream"}}
+                assert config == {
+                    "configurable": {"thread_id": "thread-stream"},
+                    "recursion_limit": 100,
+                }
                 assert state["messages"][0].content == "hello"
                 yield {
                     "event": "on_chat_model_stream",
@@ -1692,7 +1733,10 @@ def test_ai_chat_stream_endpoint_resumes_retry_command(
     agent_input, config, version = seen[0]
     assert isinstance(agent_input, Command)
     assert agent_input.resume == {"type": "retry"}
-    assert config == {"configurable": {"thread_id": "thread-retry"}}
+    assert config == {
+        "configurable": {"thread_id": "thread-retry"},
+        "recursion_limit": 100,
+    }
     assert version == "v2"
     assert 'event: final\ndata: {"thread_id": "thread-retry", "content": "retried response"}' in response.text
 
