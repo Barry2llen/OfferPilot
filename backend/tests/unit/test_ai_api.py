@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -1219,6 +1220,132 @@ def test_ai_chat_stream_endpoint_summarizes_web_search_json_string_output(
         in response.text
     )
     assert "private page text" not in response.text
+
+
+def test_ai_chat_stream_endpoint_summarizes_wrapped_exa_json_outputs(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    wrapped_outputs = [
+        (
+            "web_search_exa",
+            "thread-wrapped-web-search",
+            {
+                "query": "private search query",
+                "results": [
+                    {
+                        "rank": 1,
+                        "url": "https://example.com/search",
+                        "title": "Wrapped Search",
+                        "favicon": "https://example.com/search.ico",
+                        "text": "private search text",
+                        "highlights": ["private search highlight"],
+                    }
+                ],
+            },
+            (
+                '"tool_name": "web_search_exa", "output": '
+                '[{"url": "https://example.com/search", '
+                '"title": "Wrapped Search", '
+                '"favicon": "https://example.com/search.ico"}]'
+            ),
+        ),
+        (
+            "web_fetch_exa",
+            "thread-wrapped-web-fetch",
+            {
+                "fetch": ["https://example.com/fetch"],
+                "results": [
+                    {
+                        "index": 0,
+                        "url": "https://example.com/fetch",
+                        "title": "Wrapped Fetch",
+                        "favicon": "https://example.com/fetch.ico",
+                        "text": "private fetch text",
+                    }
+                ],
+            },
+            (
+                '"tool_name": "web_fetch_exa", "output": '
+                '[{"url": "https://example.com/fetch", '
+                '"title": "Wrapped Fetch", '
+                '"favicon": "https://example.com/fetch.ico"}]'
+            ),
+        ),
+        (
+            "find_similar_exa",
+            "thread-wrapped-find-similar",
+            {
+                "url": "https://example.com/source",
+                "results": [
+                    {
+                        "rank": 1,
+                        "url": "https://example.com/similar-wrapped",
+                        "title": "Wrapped Similar",
+                        "favicon": "https://example.com/similar.ico",
+                        "score": 0.98,
+                        "text": "private similar text",
+                    }
+                ],
+            },
+            (
+                '"tool_name": "find_similar_exa", "output": '
+                '[{"url": "https://example.com/similar-wrapped", '
+                '"title": "Wrapped Similar", '
+                '"favicon": "https://example.com/similar.ico"}]'
+            ),
+        ),
+    ]
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        for tool_name, thread_id, tool_output, expected_summary in wrapped_outputs:
+
+            class FakeSupervisorAgent:
+                async def astream_events(
+                    self,
+                    state: dict,
+                    config: dict,
+                    *,
+                    version: str,
+                ):
+                    yield {
+                        "event": "on_tool_end",
+                        "name": tool_name,
+                        "data": {
+                            "output": json.dumps(tool_output, ensure_ascii=False)
+                        },
+                    }
+                    yield {
+                        "event": "on_chain_end",
+                        "data": {"output": {"messages": [AIMessage(content="done")]}}
+                    }
+
+            client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+            response = client.post(
+                "/ai/chat/stream",
+                json={
+                    "selection_id": selection_id,
+                    "prompt": "hello",
+                    "thread_id": thread_id,
+                },
+            )
+
+            assert response.status_code == 200
+            assert expected_summary in response.text
+            assert "private search query" not in response.text
+            assert "private search text" not in response.text
+            assert "private search highlight" not in response.text
+            assert "private fetch text" not in response.text
+            assert "private similar text" not in response.text
+            assert '"rank"' not in response.text
+            assert '"index"' not in response.text
+            assert '"score"' not in response.text
+            if tool_name == "find_similar_exa":
+                assert "https://example.com/source" not in response.text
 
 
 def test_ai_chat_stream_endpoint_summarizes_single_web_search_result_object(

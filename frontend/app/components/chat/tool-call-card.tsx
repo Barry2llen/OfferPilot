@@ -319,6 +319,9 @@ function getSearchResults(toolName: string, output: unknown): SearchResult[] {
   }
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const item = parsed as Record<string, unknown>;
+    if (Array.isArray(item.results)) {
+      return searchResultsFromArray(item.results);
+    }
     if (typeof item.url === "string" && item.url) {
       return [
         {
@@ -334,11 +337,15 @@ function getSearchResults(toolName: string, output: unknown): SearchResult[] {
     return [];
   }
 
-  if (!parsed.some((item) => item && typeof item === "object" && "url" in item)) {
-    return parseSearchResultText(extractTextBlocks(parsed));
+  return searchResultsFromArray(parsed);
+}
+
+function searchResultsFromArray(items: unknown[]): SearchResult[] {
+  if (!items.some((item) => item && typeof item === "object" && "url" in item)) {
+    return parseSearchResultText(extractTextBlocks(items));
   }
 
-  return parsed.flatMap((item) => {
+  return items.flatMap((item) => {
     if (!item || typeof item !== "object" || !("url" in item)) {
       return [];
     }

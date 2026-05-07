@@ -1,5 +1,5 @@
-import json
-from typing import Any, cast
+
+from typing import cast
 
 from langchain_core.tools import BaseTool, tool
 from pydantic import Field
@@ -25,10 +25,41 @@ async def get_web_search_tools(
             return []
         return list(await get_web_search_mcp_tools())
 
+    import json
     from exa_py import AsyncExa
-    from exa_py.api import ContentsOptions
+    from exa_py.api import ContentsOptions, SearchResponse, Result
 
     exa = AsyncExa(target_config.exa_api_key)
+
+    def _convert_search_result(result: Result) -> dict:
+        """
+        Convert a single search result into a dict.
+        """
+        
+        return {k: v for k, v in result.__dict__.items() if v is not None and (isinstance(v, int|float|bool) or v)}
+
+    def _optimize_search_response(
+            target: str | list[str],
+            resp: SearchResponse[Result],
+            *,
+            target_name: str = "query",
+            index_name: str | None = None,
+        ) -> str:
+        """
+        Convert the search response into a LLM-optimized json format.
+        """
+
+        results = [_convert_search_result(resp.results[i]) for i in range(len(resp.results))]
+
+        if index_name:
+            results = [{index_name: i+1 if index_name == "rank" else i, **result} for i, result in enumerate(results)]
+
+        res = {
+            target_name: target,
+            'results': results,
+        }
+        
+        return json.dumps(res, indent=2, ensure_ascii=False)
 
     @tool
     async def web_search_exa(
@@ -72,7 +103,7 @@ async def get_web_search_tools(
                 }
             }),
         )
-        return str(response.results)
+        return _optimize_search_response(query, response, target_name="query", index_name="rank")
 
     @tool
     async def web_fetch_exa(
@@ -83,12 +114,18 @@ async def get_web_search_tools(
         """
 
         response = await exa.get_contents(urls)
-        return str(response.results)
+
+        return _optimize_search_response(
+            urls,
+            response, target_name="fetch",
+            index_name="index"
+        )
 
     @tool
     async def find_similar_exa(
         url: str = Field(description="The URL to find similar pages for."),
         num_results: int | None = Field(
+            gt=2,
             default=None,
             description="Number of results to return. Default is None.",
         ),
@@ -116,7 +153,7 @@ async def get_web_search_tools(
             exclude_domains=exclude_domains,
             exclude_source_domain=exclude_source_domain,
         )
-        return str(response.results)
+        return _optimize_search_response(url, response, target_name="url", index_name="rank")
 
     return [web_search_exa, web_fetch_exa, find_similar_exa]
 

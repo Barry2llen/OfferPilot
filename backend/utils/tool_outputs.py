@@ -95,12 +95,13 @@ def _extract_search_results(output: Any) -> list[Any] | None:
             return parsed_results if parsed_results else None
 
     if isinstance(output, dict):
+        results = _get_results_collection(output)
+        if isinstance(results, list | tuple):
+            return list(results)
         if _has_url_field(output):
             return [output]
-        results = output.get("results")
-        if not isinstance(results, list | tuple):
-            parsed_results = _parse_search_result_text(_extract_text_blocks(output))
-            return parsed_results if parsed_results else None
+        parsed_results = _parse_search_result_text(_extract_text_blocks(output))
+        return parsed_results if parsed_results else None
     elif isinstance(output, list | tuple):
         if any(_has_url_field(item) for item in output):
             results = output
@@ -111,6 +112,13 @@ def _extract_search_results(output: Any) -> list[Any] | None:
         results = getattr(output, "results", None)
 
     return list(results) if isinstance(results, list | tuple) else None
+
+
+def _get_results_collection(output: dict[str, Any]) -> Any:
+    results = output.get("results")
+    if isinstance(results, list | tuple):
+        return results
+    return None
 
 
 def _parse_search_result_text(output: str) -> list[dict[str, str]]:
