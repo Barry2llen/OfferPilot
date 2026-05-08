@@ -297,7 +297,6 @@ export function useChatStream() {
                   (event.data as Record<string, unknown>).thread_id;
                 if (typeof tid === "string") {
                   setThreadId(tid);
-                  bumpChatHistoryVersion();
                 }
                 break;
               }

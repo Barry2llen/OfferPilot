@@ -13,7 +13,7 @@ import type { ModelSelectionResponse } from "@/app/lib/api/types";
 
 export default function Home() {
   const { state } = useAppContext();
-  const { setThreadId, setModelSelection } = useAppActions();
+  const { setThreadId, setModelSelection, setAgentStatus } = useAppActions();
 
   const {
     messages,
@@ -98,6 +98,28 @@ export default function Home() {
     [clearMessages, loadHistory, resetStreamingState, setThreadId, stopStream]
   );
 
+  const handleNewChat = useCallback(() => {
+    stopStream();
+    resetStreamingState();
+    clearMessages();
+    setThreadId(null);
+    setAgentStatus("idle");
+  }, [
+    clearMessages,
+    resetStreamingState,
+    setAgentStatus,
+    setThreadId,
+    stopStream,
+  ]);
+
+  const handleCloseSidebar = useCallback(() => {
+    setSidebarOpen(false);
+  }, []);
+
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarOpen((open) => !open);
+  }, []);
+
   const handleQuickPrompt = useCallback(
     (prompt: string) => {
       if (!state.currentModelSelection) return;
@@ -116,8 +138,10 @@ export default function Home() {
       {sidebarOpen && (
         <ChatSidebar
           onSelectThread={handleSelectThread}
+          onNewChat={handleNewChat}
           activeThreadId={state.currentThreadId}
-          onClose={() => setSidebarOpen(false)}
+          chatHistoryVersion={state.chatHistoryVersion}
+          onClose={handleCloseSidebar}
         />
       )}
 
@@ -125,7 +149,7 @@ export default function Home() {
         <ChatHeader
           threadId={state.currentThreadId}
           sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((open) => !open)}
+          onToggleSidebar={handleToggleSidebar}
           models={models}
           modelsLoading={modelsLoading}
           currentModelSelection={state.currentModelSelection}
