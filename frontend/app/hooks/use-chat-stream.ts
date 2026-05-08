@@ -56,12 +56,20 @@ function extractTextContent(content: unknown): string {
 }
 
 function formatDisplayContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
   const text = extractTextContent(content);
   if (text) {
     return text;
   }
 
   if (content == null) {
+    return "";
+  }
+
+  if (Array.isArray(content) && content.length === 0) {
     return "";
   }
 
@@ -117,6 +125,14 @@ function toolCallToMessage(entry: ToolCallEntry): ChatMessage {
 
 function cloneMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => ({ ...message }));
+}
+
+function shouldDisplayHistoryMessage(message: ChatMessage): boolean {
+  if (message.role !== "assistant") {
+    return true;
+  }
+
+  return Boolean(message.content.trim() || message.reasoning?.trim());
 }
 
 export function useChatStream() {
@@ -520,15 +536,17 @@ export function useChatStream() {
 
   const loadHistory = useCallback(
     (historyMessages: AIChatHistoryMessage[]) => {
-      const msgs: ChatMessage[] = historyMessages.map((m) => ({
-        role: m.role as ChatMessage["role"],
-        content: formatDisplayContent(m.content),
-        reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
-        toolCallId: m.tool_call_id ?? undefined,
-        toolName: m.name ?? undefined,
-        toolStatus: m.status ?? undefined,
-        toolOutput: m.role === "tool" ? m.content : undefined,
-      }));
+      const msgs: ChatMessage[] = historyMessages
+        .map((m) => ({
+          role: m.role as ChatMessage["role"],
+          content: formatDisplayContent(m.content),
+          reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
+          toolCallId: m.tool_call_id ?? undefined,
+          toolName: m.name ?? undefined,
+          toolStatus: m.status ?? undefined,
+          toolOutput: m.role === "tool" ? m.content : undefined,
+        }))
+        .filter(shouldDisplayHistoryMessage);
       setMessages(msgs);
       clearStreamingState();
     },

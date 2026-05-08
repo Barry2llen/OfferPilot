@@ -22,6 +22,12 @@ interface StreamingAssistantMessageProps {
 export default function ChatMessage({ message }: Props) {
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
+  const hasContent = Boolean(message.content.trim());
+  const hasReasoning = Boolean(message.reasoning?.trim());
+
+  if (!isUser && !isTool && !hasContent && !hasReasoning) {
+    return null;
+  }
 
   if (isTool) {
     return (
@@ -67,27 +73,31 @@ export default function ChatMessage({ message }: Props) {
               : "rounded-bl-md bg-surface-secondary text-text-primary"
           }`}
         >
-          {!isUser && message.reasoning && (
+          {!isUser && hasReasoning && message.reasoning && (
             <ReasoningDisclosure content={message.reasoning} />
           )}
-          <MarkdownContent content={message.content} inverse={isUser} />
+          {(isUser || hasContent) && (
+            <MarkdownContent content={message.content} inverse={isUser} />
+          )}
         </div>
 
-        <div
-          className={`absolute bottom-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-white shadow-sm border border-border-light rounded-lg p-1 z-10 ${
-            isUser ? "right-0" : "left-0"
-          }`}
-        >
-          <button
-            onClick={handleCopy}
-            className="p-1 rounded text-text-muted hover:text-primary-600 hover:bg-primary-50 transition-colors"
-            title="复制文本"
+        {hasContent && (
+          <div
+            className={`absolute bottom-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-white shadow-sm border border-border-light rounded-lg p-1 z-10 ${
+              isUser ? "right-0" : "left-0"
+            }`}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          </button>
-        </div>
+            <button
+              onClick={handleCopy}
+              className="p-1 rounded text-text-muted hover:text-primary-600 hover:bg-primary-50 transition-colors"
+              title="复制文本"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
     </motion.div>
   );
