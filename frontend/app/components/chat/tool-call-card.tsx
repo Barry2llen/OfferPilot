@@ -24,9 +24,9 @@ const statusLabels: Record<ToolStatus, string> = {
 };
 
 const statusClassNames: Record<ToolStatus, string> = {
-  running: "border-info-text/20 bg-info-bg/45 text-info-text",
-  success: "border-success-text/20 bg-success-bg/45 text-success-text",
-  error: "border-error-text/20 bg-error-bg/45 text-error-text",
+  running: "text-info-text",
+  success: "text-success-text",
+  error: "text-error-text",
 };
 
 const dotClassNames: Record<ToolStatus, string> = {
@@ -44,31 +44,32 @@ export default function ToolCallCard({
   defaultExpanded = false,
 }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const canExpand = isWebResultTool(entry.name);
+  const isWebTool = isWebResultTool(entry.name);
+  const canExpand = hasToolDetails(entry);
   const searchResults = useMemo(
     () => getSearchResults(entry.name, entry.output),
     [entry.name, entry.output]
   );
   const showSearchEmpty =
-    canExpand &&
+    isWebTool &&
     entry.status === "success" &&
     entry.output !== undefined &&
     searchResults.length === 0;
-  const summary = canExpand ? buildSummary(entry, searchResults, showSearchEmpty) : "";
+  const summary = buildSummary(entry, searchResults, showSearchEmpty);
 
   return (
-    <div className="flex justify-start py-1.5">
+    <div className="py-1">
       <div
-        className={`w-full max-w-[min(82%,42rem)] rounded-lg border bg-white shadow-sm ${
-          entry.status === "error" ? "border-error-text/25" : "border-border-light"
+        className={`mx-auto w-full max-w-3xl rounded-xl border bg-white/60 ${
+          entry.status === "error" ? "border-error-text/25" : "border-border-default"
         }`}
       >
         <button
           type="button"
           onClick={canExpand ? () => setExpanded((value) => !value) : undefined}
           disabled={!canExpand}
-          className={`flex w-full items-center gap-2 px-3 py-2 text-left ${
-            canExpand ? "hover:bg-surface-secondary/55" : "cursor-default"
+          className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-secondary transition-colors ${
+            canExpand ? "hover:bg-surface-secondary/45" : "cursor-default"
           }`}
           aria-expanded={canExpand ? expanded : undefined}
         >
@@ -78,11 +79,11 @@ export default function ToolCallCard({
           <ToolIcon name={entry.name} className="w-4 h-4 text-text-secondary shrink-0" />
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
-              <span className="truncate text-xs font-semibold text-text-primary">
+              <span className="truncate text-sm font-medium text-text-secondary">
                 {getToolDisplayName(entry.name)}
               </span>
               <span
-                className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${
+                className={`shrink-0 text-[11px] font-medium ${
                   statusClassNames[entry.status]
                 }`}
               >
@@ -90,7 +91,7 @@ export default function ToolCallCard({
               </span>
             </span>
             {summary && (
-              <span className="mt-0.5 block truncate text-[11px] text-text-muted">
+              <span className="mt-0.5 block truncate text-xs text-text-muted">
                 {summary}
               </span>
             )}
@@ -112,13 +113,13 @@ export default function ToolCallCard({
         <AnimatePresence>
           {canExpand && expanded && (
             <motion.div
-              className="overflow-hidden border-t border-border-light px-3 py-2"
+              className="overflow-hidden border-t border-border-default px-3 py-2"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: "easeInOut" }}
             >
-              {searchResults.length > 0 ? (
+              {isWebTool && searchResults.length > 0 ? (
                 <SearchResultList results={searchResults} />
               ) : showSearchEmpty ? (
                 <SearchEmptyState output={entry.output} />
@@ -375,6 +376,10 @@ function isFetchTool(name: string): boolean {
 
 function isWebResultTool(name: string): boolean {
   return isSearchTool(name) || isFetchTool(name);
+}
+
+function hasToolDetails(entry: ToolCallEntry): boolean {
+  return entry.input !== undefined || entry.output !== undefined || Boolean(entry.error);
 }
 
 function getSearchEmptyMessage(output: unknown): string {

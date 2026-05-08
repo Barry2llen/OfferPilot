@@ -448,7 +448,10 @@ def test_ai_chat_history_keeps_assistant_content_and_reasoning_separate(
                 HumanMessage(content="搜索 DeepSeek"),
                 AIMessage(
                     content="好的，我先搜索。",
-                    additional_kwargs={"reasoning_content": "需要先查询最新信息。"},
+                    additional_kwargs={
+                        "reasoning_content": "需要先查询最新信息。",
+                        "reasoning_duration_ms": 12000,
+                    },
                 ),
                 ToolMessage(
                     content="搜索结果",
@@ -479,6 +482,7 @@ def test_ai_chat_history_keeps_assistant_content_and_reasoning_separate(
         "type": "ai",
         "content": "好的，我先搜索。",
         "reasoning": "需要先查询最新信息。",
+        "reasoning_duration_ms": 12000,
     }
 
 
@@ -765,6 +769,11 @@ def test_ai_chat_stream_endpoint_returns_reasoning_event(
                     "data": {"chunk": AIMessageChunk(content="最终答案")},
                 }
                 yield {
+                    "event": "on_custom_event",
+                    "name": "on_reasoning_done",
+                    "data": {"duration_ms": 12000},
+                }
+                yield {
                     "event": "on_chain_end",
                     "data": {"output": {"messages": [AIMessage(content="最终答案")]}}
                 }
@@ -789,6 +798,11 @@ def test_ai_chat_stream_endpoint_returns_reasoning_event(
     assert (
         'event: token\ndata: {"thread_id": "thread-reasoning", '
         '"content": "最终答案"}'
+        in response.text
+    )
+    assert (
+        'event: reasoning_done\ndata: {"thread_id": "thread-reasoning", '
+        '"duration_ms": 12000}'
         in response.text
     )
     assert (
@@ -1771,6 +1785,7 @@ def test_ai_chat_stream_openapi_documents_interrupt_and_retry(
     stream_operation = payload["paths"]["/ai/chat/stream"]["post"]
     assert "interrupt" in stream_operation["responses"]["200"]["description"]
     assert "reasoning" in stream_operation["responses"]["200"]["description"]
+    assert "reasoning_done" in stream_operation["responses"]["200"]["description"]
     assert "url、title、favicon" in stream_operation["responses"]["200"]["description"]
     assert "retry" in stream_operation["description"]
 
@@ -1792,6 +1807,8 @@ def test_ai_chat_history_openapi_documents_history_endpoints(
         payload["paths"]["/ai/chats/{thread_id}/history"]["get"]["summary"]
         == "查询 AI 会话历史详情"
     )
+    history_message_schema = payload["components"]["schemas"]["AIChatHistoryMessage"]
+    assert "reasoning_duration_ms" in history_message_schema["properties"]
 
 
 def test_base_command_accepts_retry_without_prompt() -> None:

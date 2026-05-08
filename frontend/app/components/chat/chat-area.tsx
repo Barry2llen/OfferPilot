@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence } from "motion/react";
-import ChatMessage, {
-  StreamingAssistantMessage,
-} from "@/app/components/chat/chat-message";
+import ChatMessage from "@/app/components/chat/chat-message";
 import ChatWelcome from "@/app/components/chat/chat-welcome";
 import Button from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
@@ -82,7 +79,7 @@ export default function ChatArea({
         <ChatWelcome hasNoModel={hasNoModel} onPrompt={onPrompt} />
       ) : (
         <div className="w-full">
-          <AnimatePresence initial={false}>
+          <>
             {messages.map((msg, index) => (
               <ChatMessage
                 key={getMessageKey(msg, index)}
@@ -91,30 +88,25 @@ export default function ChatArea({
             ))}
 
             {liveMessages.map((msg, index) =>
-              msg.role === "assistant" ? (
-                <StreamingAssistantMessage
-                  key={`live-assistant-${index}`}
-                  content={msg.content}
-                  reasoning={msg.reasoning ?? ""}
-                  waiting={isStreaming && index === liveMessages.length - 1}
-                />
-              ) : (
-                <ChatMessage
-                  key={`live-${msg.toolCallId ?? msg.role}-${index}`}
-                  message={msg}
-                />
-              )
+              <ChatMessage
+                key={getMessageKey(msg, index)}
+                message={msg}
+                streaming={
+                  msg.role === "assistant" &&
+                  isStreaming &&
+                  index === liveMessages.length - 1
+                }
+              />
             )}
 
             {isStreaming && liveMessages.length === 0 && (
-              <StreamingAssistantMessage
+              <ChatMessage
                 key="live-waiting"
-                content=""
-                reasoning=""
-                waiting={isStreaming}
+                message={{ id: "live-waiting", role: "assistant", content: "" }}
+                streaming
               />
             )}
-          </AnimatePresence>
+          </>
 
           {interrupt && (
             <div className="flex justify-center py-3">
@@ -141,15 +133,16 @@ export default function ChatArea({
 
       {/* Scroll to bottom button */}
       {showScrollToBottom && hasAnyMessages && (
-        <div className="sticky bottom-4 flex justify-center w-full z-10 pointer-events-none">
+        <div className="sticky bottom-3 flex justify-center w-full z-10 pointer-events-none">
           <button
             onClick={scrollToBottom}
-            className="pointer-events-auto flex items-center gap-2 rounded-full bg-white shadow-card border border-border-default px-4 py-1.5 text-xs font-medium text-text-secondary hover:text-primary-600 hover:border-primary-200 hover:bg-primary-50 transition-all"
+            className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-card border border-border-default text-text-secondary hover:text-primary-600 hover:border-primary-200 hover:bg-primary-50 transition-all"
+            aria-label="回到最新"
+            title="回到最新"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
             </svg>
-            回到最新
           </button>
         </div>
       )}
@@ -158,5 +151,5 @@ export default function ChatArea({
 }
 
 function getMessageKey(message: ChatMessageType, index: number): string {
-  return message.toolCallId ?? `${message.role}-${index}`;
+  return message.id || message.toolCallId || `${message.role}-${index}`;
 }

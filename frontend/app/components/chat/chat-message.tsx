@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "motion/react";
 import type {
   ChatMessage as ChatMessageType,
   ToolCallEntry,
@@ -11,21 +10,18 @@ import ToolCallCard from "@/app/components/chat/tool-call-card";
 
 interface Props {
   message: ChatMessageType;
+  streaming?: boolean;
 }
 
-interface StreamingAssistantMessageProps {
-  content: string;
-  reasoning: string;
-  waiting: boolean;
-}
+const CHAT_CONTENT_CLASS = "mx-auto w-full max-w-3xl";
 
-export default function ChatMessage({ message }: Props) {
+export default function ChatMessage({ message, streaming = false }: Props) {
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const hasContent = Boolean(message.content.trim());
   const hasReasoning = Boolean(message.reasoning?.trim());
 
-  if (!isUser && !isTool && !hasContent && !hasReasoning) {
+  if (!isUser && !isTool && !hasContent && !hasReasoning && !streaming) {
     return null;
   }
 
@@ -55,51 +51,68 @@ export default function ChatMessage({ message }: Props) {
   };
 
   return (
-    <motion.div
-      className={`flex py-2 group relative ${isUser ? "justify-end" : "justify-start"}`}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+    <div
+      className="py-2 group relative"
     >
       <div
-        className={`relative flex max-w-[min(80%,48rem)] flex-col pb-6 ${
-          isUser ? "items-end" : "items-start"
-        }`}
+        className={`${CHAT_CONTENT_CLASS} flex ${isUser ? "justify-end" : "justify-start"}`}
       >
         <div
-          className={`w-fit max-w-full rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+          className={`relative flex min-w-0 flex-col ${
             isUser
-              ? "rounded-br-md bg-text-charcoal text-white"
-              : "rounded-bl-md bg-surface-secondary text-text-primary"
-          }`}
+              ? "max-w-[min(80%,36rem)] items-end"
+              : "w-full items-stretch"
+          } ${hasContent ? "pb-6" : "pb-0"}`}
         >
-          {!isUser && hasReasoning && message.reasoning && (
-            <ReasoningDisclosure content={message.reasoning} />
-          )}
-          {(isUser || hasContent) && (
-            <MarkdownContent content={message.content} inverse={isUser} />
-          )}
-        </div>
-
-        {hasContent && (
           <div
-            className={`absolute bottom-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-white shadow-sm border border-border-light rounded-lg p-1 z-10 ${
-              isUser ? "right-0" : "left-0"
+            className={`max-w-full text-sm leading-relaxed ${
+              isUser
+                ? "w-fit rounded-2xl rounded-br-md bg-text-charcoal px-4 py-2.5 text-white"
+                : "w-full text-text-primary"
             }`}
           >
-            <button
-              onClick={handleCopy}
-              className="p-1 rounded text-text-muted hover:text-primary-600 hover:bg-primary-50 transition-colors"
-              title="复制文本"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
+            {!isUser && hasReasoning && message.reasoning && (
+              <ReasoningDisclosure
+                content={message.reasoning}
+                durationMs={message.reasoningDurationMs}
+                active={streaming}
+                hasFollowingContent={hasContent}
+              />
+            )}
+            {isUser ? (
+              <MarkdownContent content={message.content} inverse={isUser} />
+            ) : hasContent ? (
+              <div className="flex items-end gap-1">
+                <MarkdownContent content={message.content} className="min-w-0 flex-1" />
+                {streaming && (
+                  <span className="mb-1 inline-block h-4 w-1.5 shrink-0 animate-pulse bg-primary-500 align-middle" />
+                )}
+              </div>
+            ) : streaming ? (
+              <WaitingIndicator label={hasReasoning ? "正在组织回复" : "正在思考"} />
+            ) : null}
           </div>
-        )}
+
+          {hasContent && (
+            <div
+              className={`absolute bottom-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-white shadow-sm border border-border-light rounded-lg p-1 z-10 ${
+                isUser ? "right-0" : "left-0"
+              }`}
+            >
+              <button
+                onClick={handleCopy}
+                className="p-1 rounded text-text-muted hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                title="复制文本"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -110,44 +123,26 @@ function normalizeToolStatus(status?: string): ToolCallEntry["status"] {
   return "success";
 }
 
-export function StreamingAssistantMessage({
+function ReasoningDisclosure({
   content,
-  reasoning,
-  waiting,
-}: StreamingAssistantMessageProps) {
-  return (
-    <motion.div
-      className="flex justify-start py-2"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
-    >
-      <div className="max-w-[min(80%,48rem)] rounded-2xl rounded-bl-md bg-surface-secondary px-4 py-2.5 text-sm leading-relaxed text-text-primary">
-        {reasoning && <ReasoningDisclosure content={reasoning} />}
-        {content ? (
-          <div className="flex items-end gap-1">
-            <MarkdownContent content={content} className="min-w-0 flex-1" />
-            {waiting && (
-              <span className="mb-1 inline-block h-4 w-1.5 shrink-0 animate-pulse bg-primary-500 align-middle" />
-            )}
-          </div>
-        ) : waiting ? (
-          <WaitingIndicator label={reasoning ? "正在组织回复" : "正在思考"} />
-        ) : null}
-      </div>
-    </motion.div>
-  );
-}
-
-function ReasoningDisclosure({ content }: { content: string }) {
+  durationMs,
+  active = false,
+  hasFollowingContent = false,
+}: {
+  content: string;
+  durationMs?: number;
+  active?: boolean;
+  hasFollowingContent?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const label = formatReasoningLabel(durationMs, active);
 
   return (
-    <div className="mb-2 rounded-xl border border-border-light bg-white/70">
+    <div className={`${hasFollowingContent ? "mb-2" : "mb-0"} text-text-secondary`}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-text-secondary hover:text-text-primary"
+        className="flex items-center gap-1.5 py-1 text-left text-sm font-medium transition-colors hover:text-text-primary"
         aria-expanded={open}
       >
         <svg
@@ -158,15 +153,26 @@ function ReasoningDisclosure({ content }: { content: string }) {
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span>推理过程</span>
+        <span>{label}</span>
       </button>
       {open && (
-        <div className="border-t border-border-light px-3 py-2 text-xs leading-relaxed text-text-secondary">
-          <MarkdownContent content={content} className="text-xs" />
+        <div className="mt-2 border-l border-border-default pl-4 text-sm leading-relaxed text-text-secondary">
+          <MarkdownContent content={content} className="text-sm text-text-secondary" />
         </div>
       )}
     </div>
   );
+}
+
+function formatReasoningLabel(durationMs?: number, active = false): string {
+  if (typeof durationMs === "number" && Number.isFinite(durationMs)) {
+    if (durationMs < 1000) {
+      return "思考了不足 1 秒";
+    }
+    return `思考了 ${Math.round(durationMs / 1000)} 秒`;
+  }
+
+  return active ? "正在思考" : "推理过程";
 }
 
 function WaitingIndicator({

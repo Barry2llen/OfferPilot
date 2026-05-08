@@ -151,6 +151,16 @@ def _extract_chunk_reasoning(chunk: Any) -> str:
     return reasoning_content if isinstance(reasoning_content, str) else ""
 
 
+def _extract_reasoning_duration_ms(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, float) and value >= 0:
+        return round(value)
+    return None
+
+
 def _extract_event_output(event: dict[str, Any]) -> dict[str, Any] | None:
     data = event.get("data")
     if not isinstance(data, dict):
@@ -381,8 +391,8 @@ async def chat(
     responses={
         200: {
             "description": (
-                "返回 SSE 事件流。事件包括 thread、token、reasoning、tool_start、tool_end、"
-                "tool_error、interrupt、final，失败时返回 error。搜索类工具的 tool_end.output "
+                "返回 SSE 事件流。事件包括 thread、token、reasoning、reasoning_done、"
+                "tool_start、tool_end、tool_error、interrupt、final，失败时返回 error。搜索类工具的 tool_end.output "
                 "仅包含前端安全摘要字段 url、title、favicon。"
             ),
             "content": {
@@ -496,6 +506,18 @@ async def chat_stream(
                             "detail": str(data.get("error") or data.get("output") or ""),
                         },
                     )
+                    continue
+
+                if event_name == "on_custom_event" and tool_name == "on_reasoning_done":
+                    duration_ms = _extract_reasoning_duration_ms(data.get("duration_ms"))
+                    if duration_ms is not None:
+                        yield _sse(
+                            "reasoning_done",
+                            {
+                                "thread_id": thread_id,
+                                "duration_ms": duration_ms,
+                            },
+                        )
                     continue
 
                 if event_name in {"on_chat_model_stream", "on_llm_stream"}:

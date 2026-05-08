@@ -133,6 +133,9 @@ def _to_history_message(message: Any) -> AIChatHistoryMessage:
     }
     if reasoning:
         payload["reasoning"] = reasoning
+        reasoning_duration_ms = _message_reasoning_duration_ms(message)
+        if reasoning_duration_ms is not None:
+            payload["reasoning_duration_ms"] = reasoning_duration_ms
     for attr in ("name", "tool_call_id", "status"):
         value = _message_attr(message, attr)
         if value is not None:
@@ -173,6 +176,21 @@ def _message_reasoning_content(message: Any) -> str:
     if isinstance(reasoning_content, str) and reasoning_content.strip():
         return reasoning_content
     return ""
+
+
+def _message_reasoning_duration_ms(message: Any) -> int | None:
+    additional_kwargs = _message_attr(message, "additional_kwargs")
+    if not isinstance(additional_kwargs, dict):
+        return None
+
+    duration_ms = additional_kwargs.get("reasoning_duration_ms")
+    if isinstance(duration_ms, bool):
+        return None
+    if isinstance(duration_ms, int) and duration_ms >= 0:
+        return duration_ms
+    if isinstance(duration_ms, float) and duration_ms >= 0:
+        return round(duration_ms)
+    return None
 
 
 def _has_display_content(content: Any) -> bool:

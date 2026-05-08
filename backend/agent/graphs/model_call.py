@@ -1,5 +1,6 @@
 
 import asyncio
+from time import perf_counter
 
 from typing import (
     Sequence
@@ -44,6 +45,29 @@ async def _adispatch_custom_event_safely(name: str, data: object) -> None:
         if not _is_missing_parent_run_error(error):
             raise
         logger.debug(f"Skipping custom event {name}: {error}")
+
+
+def _message_reasoning_content(message: BaseMessage) -> str:
+    additional_kwargs = getattr(message, "additional_kwargs", None)
+    if not isinstance(additional_kwargs, dict):
+        return ""
+
+    reasoning_content = additional_kwargs.get("reasoning_content")
+    if isinstance(reasoning_content, str) and reasoning_content.strip():
+        return reasoning_content
+    return ""
+
+
+def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
+    if not _message_reasoning_content(message):
+        return False
+
+    additional_kwargs = getattr(message, "additional_kwargs", None)
+    if not isinstance(additional_kwargs, dict):
+        return False
+
+    additional_kwargs["reasoning_duration_ms"] = duration_ms
+    return True
 
 
 class ModelCallGraph(BaseGraph):
@@ -152,7 +176,14 @@ class ModelCallGraph(BaseGraph):
             for _ in range(max_retries):
                 try:
                     #logger.debug(f"Invoking model with system prompts '{self.system_prompts}' and messages:\n{state.get('messages')}")
+                    started_at = perf_counter()
                     response = model.invoke(self.system_prompts + state.get('messages', []))
+                    duration_ms = max(0, round((perf_counter() - started_at) * 1000))
+                    if _record_reasoning_duration(response, duration_ms):
+                        _dispatch_custom_event_safely(
+                            "on_reasoning_done",
+                            {"duration_ms": duration_ms},
+                        )
                     return BaseAgentState(messages=[response])
                 except Exception as e:
                     _dispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(

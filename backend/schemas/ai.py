@@ -114,6 +114,11 @@ class AIChatHistoryMessage(BaseModel):
         description="模型推理或工具调用前的中间思考内容，前端应折叠展示。",
         examples=["我需要先检索最新资料。"],
     )
+    reasoning_duration_ms: int | None = Field(
+        default=None,
+        description="模型产生推理内容的调用耗时，单位毫秒。仅存在 reasoning 时返回。",
+        examples=[12000],
+    )
     name: str | None = Field(
         default=None,
         description="消息名称，通常用于工具消息或带名称的模型消息。",

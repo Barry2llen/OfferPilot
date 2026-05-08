@@ -290,6 +290,41 @@ def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.Mo
     assert result["messages"] == [response]
 
 
+def test_model_call_node_records_reasoning_duration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = AIMessage(
+        content="答案",
+        additional_kwargs={"reasoning_content": "先分析问题。"},
+    )
+    custom_events: list[tuple[str, object]] = []
+    ticks = iter([10.0, 12.345])
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            return self
+
+        def invoke(self, messages: object) -> AIMessage:
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+    monkeypatch.setattr("agent.graphs.model_call.perf_counter", lambda: next(ticks))
+    monkeypatch.setattr(
+        "agent.graphs.model_call._dispatch_custom_event_safely",
+        lambda name, data: custom_events.append((name, data)),
+    )
+
+    graph = ModelCallGraph(config=Config(), tools=[echo_value])
+    result = graph._model_call_node(make_state([HumanMessage(content="hello")]))
+    message = result["messages"][0]
+
+    assert message.additional_kwargs["reasoning_duration_ms"] == 2345
+    assert custom_events == [("on_reasoning_done", {"duration_ms": 2345})]
+
+
 def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyPatch) -> None:
     response = AIMessage(content="recovered")
 

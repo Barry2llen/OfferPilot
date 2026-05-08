@@ -17,9 +17,11 @@ export interface ToolCallEntry {
 }
 
 export interface ChatMessage {
+  id: string;
   role: "user" | "assistant" | "tool";
   content: string;
   reasoning?: string;
+  reasoningDurationMs?: number;
   toolCallId?: string;
   toolName?: string;
   toolStatus?: string;
@@ -111,8 +113,27 @@ function findLastRunningToolMessageIndex(
   return -1;
 }
 
-function toolCallToMessage(entry: ToolCallEntry): ChatMessage {
+function findLastAssistantMessageIndex(messages: ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "assistant") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function parseDurationMs(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+
+  return undefined;
+}
+
+function toolCallToMessage(entry: ToolCallEntry, id: string): ChatMessage {
   return {
+    id,
     role: "tool",
     content: formatDisplayContent(entry.output ?? entry.error ?? entry.input ?? ""),
     toolName: entry.name,
@@ -152,6 +173,12 @@ export function useChatStream() {
   const abortRef = useRef<AbortController | null>(null);
   const pendingTokenRef = useRef("");
   const rafIdRef = useRef<number | null>(null);
+  const messageIdRef = useRef(0);
+
+  const createMessageId = useCallback((role: ChatMessage["role"]) => {
+    messageIdRef.current += 1;
+    return `${role}-${messageIdRef.current}`;
+  }, []);
 
   const clearStreamingState = useCallback(() => {
     if (rafIdRef.current !== null) {
@@ -189,7 +216,10 @@ export function useChatStream() {
       setAgentStatus("generating");
 
       if (!command || command.type === "prompt") {
-        setMessages((prev) => [...prev, { role: "user", content: prompt }]);
+        setMessages((prev) => [
+          ...prev,
+          { id: createMessageId("user"), role: "user", content: prompt },
+        ]);
       }
 
       let accumulatedText = "";
@@ -232,7 +262,11 @@ export function useChatStream() {
           currentAssistantIndex === null ||
           currentLiveMessages[currentAssistantIndex]?.role !== "assistant"
         ) {
-          currentLiveMessages.push({ role: "assistant", content: "" });
+          currentLiveMessages.push({
+            id: createMessageId("assistant"),
+            role: "assistant",
+            content: "",
+          });
           currentAssistantIndex = currentLiveMessages.length - 1;
         }
         return currentAssistantIndex;
@@ -308,6 +342,26 @@ export function useChatStream() {
                 break;
               }
 
+              case "reasoning_done": {
+                const durationMs = parseDurationMs(event.data.duration_ms);
+                if (durationMs === undefined) {
+                  break;
+                }
+                const assistantIndex =
+                  currentAssistantIndex ??
+                  findLastAssistantMessageIndex(currentLiveMessages);
+                const assistantMessage = currentLiveMessages[assistantIndex];
+                if (
+                  assistantIndex >= 0 &&
+                  assistantMessage?.role === "assistant" &&
+                  assistantMessage.reasoning?.trim()
+                ) {
+                  assistantMessage.reasoningDurationMs = durationMs;
+                  publishLiveMessages();
+                }
+                break;
+              }
+
               case "tool_start": {
                 setAgentStatus("tool_calling");
                 endAssistantSegment();
@@ -322,7 +376,7 @@ export function useChatStream() {
                 };
                 currentToolCalls.push(entry);
                 setToolCalls([...currentToolCalls]);
-                currentLiveMessages.push(toolCallToMessage(entry));
+                currentLiveMessages.push(toolCallToMessage(entry, createMessageId("tool")));
                 publishLiveMessages();
                 break;
               }
@@ -354,9 +408,14 @@ export function useChatStream() {
                     ? currentToolCalls[idx]
                     : currentToolCalls[currentToolCalls.length - 1];
                 if (toolMessageIndex >= 0) {
-                  currentLiveMessages[toolMessageIndex] = toolCallToMessage(toolEntry);
+                  currentLiveMessages[toolMessageIndex] = toolCallToMessage(
+                    toolEntry,
+                    currentLiveMessages[toolMessageIndex].id
+                  );
                 } else {
-                  currentLiveMessages.push(toolCallToMessage(toolEntry));
+                  currentLiveMessages.push(
+                    toolCallToMessage(toolEntry, createMessageId("tool"))
+                  );
                 }
                 publishLiveMessages();
                 endAssistantSegment();
@@ -393,9 +452,14 @@ export function useChatStream() {
                     ? currentToolCalls[idx]
                     : currentToolCalls[currentToolCalls.length - 1];
                 if (toolMessageIndex >= 0) {
-                  currentLiveMessages[toolMessageIndex] = toolCallToMessage(toolEntry);
+                  currentLiveMessages[toolMessageIndex] = toolCallToMessage(
+                    toolEntry,
+                    currentLiveMessages[toolMessageIndex].id
+                  );
                 } else {
-                  currentLiveMessages.push(toolCallToMessage(toolEntry));
+                  currentLiveMessages.push(
+                    toolCallToMessage(toolEntry, createMessageId("tool"))
+                  );
                 }
                 publishLiveMessages();
                 endAssistantSegment();
@@ -443,6 +507,7 @@ export function useChatStream() {
                     }
                   } else {
                     currentLiveMessages.push({
+                      id: createMessageId("assistant"),
                       role: "assistant",
                       content: finalContent,
                       reasoning: reasoningContent,
@@ -512,6 +577,7 @@ export function useChatStream() {
       clearStreamingState,
       setAgentStatus,
       setThreadId,
+      createMessageId,
     ]
   );
 
@@ -538,9 +604,11 @@ export function useChatStream() {
     (historyMessages: AIChatHistoryMessage[]) => {
       const msgs: ChatMessage[] = historyMessages
         .map((m) => ({
+          id: createMessageId((m.role as ChatMessage["role"]) || "assistant"),
           role: m.role as ChatMessage["role"],
           content: formatDisplayContent(m.content),
           reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
+          reasoningDurationMs: parseDurationMs(m.reasoning_duration_ms),
           toolCallId: m.tool_call_id ?? undefined,
           toolName: m.name ?? undefined,
           toolStatus: m.status ?? undefined,
@@ -550,7 +618,7 @@ export function useChatStream() {
       setMessages(msgs);
       clearStreamingState();
     },
-    [clearStreamingState]
+    [clearStreamingState, createMessageId]
   );
 
   return {

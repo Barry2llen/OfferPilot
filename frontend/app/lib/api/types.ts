@@ -117,6 +117,7 @@ export interface AIChatHistoryMessage {
   type: string;
   content: string | unknown;
   reasoning?: string | null;
+  reasoning_duration_ms?: number | null;
   name?: string | null;
   tool_call_id?: string | null;
   status?: string | null;
@@ -159,6 +160,7 @@ export type SSEEventType =
   | "thread"
   | "token"
   | "reasoning"
+  | "reasoning_done"
   | "tool_start"
   | "tool_end"
   | "tool_error"
