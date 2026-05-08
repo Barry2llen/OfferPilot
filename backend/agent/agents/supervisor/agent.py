@@ -7,17 +7,34 @@ from langchain_core.tools import BaseTool
 
 from agent.graphs.model_call import ModelCallGraph
 from schemas.config import Config
-from .state import State
+from .state import State, BaseAgentState
 from ...base import BaseAgent
+from ...graphs.model_call import Runtime
+
+def _dynamic_system_prompt(runtime: Runtime) -> list[SystemMessage]:
+
+    import datetime
+
+    def _get_model_name(state: BaseAgentState) -> str:
+        model_selection = state.get("model")
+        model = model_selection() if callable(model_selection) else model_selection
+        return model.model_name if model else "unknown"
+
+
+    return [
+        SystemMessage(
+            content = (
+                "You are a helpful assistant."
+                "\n"
+                "Metadata:"
+                f"Today is {datetime.datetime.now().strftime('%Y-%m-%d')}."
+                f"You are called as '{_get_model_name(runtime.state)}' in OfferPilot's agent framework."
+                f"You have access to the following tools: {', '.join(tool.name for tool in runtime.tools)}."
+            )
+        )
+    ]
 
 class SupervisorAgent(BaseAgent[State]):
-    
-    system_prompt = SystemMessage(
-        content = (
-            "You are a helpful assistant.\n" \
-            f"Today is {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}."
-        )
-    )
 
     def __init__(
         self,
@@ -29,7 +46,7 @@ class SupervisorAgent(BaseAgent[State]):
         super().__init__(*args, **kwargs)
         self.tools = tuple(tools or ())
         self._model_call_node = ModelCallGraph(
-            system_prompts=[self.system_prompt],
+            system_prompts=_dynamic_system_prompt,
             config=config,
             tools=self.tools,
         ).get_compiled_graph()

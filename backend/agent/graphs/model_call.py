@@ -3,14 +3,17 @@ import asyncio
 from time import perf_counter
 
 from typing import (
-    Sequence
+    Sequence,
+    Any,
+    Protocol,
+    NamedTuple
 )
 
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
-from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
+from langchain_core.messages import ToolMessage, ToolCall, BaseMessage, SystemMessage
 from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from exceptions import AgentStateError, ModelCallExecutionError
@@ -69,13 +72,31 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
     additional_kwargs["reasoning_duration_ms"] = duration_ms
     return True
 
+type SystemPrompts = (
+    list[SystemMessage] |
+    list[str]           |
+    SystemMessage       |
+    str                 
+)
+
+class Runtime(NamedTuple):
+    state: BaseAgentState
+    tools: Sequence[BaseTool]
+    additional_context: dict[str, Any]
+
+class CallbackPrompts(Protocol):
+    def __call__(self, runtime: Runtime) -> SystemPrompts: ...
 
 class ModelCallGraph(BaseGraph):
+
+    system_prompts: list[SystemMessage] | CallbackPrompts
+    tools: Sequence[BaseTool]
+    additional_context: dict[str, Any]
 
     def __init__(
             self,
             *args,
-            system_prompts: list[BaseMessage] | None = None,
+            system_prompts: SystemPrompts | CallbackPrompts | None = None,
             tools: Sequence[BaseTool] | None = None,
             **kwargs
         ):
@@ -83,7 +104,33 @@ class ModelCallGraph(BaseGraph):
         super().__init__(*args, **kwargs)
         self.tools = tools or tuple[BaseTool]()
         self.tools_dict = {tool.name: tool for tool in self.tools}
-        self.system_prompts = system_prompts or []
+        self.additional_context = kwargs or {}
+        
+        if not system_prompts:
+            self.system_prompts = []
+            return
+        
+        if callable(system_prompts):
+            self.system_prompts = system_prompts
+            return
+        
+        if isinstance(system_prompts, str):
+            system_prompts = [SystemMessage(content=system_prompts)]
+        elif isinstance(system_prompts, list):
+
+            if any(not isinstance(prompt, (str, SystemMessage)) for prompt in system_prompts):
+                raise ValueError("system_prompts list must contain only str or SystemMessage instances.")
+
+            system_prompts = [
+                SystemMessage(content=prompt) if isinstance(prompt, str) else prompt
+                for prompt in system_prompts
+            ]
+        elif isinstance(system_prompts, SystemMessage):
+            system_prompts = [system_prompts]
+        else:
+            raise ValueError("system_prompts must be a str, SystemMessage, list of str, or list of SystemMessage.")
+        
+        self.system_prompts = system_prompts
 
     async def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
         """
@@ -175,9 +222,21 @@ class ModelCallGraph(BaseGraph):
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
                 try:
-                    #logger.debug(f"Invoking model with system prompts '{self.system_prompts}' and messages:\n{state.get('messages')}")
                     started_at = perf_counter()
-                    response = model.invoke(self.system_prompts + state.get('messages', []))
+
+                    runtime = Runtime(
+                        state=state,
+                        tools=self.tools,
+                        additional_context=self.additional_context
+                    )
+                    system_prompts: list[SystemMessage] = (
+                        self.system_prompts(runtime) if callable(self.system_prompts) else self.system_prompts
+                    )
+
+                    #logger.debug(f"Invoking model with system prompts '{system_prompts}' and messages:\n{state.get('messages')}")
+
+                    response = model.invoke(system_prompts + state.get('messages', []))
+
                     duration_ms = max(0, round((perf_counter() - started_at) * 1000))
                     if _record_reasoning_duration(response, duration_ms):
                         _dispatch_custom_event_safely(
@@ -241,3 +300,10 @@ class ModelCallGraph(BaseGraph):
         )
 
         return graph
+
+__all__ = [
+    "ModelCallGraph",
+    "SystemPrompts",
+    "CallbackPrompts"
+    "Runtime"
+]
