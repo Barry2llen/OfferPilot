@@ -4,9 +4,7 @@ from time import perf_counter
 
 from typing import (
     Sequence,
-    Any,
-    Protocol,
-    NamedTuple
+    Any
 )
 
 from langgraph.types import interrupt
@@ -16,14 +14,20 @@ from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, ToolCall, BaseMessage, SystemMessage
 from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
-from exceptions import AgentStateError, ModelCallExecutionError
+from .base import Runtime
 from ..models import load_chat_model
 from ..base import (
     BaseGraph,
     BaseAgentState,
     BaseInterupt
 )
+from ..prompts import (
+    PromptBuilder,
+    Prompts,
+    normalize_system_prompts
+)
 from ..events import ToolCallErrorEvent, ModelCallErrorEvent
+from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.command import BaseCommand
 from utils.logger import logger
 
@@ -72,31 +76,16 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
     additional_kwargs["reasoning_duration_ms"] = duration_ms
     return True
 
-type SystemPrompts = (
-    list[SystemMessage] |
-    list[str]           |
-    SystemMessage       |
-    str                 
-)
-
-class Runtime(NamedTuple):
-    state: BaseAgentState
-    tools: Sequence[BaseTool]
-    additional_context: dict[str, Any]
-
-class CallbackPrompts(Protocol):
-    def __call__(self, runtime: Runtime) -> SystemPrompts: ...
-
 class ModelCallGraph(BaseGraph):
 
-    system_prompts: list[SystemMessage] | CallbackPrompts
+    system_prompts: PromptBuilder
     tools: Sequence[BaseTool]
     additional_context: dict[str, Any]
 
     def __init__(
             self,
             *args,
-            system_prompts: SystemPrompts | CallbackPrompts | None = None,
+            system_prompts: Prompts | PromptBuilder | None = None,
             tools: Sequence[BaseTool] | None = None,
             **kwargs
         ):
@@ -105,32 +94,7 @@ class ModelCallGraph(BaseGraph):
         self.tools = tools or tuple[BaseTool]()
         self.tools_dict = {tool.name: tool for tool in self.tools}
         self.additional_context = kwargs or {}
-        
-        if not system_prompts:
-            self.system_prompts = []
-            return
-        
-        if callable(system_prompts):
-            self.system_prompts = system_prompts
-            return
-        
-        if isinstance(system_prompts, str):
-            system_prompts = [SystemMessage(content=system_prompts)]
-        elif isinstance(system_prompts, list):
-
-            if any(not isinstance(prompt, (str, SystemMessage)) for prompt in system_prompts):
-                raise ValueError("system_prompts list must contain only str or SystemMessage instances.")
-
-            system_prompts = [
-                SystemMessage(content=prompt) if isinstance(prompt, str) else prompt
-                for prompt in system_prompts
-            ]
-        elif isinstance(system_prompts, SystemMessage):
-            system_prompts = [system_prompts]
-        else:
-            raise ValueError("system_prompts must be a str, SystemMessage, list of str, or list of SystemMessage.")
-        
-        self.system_prompts = system_prompts
+        self.system_prompts = normalize_system_prompts(system_prompts)
 
     async def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
         """
@@ -229,9 +193,7 @@ class ModelCallGraph(BaseGraph):
                         tools=self.tools,
                         additional_context=self.additional_context
                     )
-                    system_prompts: list[SystemMessage] = (
-                        self.system_prompts(runtime) if callable(self.system_prompts) else self.system_prompts
-                    )
+                    system_prompts = self.system_prompts(runtime)
 
                     #logger.debug(f"Invoking model with system prompts '{system_prompts}' and messages:\n{state.get('messages')}")
 
