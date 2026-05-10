@@ -2,8 +2,6 @@
 
 OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Next.js 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、LangGraph checkpoint 会话恢复，以及 Windows 桌面安装包构建。
 
-**!!!项目还在开发当中!!!**
-
 ## 项目结构
 
 ```text
@@ -137,7 +135,7 @@ npm run build
 - `NEXT_PUBLIC_API_URL`：后端 API 基础地址。
 - `window.offerPilotRuntime.apiBaseUrl`：Electron preload 注入的运行时覆盖地址。
 
-Electron 打包后会从 `~/offerpilot/config.yaml` 读取后端配置；首次启动时如果该文件不存在，会在 `~/offerpilot` 下创建默认配置、SQLite 数据库目录、简历上传目录和后端运行时日志目录。托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
+Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置；首次启动时如果该文件不存在，会在 `~/.offerpilot` 下创建默认配置、SQLite 数据库目录、简历上传目录和后端运行时日志目录。托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
 
 ## API 概览
 

@@ -315,7 +315,7 @@ function resolvePackagedFrontendServer(): string {
 }
 
 function ensureBackendRuntimeConfig(): string {
-  const runtimeDir = path.join(app.getPath('home'), 'offerpilot')
+  const runtimeDir = path.join(app.getPath('home'), '.offerpilot')
   const dataDir = path.join(runtimeDir, 'data')
   const resumeDir = path.join(dataDir, 'resumes')
   const configPath = path.join(runtimeDir, 'config.yaml')

@@ -98,7 +98,7 @@ npm run build
 - 不要提交真实 API Key、`.env`、本地 `config.yaml`、数据库文件、日志或打包二进制。
 - 后端默认配置模板是 `backend/config.example.yaml`，默认 SQLite 路径为 `./data/offer_pilot.db`，简历上传目录为 `./data/resumes`。
 - 前端 API 地址来自 `NEXT_PUBLIC_API_URL`，浏览器运行时可由 `window.offerPilotRuntime?.apiBaseUrl` 覆盖。
-- Electron 打包后会从 `~/offerpilot/config.yaml` 读取后端配置，并在 `~/offerpilot` 下创建 SQLite 数据、简历上传目录和后端运行时日志；托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
+- Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置，并在 `~/.offerpilot` 下创建 SQLite 数据、简历上传目录和后端运行时日志；托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
 
 ## 提交与验证
 

@@ -33,4 +33,4 @@ Recent history uses short imperative subjects such as `Integrate app into Electr
 
 ## Security & Configuration Tips
 
-Do not commit secrets, logs, packaged binaries, or generated `resources/` contents. Production reads and creates `config.yaml` under `~/offerpilot`; keep defaults local-safe. Never expose Node primitives directly through preload.
+Do not commit secrets, logs, packaged binaries, or generated `resources/` contents. Production reads and creates `config.yaml` under `~/.offerpilot`; keep defaults local-safe. Never expose Node primitives directly through preload.

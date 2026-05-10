@@ -68,4 +68,4 @@ No test runner is currently configured in this package. For behavior changes, va
 
 ## Runtime Notes
 
-Packaged builds read and create backend runtime data under `~/offerpilot`, including `config.yaml`, SQLite data, resume uploads, and backend runtime logs. Managed process stdout/stderr logs are still written under Electron `userData/logs`. Keep preload APIs minimal; the renderer should not receive direct Node.js access.
+Packaged builds read and create backend runtime data under `~/.offerpilot`, including `config.yaml`, SQLite data, resume uploads, and backend runtime logs. Managed process stdout/stderr logs are still written under Electron `userData/logs`. Keep preload APIs minimal; the renderer should not receive direct Node.js access.
