@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "OfferPilot desktop application.",
-  "author": "barry2llen",
+  "author": "https://github.com/Barry2llen",
   "type": "module",
   "scripts": {
     "dev": "vite",

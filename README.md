@@ -137,7 +137,7 @@ npm run build
 - `NEXT_PUBLIC_API_URL`：后端 API 基础地址。
 - `window.offerPilotRuntime.apiBaseUrl`：Electron preload 注入的运行时覆盖地址。
 
-Electron 打包后会在 Electron `userData` 下创建后端运行时目录，包括 `config.yaml`、SQLite 数据库、简历上传目录和日志。
+Electron 打包后会从 `~/offerpilot/config.yaml` 读取后端配置；首次启动时如果该文件不存在，会在 `~/offerpilot` 下创建默认配置、SQLite 数据库目录、简历上传目录和后端运行时日志目录。托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
 
 ## API 概览
 
