@@ -6,7 +6,6 @@ from typing import (
 )
 
 from langchain_core.tools import BaseTool
-from langchain_core.messages import SystemMessage
 
 from ..base import BaseAgentState
 
