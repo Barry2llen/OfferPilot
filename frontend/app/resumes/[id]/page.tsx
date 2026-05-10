@@ -64,7 +64,7 @@ export default function ResumeDetailPage() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto p-6">
+      <div className="electron-titlebar-safe-top max-w-3xl mx-auto p-6">
         <div className="flex items-center justify-center py-20">
           <Spinner size="lg" />
         </div>
@@ -74,7 +74,7 @@ export default function ResumeDetailPage() {
 
   if (error) {
     return (
-      <div className="max-w-3xl mx-auto p-6">
+      <div className="electron-titlebar-safe-top max-w-3xl mx-auto p-6">
         <div className="text-center py-20">
           <p className="text-error-text text-sm mb-4">{error}</p>
           <div className="flex gap-3 justify-center">
@@ -96,7 +96,7 @@ export default function ResumeDetailPage() {
   if (!resume) return null;
 
   return (
-    <div className="max-w-3xl mx-auto p-6 lg:py-8">
+    <div className="electron-titlebar-safe-top max-w-3xl mx-auto p-6 lg:py-8">
       <div className="flex items-center gap-3 mb-6">
         <Link
           href="/resumes"

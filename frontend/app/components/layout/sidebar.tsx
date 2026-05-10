@@ -36,7 +36,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     <>
       <button
         onClick={onToggle}
-        className="fixed top-4 left-4 z-50 lg:hidden p-2 rounded-lg bg-white shadow-card border border-border-default"
+        className="app-region-no-drag fixed top-4 left-4 z-50 lg:hidden p-2 rounded-lg bg-white shadow-card border border-border-default"
         aria-label="Toggle sidebar"
         aria-expanded={!collapsed}
       >
@@ -50,7 +50,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           collapsed ? "-translate-x-full lg:translate-x-0 lg:w-16" : "w-60"
         }`}
       >
-        <div className="h-14 flex items-center px-4 border-b border-border-light">
+        <div className="app-region-drag h-14 flex items-center px-4 border-b border-border-light">
           <span className="font-display text-lg font-semibold text-text-primary tracking-tight truncate">
             {collapsed ? "OP" : "OfferPilot"}
           </span>

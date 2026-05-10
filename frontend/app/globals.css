@@ -52,3 +52,32 @@ body {
   font-family: var(--font-sans);
   line-height: 1.5;
 }
+
+:root {
+  --electron-titlebar-height: env(titlebar-area-height, 0px);
+  --electron-window-controls-width: calc(
+    100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
+  );
+}
+
+.app-region-drag {
+  -webkit-app-region: drag;
+}
+
+.app-region-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.electron-titlebar-safe-right {
+  padding-right: max(1rem, calc(var(--electron-window-controls-width) + 1rem));
+}
+
+.electron-titlebar-safe-top {
+  padding-top: calc(var(--electron-titlebar-height) + 1.5rem);
+}
+
+@media (min-width: 64rem) {
+  .electron-titlebar-safe-top {
+    padding-top: calc(var(--electron-titlebar-height) + 2rem);
+  }
+}

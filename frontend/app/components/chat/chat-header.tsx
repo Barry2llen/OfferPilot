@@ -44,12 +44,12 @@ export default function ChatHeader({
   const { state } = useAppContext();
 
   return (
-    <div className="min-h-12 shrink-0 border-b border-border-light bg-white px-4 py-2">
+    <div className="app-region-drag electron-titlebar-safe-right min-h-12 shrink-0 border-b border-border-light bg-white px-4 py-2">
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={onToggleSidebar}
-          className="rounded-lg p-1.5 transition-colors hover:bg-surface-secondary"
+          className="app-region-no-drag rounded-lg p-1.5 transition-colors hover:bg-surface-secondary"
           title={sidebarOpen ? "收起会话侧栏" : "展开会话侧栏"}
           aria-label={sidebarOpen ? "收起会话侧栏" : "展开会话侧栏"}
           aria-expanded={sidebarOpen}
@@ -82,13 +82,15 @@ export default function ChatHeader({
           </span>
         </div>
 
-        <ModelSelectionPicker
-          models={models}
-          loading={modelsLoading}
-          value={currentModelSelection}
-          disabled={isStreaming}
-          onChange={onModelChange}
-        />
+        <div className="app-region-no-drag">
+          <ModelSelectionPicker
+            models={models}
+            loading={modelsLoading}
+            value={currentModelSelection}
+            disabled={isStreaming}
+            onChange={onModelChange}
+          />
+        </div>
       </div>
     </div>
   );

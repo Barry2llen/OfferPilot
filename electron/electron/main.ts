@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, Menu } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
@@ -19,6 +19,11 @@ interface ManagedProcess {
 interface RuntimeServices {
   apiBaseUrl: string
   appUrl: string
+}
+
+interface ManagedProcessCommand {
+  command: string
+  args: string[]
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -55,6 +60,8 @@ app.on('activate', () => {
 
 async function startApplication() {
   try {
+    configureApplicationMenu()
+
     const services = app.isPackaged
       ? await startProductionServices()
       : await startDevelopmentServices()
@@ -82,6 +89,7 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
   const frontendPort = await findAvailablePort(3000)
   const apiBaseUrl = `http://127.0.0.1:${backendPort}`
   const appUrl = `http://127.0.0.1:${frontendPort}`
+  const frontendCommand = frontendDevCommand(frontendPort)
 
   startManagedProcess('backend-dev', 'uv', [
     'run',
@@ -95,15 +103,7 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
     PYTHONUNBUFFERED: '1',
   })
 
-  startManagedProcess('frontend-dev', npmCommand(), [
-    'run',
-    'dev',
-    '--',
-    '--hostname',
-    '127.0.0.1',
-    '--port',
-    String(frontendPort),
-  ], frontendDir, {
+  startManagedProcess('frontend-dev', frontendCommand.command, frontendCommand.args, frontendDir, {
     NEXT_PUBLIC_API_URL: apiBaseUrl,
   })
 
@@ -153,7 +153,14 @@ function createWindow(targetUrl: string) {
     minWidth: 1040,
     minHeight: 680,
     show: false,
+    autoHideMenuBar: true,
     backgroundColor: '#f7f7f4',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#ffffff',
+      symbolColor: '#18181b',
+      height: 48,
+    },
     icon: path.join(process.env.VITE_PUBLIC || path.join(appRoot, 'public'), 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -173,6 +180,12 @@ function createWindow(targetUrl: string) {
   mainWindow.loadURL(targetUrl).catch((error: unknown) => {
     showStartupFailure(error)
   })
+}
+
+function configureApplicationMenu() {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null)
+  }
 }
 
 function showStartupFailure(error: unknown) {
@@ -211,12 +224,18 @@ function startManagedProcess(
     throw new Error(`${name} working directory does not exist: ${cwd}`)
   }
 
-  const child = spawn(command, args, {
-    cwd,
-    env: { ...process.env, ...env },
-    stdio: 'pipe',
-    windowsHide: true,
-  })
+  let child: ChildProcessWithoutNullStreams
+  try {
+    child = spawn(command, args, {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: 'pipe',
+      windowsHide: true,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to start ${name} with "${formatCommand(command, args)}" in ${cwd}: ${message}`)
+  }
   const managed = { name, child }
   managedProcesses.push(managed)
   attachProcessLogging(managed)
@@ -381,8 +400,32 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function npmCommand() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+function frontendDevCommand(port: number): ManagedProcessCommand {
+  const npmArgs = [
+    'run',
+    'dev',
+    '--',
+    '--hostname',
+    '127.0.0.1',
+    '--port',
+    String(port),
+  ]
+
+  if (process.platform === 'win32') {
+    return {
+      command: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', 'npm.cmd', ...npmArgs],
+    }
+  }
+
+  return {
+    command: 'npm',
+    args: npmArgs,
+  }
+}
+
+function formatCommand(command: string, args: string[]) {
+  return [command, ...args].join(' ')
 }
 
 function toYamlPath(targetPath: string) {

@@ -183,7 +183,7 @@ export default function ProvidersPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto p-6 lg:py-8">
+      <div className="electron-titlebar-safe-top max-w-4xl mx-auto p-6 lg:py-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
@@ -202,7 +202,7 @@ export default function ProvidersPage() {
 
   if (error) {
     return (
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="electron-titlebar-safe-top max-w-4xl mx-auto p-6">
         <div className="text-center py-20">
           <p className="text-error-text text-sm mb-4">{error}</p>
           <Button variant="secondary" onClick={refetch}>
@@ -214,7 +214,7 @@ export default function ProvidersPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 lg:py-8">
+    <div className="electron-titlebar-safe-top max-w-4xl mx-auto p-6 lg:py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display text-2xl font-semibold text-text-primary">
