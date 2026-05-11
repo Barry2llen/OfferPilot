@@ -1,1 +1,0 @@
-2026-05-09 14:52:00.150 | INFO     | db.engine.manager:initialize_tables:135 - Initialized database tables from ORM metadata; schema snapshot: sql/tables.sql
