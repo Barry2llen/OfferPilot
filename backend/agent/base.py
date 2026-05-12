@@ -8,12 +8,16 @@ from typing import (
     Annotated,
     Literal,
     NotRequired,
+    NamedTuple,
+    Sequence,
     cast
 )
 from abc import ABC, abstractmethod
 
 from langgraph._internal._typing import StateLike
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables.schema import StreamEvent
 from langgraph.graph import StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.cache.base import BaseCache
@@ -39,15 +43,38 @@ class BaseAgentState(TypedDict, total=False):
     model: Displace[MaybeCallable[ModelSelection]]
     messages: Annotated[list[BaseMessage], add_messages]
 
+class GraphRuntime[State: StateLike = BaseAgentState](NamedTuple):
+    state: State
+    additional_args: Sequence[Any]
+    additional_keywords: dict[str, Any]
+
 class BaseGraph[State: StateLike = BaseAgentState](ABC):
 
-    def __init__(self, *args, config: Config = None, **kwargs):
+    config: Config
+    additional_args: Sequence[Any]
+    additional_keywords: dict[str, Any]
+
+    def __init__(
+            self,
+            *args,
+            config: Config | None= None,
+            **kwargs
+        ):
+        self.additional_args = args or ()
+        self.additional_keywords = kwargs or {}
         self.config: Config = config if config is not None else load_config()
 
     """Base graph"""
     @abstractmethod
     def get_graph(self) -> StateGraph[State]:
         ...
+
+    def get_runtime(self, state: State) -> GraphRuntime[State]:
+        return GraphRuntime[State](
+            state=state,
+            additional_args=self.additional_args,
+            additional_keywords=self.additional_keywords
+        )
 
     def get_compiled_graph(
         self,
@@ -115,8 +142,10 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         self.config = agent.config
         self.agent = agent.get_agent()
 
-    def _graph_config(self) -> dict[str, Any]:
-        return {"recursion_limit": self.config.graph_recursion_limit}
+    def _graph_config(self) -> RunnableConfig:
+        return RunnableConfig(
+            recursion_limit=self.config.graph_recursion_limit
+        )
 
     @abstractmethod
     def _construct_initial_state(self, *args, **kwargs) -> State:
@@ -132,20 +161,6 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         """
         ...
 
-    def _run(
-        self,
-        *args,
-        **kwargs
-    ) -> State:
-        """
-        Define how to run the workflow.
-        """
-        result = self.agent.invoke(
-            self._construct_initial_state(*args, **kwargs),
-            self._graph_config(),
-        )
-        return cast(State, result)
-    
     def invoke(
         self,
         *args,
@@ -154,8 +169,7 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         """
         Run the workflow and return the result.
         """
-        final_state = self._run(*args, **kwargs)
-        return self._get_result(final_state)
+        raise RuntimeError("Synchronous workflow invocation is no longer supported. Use ainvoke().")
     
     async def ainvoke(
         self,
@@ -165,7 +179,11 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         """
         Asynchronously run the workflow and return the result.
         """
-        return self.invoke(*args, **kwargs)
+        result = await self.agent.ainvoke(
+            self._construct_initial_state(*args, **kwargs),
+            self._graph_config(),
+        )
+        return self._get_result(cast(State, result))
     
     async def astream_events(
         self,
@@ -179,7 +197,7 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         state = self._construct_initial_state(*args, **kwargs)
         final_state: State | None = None
 
-        async def capture_final_state(event: dict[str, Any]) -> None:
+        async def capture_final_state(event: StreamEvent) -> None:
             nonlocal final_state
             data = event.get("data")
             if not isinstance(data, dict):
@@ -191,7 +209,7 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         merged_handlers = dict(handlers or {})
         existing_chain_end_handler = merged_handlers.get("on_chain_end")
 
-        async def on_chain_end(event: dict[str, Any]) -> None:
+        async def on_chain_end(event: StreamEvent) -> None:
             await capture_final_state(event)
             if existing_chain_end_handler is None:
                 return

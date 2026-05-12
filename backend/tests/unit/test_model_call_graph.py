@@ -50,8 +50,7 @@ def make_state(messages: list, model: object | None = None) -> dict:
 def test_model_call_graph_can_be_imported_and_initialized_without_tools() -> None:
     graph = ModelCallGraph(config=Config(), tools=None)
 
-    assert graph.tools == ()
-    assert graph.tools_dict == {}
+    assert callable(graph.tools)
 
 
 def test_tool_node_returns_original_state_when_tools_are_missing() -> None:
@@ -216,6 +215,54 @@ def test_tool_node_isolates_errors_when_running_multiple_tools() -> None:
     assert messages[1].content == "async-value=9"
 
 
+def test_tool_node_uses_dynamic_tools_callable() -> None:
+    seen_messages: list[list] = []
+
+    def build_tools(runtime) -> list:
+        seen_messages.append(runtime.state["messages"])
+        return [echo_value]
+
+    graph = ModelCallGraph(config=Config(), tools=build_tools)
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "echo_value", "args": {"value": 11}, "id": "call-dynamic"}],
+            )
+        ]
+    )
+
+    result = run_tool_node(graph, state)
+    message = result["messages"][0]
+
+    assert seen_messages == [state["messages"]]
+    assert message.tool_call_id == "call-dynamic"
+    assert message.content == "value=11"
+
+
+def test_tool_node_returns_error_when_dynamic_tools_callable_fails() -> None:
+    def build_tools(runtime) -> list:
+        raise RuntimeError("builder failed")
+
+    graph = ModelCallGraph(config=Config(), tools=build_tools)
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "echo_value", "args": {"value": 11}, "id": "call-builder"}],
+            )
+        ]
+    )
+
+    result = run_tool_node(graph, state)
+    message = result["messages"][0]
+
+    assert isinstance(message, ToolMessage)
+    assert message.status == "error"
+    assert message.tool_call_id == "call-builder"
+    assert "builder failed" in message.content
+
+
 def test_dicide_next_action_returns_end_without_tool_calls() -> None:
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
 
@@ -255,7 +302,7 @@ def test_dicide_next_action_raises_for_invalid_state(state: dict) -> None:
         graph._dicide_next_action(state)
 
 
-def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[tuple[str, object]] = []
     response = AIMessage(content="model-response")
 
@@ -264,8 +311,8 @@ def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.Mo
             events.append(("bind_tools", tools))
             return self
 
-        def invoke(self, messages: object) -> AIMessage:
-            events.append(("invoke", messages))
+        async def ainvoke(self, messages: object) -> AIMessage:
+            events.append(("ainvoke", messages))
             return response
 
     loaded_models: list[object] = []
@@ -280,17 +327,162 @@ def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.Mo
     selected_model = object()
     state = make_state([HumanMessage(content="hello")], model=selected_model)
 
-    result = graph._model_call_node(state)
+    result = await graph._model_call_node(state)
 
     assert loaded_models == [selected_model]
     assert events == [
-        ("bind_tools", graph.tools),
-        ("invoke", state["messages"]),
+        ("bind_tools", (echo_value,)),
+        ("ainvoke", state["messages"]),
     ]
     assert result["messages"] == [response]
 
 
-def test_model_call_node_records_reasoning_duration(
+async def test_model_call_node_binds_dynamic_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, object]] = []
+    response = AIMessage(content="dynamic-model-response")
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            events.append(("bind_tools", tools))
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            events.append(("ainvoke", messages))
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+
+    def build_tools(runtime) -> list:
+        assert runtime.state["messages"][0].content == "hello"
+        return [echo_value]
+
+    graph = ModelCallGraph(config=Config(), tools=build_tools)
+    state = make_state([HumanMessage(content="hello")])
+
+    result = await graph._model_call_node(state)
+
+    assert events == [
+        ("bind_tools", (echo_value,)),
+        ("ainvoke", state["messages"]),
+    ]
+    assert result["messages"] == [response]
+
+
+async def test_model_call_node_accepts_awaitable_tools_callable(monkeypatch: pytest.MonkeyPatch) -> None:
+    bound_tools: list[object] = []
+    response = AIMessage(content="awaitable-tools")
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            bound_tools.append(tools)
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+
+    async def build_tools(runtime) -> list:
+        return [echo_value]
+
+    graph = ModelCallGraph(config=Config(), tools=build_tools)
+    result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
+
+    assert bound_tools == [(echo_value,)]
+    assert result["messages"] == [response]
+
+
+async def test_model_call_node_accepts_async_iterable_tools_callable(monkeypatch: pytest.MonkeyPatch) -> None:
+    bound_tools: list[object] = []
+    response = AIMessage(content="async-iterable-tools")
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            bound_tools.append(tools)
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+
+    async def iter_tools():
+        yield echo_value
+
+    def build_tools(runtime):
+        return iter_tools()
+
+    graph = ModelCallGraph(config=Config(), tools=build_tools)
+    result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
+
+    assert bound_tools == [(echo_value,)]
+    assert result["messages"] == [response]
+
+
+async def test_model_call_node_accepts_awaitable_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    bound_tools: list[object] = []
+    response = AIMessage(content="awaitable-tools")
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            bound_tools.append(tools)
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+
+    async def load_tools() -> list:
+        return [echo_value]
+
+    graph = ModelCallGraph(config=Config(), tools=load_tools())
+    result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
+
+    assert bound_tools == [(echo_value,)]
+    assert result["messages"] == [response]
+
+
+async def test_model_call_node_accepts_async_iterable_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    bound_tools: list[object] = []
+    response = AIMessage(content="async-iterable-tools")
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            bound_tools.append(tools)
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+
+    async def load_tools():
+        yield echo_value
+
+    graph = ModelCallGraph(config=Config(), tools=load_tools())
+    result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
+
+    assert bound_tools == [(echo_value,)]
+    assert result["messages"] == [response]
+
+
+async def test_model_call_node_records_reasoning_duration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = AIMessage(
@@ -304,7 +496,7 @@ def test_model_call_node_records_reasoning_duration(
         def bind_tools(self, tools: object) -> "FakeModel":
             return self
 
-        def invoke(self, messages: object) -> AIMessage:
+        async def ainvoke(self, messages: object) -> AIMessage:
             return response
 
     monkeypatch.setattr(
@@ -312,20 +504,24 @@ def test_model_call_node_records_reasoning_duration(
         lambda model_selection: FakeModel(),
     )
     monkeypatch.setattr("agent.graphs.model_call.perf_counter", lambda: next(ticks))
+
+    async def record_custom_event(name: str, data: object) -> None:
+        custom_events.append((name, data))
+
     monkeypatch.setattr(
-        "agent.graphs.model_call._dispatch_custom_event_safely",
-        lambda name, data: custom_events.append((name, data)),
+        "agent.graphs.model_call._adispatch_custom_event_safely",
+        record_custom_event,
     )
 
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
-    result = graph._model_call_node(make_state([HumanMessage(content="hello")]))
+    result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
     message = result["messages"][0]
 
     assert message.additional_kwargs["reasoning_duration_ms"] == 2345
     assert custom_events == [("on_reasoning_done", {"duration_ms": 2345})]
 
 
-def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyPatch) -> None:
     response = AIMessage(content="recovered")
 
     class FakeModel:
@@ -335,7 +531,7 @@ def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyPatch) 
         def bind_tools(self, tools: object) -> "FakeModel":
             return self
 
-        def invoke(self, messages: object) -> AIMessage:
+        async def ainvoke(self, messages: object) -> AIMessage:
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("temporary failure")
@@ -349,13 +545,13 @@ def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr("agent.graphs.model_call.load_chat_model", fake_load_chat_model)
 
     graph = ModelCallGraph(config=Config(model_call_retry_attempts=2), tools=[echo_value])
-    result = graph._model_call_node(make_state([HumanMessage(content="hello")]))
+    result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
     assert fake_model.calls == 2
     assert result["messages"] == [response]
 
 
-def test_model_call_node_resolves_callable_model_selection(
+async def test_model_call_node_resolves_callable_model_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = AIMessage(content="callable-model")
@@ -367,7 +563,7 @@ def test_model_call_node_resolves_callable_model_selection(
         def bind_tools(self, tools: object) -> "FakeModel":
             return self
 
-        def invoke(self, messages: object) -> AIMessage:
+        async def ainvoke(self, messages: object) -> AIMessage:
             return response
 
     def fake_load_chat_model(model_selection: object) -> FakeModel:
@@ -383,21 +579,21 @@ def test_model_call_node_resolves_callable_model_selection(
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
     state = make_state([HumanMessage(content="hello")], model=select_model)
 
-    result = graph._model_call_node(state)
+    result = await graph._model_call_node(state)
 
     assert seen_states == [state]
     assert loaded_models == [resolved_model]
     assert result["messages"] == [response]
 
 
-def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
+async def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeModel:
         def bind_tools(self, tools: object) -> "FakeModel":
             return self
 
-        def invoke(self, messages: object) -> AIMessage:
+        async def ainvoke(self, messages: object) -> AIMessage:
             raise RuntimeError("permanent failure")
 
     monkeypatch.setattr(
@@ -412,4 +608,4 @@ def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
     graph = ModelCallGraph(config=Config(model_call_retry_attempts=2), tools=[echo_value])
 
     with pytest.raises(ModelCallExecutionError, match="Model call failed after 2 retries"):
-        graph._model_call_node(make_state([HumanMessage(content="hello")]))
+        await graph._model_call_node(make_state([HumanMessage(content="hello")]))

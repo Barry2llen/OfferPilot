@@ -2,17 +2,15 @@
 from typing import override
 from collections.abc import Sequence
 from langgraph.graph import StateGraph, START, END
-from langchain.messages import SystemMessage
 from langchain_core.tools import BaseTool
 
 from agent.graphs.model_call import ModelCallGraph
 from schemas.config import Config
 from ...prompts import PromptComposer, PromptFragment
 from .state import State, BaseAgentState
-from ...base import BaseAgent
-from ...graphs.model_call import Runtime
+from ...base import BaseAgent, GraphRuntime
 
-def _metadata(runtime: Runtime) -> list[SystemMessage]:
+def _metadata(runtime: GraphRuntime[State]) -> str:
 
     def _get_model_name(state: BaseAgentState) -> str:
         model_selection = state.get("model")
@@ -47,6 +45,8 @@ class SupervisorAgent(BaseAgent[State]):
         super().__init__(*args, **kwargs)
         self.tools = tuple(tools or ())
         self._model_call_node = ModelCallGraph(
+            *args,
+            **kwargs,
             system_prompts=_system_prompt,
             config=config,
             tools=self.tools,

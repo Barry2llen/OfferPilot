@@ -242,10 +242,6 @@ async def get_web_search_tools(
 
     return [web_search_exa, web_fetch_exa, find_similar_exa]
 
-
-web_search_tools: list[BaseTool] = []
-
 __all__ = [
     "get_web_search_tools",
-    "web_search_tools",
 ]

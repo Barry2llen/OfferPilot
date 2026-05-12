@@ -2,20 +2,17 @@
 import asyncio
 from time import perf_counter
 
-from typing import (
-    Sequence,
-    Any
-)
+from typing import Any
 
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, ToolCall, BaseMessage, SystemMessage
-from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
+from langchain_core.callbacks.manager import adispatch_custom_event
 
-from .base import Runtime
 from ..models import load_chat_model
+from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
 from ..base import (
     BaseGraph,
     BaseAgentState,
@@ -34,15 +31,6 @@ from utils.logger import logger
 
 def _is_missing_parent_run_error(error: RuntimeError) -> bool:
     return "parent run id" in str(error)
-
-
-def _dispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        dispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
 
 
 async def _adispatch_custom_event_safely(name: str, data: object) -> None:
@@ -79,21 +67,18 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
 class ModelCallGraph(BaseGraph):
 
     system_prompts: PromptBuilder
-    tools: Sequence[BaseTool]
-    additional_context: dict[str, Any]
+    tools: ToolsBuilder
 
     def __init__(
             self,
             *args,
             system_prompts: Prompts | PromptBuilder | None = None,
-            tools: Sequence[BaseTool] | None = None,
+            tools: Tools | ToolsBuilder | None = None,
             **kwargs
         ):
         
         super().__init__(*args, **kwargs)
-        self.tools = tools or tuple[BaseTool]()
-        self.tools_dict = {tool.name: tool for tool in self.tools}
-        self.additional_context = kwargs or {}
+        self.tools = normalize_tools(tools)
         self.system_prompts = normalize_system_prompts(system_prompts)
 
     async def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
@@ -101,10 +86,6 @@ class ModelCallGraph(BaseGraph):
         Tool node. This node is responsible for calling the tool and getting the response.
         It calls the tool with the state.messages and returns the response.
         """
-
-        if not self.tools:
-            logger.warning("No tools provided, skipping tool node.")
-            return state
         
         messages = state.get("messages")
 
@@ -121,6 +102,27 @@ class ModelCallGraph(BaseGraph):
             logger.warning("Last AI message has no tool calls, skipping tool node.")
             return state
 
+        try:
+            tools = await resolve_tools(self.tools, self.get_runtime(state))
+        except Exception as e:
+            logger.error(f"Error resolving tools: {e}")
+            results = [
+                ToolMessage(
+                    content=f"Error resolving tools: {e}",
+                    tool_call_id=tool_call.get("id") or "",
+                    name=tool_call["name"],
+                    status="error",
+                )
+                for tool_call in tool_calls
+            ]
+            return BaseAgentState(messages=results) # type: ignore
+
+        if not tools:
+            logger.warning("No tools provided, skipping tool node.")
+            return state
+
+        tools_dict: dict[str, BaseTool] = {tool.name: tool for tool in tools}
+
         async def _call_tool(tool_call: ToolCall) -> ToolMessage:
             name = tool_call["name"]
             args = tool_call["args"]
@@ -128,7 +130,7 @@ class ModelCallGraph(BaseGraph):
 
             logger.debug(f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})")
 
-            if name not in self.tools_dict:
+            if name not in tools_dict:
                 logger.debug(f"Tool {name} not found in provided tools.")
                 return ToolMessage(
                     content=f"Tool {name} not found. Please check if you called the correct tool.",
@@ -138,7 +140,7 @@ class ModelCallGraph(BaseGraph):
             )
             
             try:
-                result = await self.tools_dict[name].ainvoke(tool_call)
+                result = await tools_dict[name].ainvoke(tool_call)
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
                 await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(
@@ -166,17 +168,20 @@ class ModelCallGraph(BaseGraph):
         results = await asyncio.gather(*(_call_tool(tool_call) for tool_call in tool_calls))
         return BaseAgentState(messages=list(results))
 
-    def _model_call_node(self, state: BaseAgentState) -> BaseAgentState:
+    async def _model_call_node(self, state: BaseAgentState) -> BaseAgentState:
         """
         Model call node. This node is responsible for calling the model and getting the response.
         It switchs the model based on the state.model and calls the model with the state.messages.
         """
         
         try:
+            tools = await resolve_tools(self.tools, self.get_runtime(state))
+            system_prompts = self.system_prompts(self.get_runtime(state))
+            
             model_selection = state.get('model')
             if callable(model_selection):
                 model_selection = model_selection(state=state)
-            model = load_chat_model(model_selection).bind_tools(self.tools)
+            model = load_chat_model(model_selection).bind_tools(tools)
         except Exception as e:
             logger.error(f"Error loading model: {e}")
             resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Error loading model: {e}"))
@@ -188,26 +193,19 @@ class ModelCallGraph(BaseGraph):
                 try:
                     started_at = perf_counter()
 
-                    runtime = Runtime(
-                        state=state,
-                        tools=self.tools,
-                        additional_context=self.additional_context
-                    )
-                    system_prompts = self.system_prompts(runtime)
-
                     #logger.debug(f"Invoking model with system prompts '{system_prompts}' and messages:\n{state.get('messages')}")
 
-                    response = model.invoke(system_prompts + state.get('messages', []))
+                    response = await model.ainvoke(system_prompts + state.get('messages', [])) # type: ignore
 
                     duration_ms = max(0, round((perf_counter() - started_at) * 1000))
                     if _record_reasoning_duration(response, duration_ms):
-                        _dispatch_custom_event_safely(
+                        await _adispatch_custom_event_safely(
                             "on_reasoning_done",
                             {"duration_ms": duration_ms},
                         )
                     return BaseAgentState(messages=[response])
                 except Exception as e:
-                    _dispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
+                    await _adispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
                         error=str(e),
                         attempt=_+1,
                         max_attempts=max_retries
@@ -264,8 +262,5 @@ class ModelCallGraph(BaseGraph):
         return graph
 
 __all__ = [
-    "ModelCallGraph",
-    "SystemPrompts",
-    "CallbackPrompts"
-    "Runtime"
+    "ModelCallGraph"
 ]

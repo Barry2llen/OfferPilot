@@ -4,7 +4,6 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.types import Command
@@ -362,8 +361,7 @@ async def chat(
     }
 
     try:
-        final_state = await run_in_threadpool(
-            request.app.state.supervisor_agent.invoke,
+        final_state = await request.app.state.supervisor_agent.ainvoke(
             state,
             _agent_config(
                 thread_id,

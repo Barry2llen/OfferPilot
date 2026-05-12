@@ -1,6 +1,8 @@
 import asyncio
 from typing import Any
 
+import pytest
+
 from agent.base import BaseWorkflow
 from schemas.config import Config
 
@@ -8,11 +10,16 @@ from schemas.config import Config
 class FakeCompiledGraph:
     def __init__(self) -> None:
         self.invoke_calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        self.ainvoke_calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
         self.stream_calls: list[tuple[dict[str, Any], dict[str, Any], str]] = []
 
     def invoke(self, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         self.invoke_calls.append((state, config))
         return {"result": "sync"}
+
+    async def ainvoke(self, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+        self.ainvoke_calls.append((state, config))
+        return {"result": "async"}
 
     async def astream_events(
         self,
@@ -45,12 +52,20 @@ class FakeWorkflow(BaseWorkflow[str, dict[str, Any]]):
         return str(state["result"])
 
 
-def test_base_workflow_passes_graph_recursion_limit_to_invoke() -> None:
+def test_base_workflow_rejects_sync_invoke() -> None:
     graph = FakeCompiledGraph()
     workflow = FakeWorkflow(FakeAgent(Config(graph_recursion_limit=250), graph))
 
-    assert workflow.invoke("hello") == "sync"
-    assert graph.invoke_calls == [
+    with pytest.raises(RuntimeError, match="Synchronous workflow invocation"):
+        workflow.invoke("hello")
+
+
+def test_base_workflow_passes_graph_recursion_limit_to_ainvoke() -> None:
+    graph = FakeCompiledGraph()
+    workflow = FakeWorkflow(FakeAgent(Config(graph_recursion_limit=250), graph))
+
+    assert asyncio.run(workflow.ainvoke("hello")) == "async"
+    assert graph.ainvoke_calls == [
         (
             {"input": "hello"},
             {"recursion_limit": 250},

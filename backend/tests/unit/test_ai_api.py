@@ -71,7 +71,7 @@ def test_ai_chat_endpoint_invokes_supervisor_and_persists_checkpoint(
         seen: list[tuple[dict, dict]] = []
 
         class FakeSupervisorAgent:
-            def invoke(self, state: dict, config: dict) -> dict:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
                 seen.append((state, config))
                 checkpoint = _checkpoint(
                     "00000000000000000000000000000001.0000000000000001",
@@ -121,7 +121,7 @@ def test_ai_chat_endpoint_generates_thread_id_when_missing(
         selection_id = _create_model_selection(client)
 
         class FakeSupervisorAgent:
-            def invoke(self, state: dict, config: dict) -> dict:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
                 assert config["configurable"]["thread_id"]
                 return {"messages": [AIMessage(content="generated thread")]}
 
@@ -151,7 +151,7 @@ def test_ai_chat_endpoint_uses_configured_graph_recursion_limit(
         selection_id = _create_model_selection(client)
 
         class FakeSupervisorAgent:
-            def invoke(self, state: dict, config: dict) -> dict:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
                 seen_configs.append(config)
                 return {"messages": [AIMessage(content="configured limit")]}
 
@@ -184,7 +184,7 @@ def test_ai_chat_endpoint_falls_back_to_reasoning_content_when_content_is_empty(
         selection_id = _create_model_selection(client)
 
         class FakeSupervisorAgent:
-            def invoke(self, state: dict, config: dict) -> dict:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
                 return {
                     "messages": [
                         AIMessage(
@@ -237,7 +237,7 @@ def test_ai_chat_endpoint_returns_structured_multimodal_content(
         selection_id = _create_model_selection(client)
 
         class FakeSupervisorAgent:
-            def invoke(self, state: dict, config: dict) -> dict:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
                 return {"messages": [AIMessage(content=content_blocks)]}
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()

@@ -5,9 +5,10 @@ from typing import (
 )
 from dataclasses import dataclass
 
+from langgraph._internal._typing import StateLike
 from langchain_core.messages import SystemMessage
 
-from ..graphs.base import Runtime
+from ..base import GraphRuntime, BaseAgentState
 
 type Prompts = (
     list[SystemMessage] |
@@ -16,33 +17,33 @@ type Prompts = (
     str                 
 )
 
-class PromptBuilder(Protocol):
-    def __call__(self, runtime: Runtime) -> Prompts: ...
+class PromptBuilder[State: StateLike = BaseAgentState](Protocol):
+    def __call__(self, runtime: GraphRuntime[State]) -> Prompts: ...
 
 @dataclass
-class PromptFragment:
+class PromptFragment[State: StateLike = BaseAgentState]:
     name: str
-    content: str | Callable[[Runtime], str]
-    enabled: bool | Callable[[Runtime], bool] = True
+    content: str | Callable[[GraphRuntime[State]], str]
+    enabled: bool | Callable[[GraphRuntime[State]], bool] = True
 
-    def is_enabled(self, runtime: Runtime) -> bool:
+    def is_enabled(self, runtime: GraphRuntime[State]) -> bool:
         if callable(self.enabled):
             return self.enabled(runtime)
         return self.enabled
     
-    def raw_content(self, runtime: Runtime) -> str:
+    def raw_content(self, runtime: GraphRuntime[State]) -> str:
         if callable(self.content):
             return self.content(runtime)
         return self.content
     
-    def to_message(self, runtime: Runtime) -> SystemMessage:
+    def to_message(self, runtime: GraphRuntime[State]) -> SystemMessage:
         return SystemMessage(content=self.raw_content(runtime).strip())
 
-class PromptComposer:
-    def __init__(self, fragments: list[PromptFragment]):
+class PromptComposer[State: StateLike = BaseAgentState]:
+    def __init__(self, fragments: list[PromptFragment[State]]):
         self.fragments = fragments
 
-    def __call__(self, runtime: Runtime) -> list[SystemMessage]:
+    def __call__(self, runtime: GraphRuntime[State]) -> list[SystemMessage]:
         
         prompt = "\n\n".join(
             f"{fragment.name.title()}:\n{fragment.raw_content(runtime).strip()}"
@@ -52,12 +53,12 @@ class PromptComposer:
 
         return [SystemMessage(content=prompt)]
     
-def default_system_prompt_builder(runtime: Runtime) -> list[SystemMessage]:
+def default_system_prompt_builder[State: StateLike = BaseAgentState](runtime: GraphRuntime[State]) -> list[SystemMessage]:
     return []
 
-def normalize_system_prompts(
-    system_prompts: Prompts | PromptBuilder | None,
-) -> PromptBuilder:
+def normalize_system_prompts[State: StateLike = BaseAgentState](
+    system_prompts: Prompts | PromptBuilder[State] | None,
+) -> PromptBuilder[State]:
     if system_prompts is None:
         return lambda runtime: []
 
