@@ -7,32 +7,33 @@ from langchain_core.tools import BaseTool
 
 from agent.graphs.model_call import ModelCallGraph
 from schemas.config import Config
+from ...prompts import PromptComposer, PromptFragment
 from .state import State, BaseAgentState
 from ...base import BaseAgent
 from ...graphs.model_call import Runtime
 
-def _dynamic_system_prompt(runtime: Runtime) -> list[SystemMessage]:
-
-    import datetime
+def _metadata(runtime: Runtime) -> list[SystemMessage]:
 
     def _get_model_name(state: BaseAgentState) -> str:
         model_selection = state.get("model")
         model = model_selection() if callable(model_selection) else model_selection
         return model.model_name if model else "unknown"
 
+    return (
+        f"Today is {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}."
+        f"You are called as '{_get_model_name(runtime.state)}' in OfferPilot's agent framework."
+    )
 
-    return [
-        SystemMessage(
-            content = (
-                "You are a helpful assistant."
-                "\n"
-                "Metadata:"
-                f"Today is {datetime.datetime.now().strftime('%Y-%m-%d')}."
-                f"You are called as '{_get_model_name(runtime.state)}' in OfferPilot's agent framework."
-                f"You have access to the following tools: {', '.join(tool.name for tool in runtime.tools)}."
-            )
-        )
-    ]
+_system_prompt = PromptComposer([
+    PromptFragment(
+        name="Instructions",
+        content="You are a helpful assistant.",
+    ),
+    PromptFragment(
+        name="Metadata",
+        content=_metadata,
+    )
+])
 
 class SupervisorAgent(BaseAgent[State]):
 
@@ -46,7 +47,7 @@ class SupervisorAgent(BaseAgent[State]):
         super().__init__(*args, **kwargs)
         self.tools = tuple(tools or ())
         self._model_call_node = ModelCallGraph(
-            system_prompts=_dynamic_system_prompt,
+            system_prompts=_system_prompt,
             config=config,
             tools=self.tools,
         ).get_compiled_graph()

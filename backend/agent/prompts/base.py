@@ -45,7 +45,7 @@ class PromptComposer:
     def __call__(self, runtime: Runtime) -> list[SystemMessage]:
         
         prompt = "\n".join(
-            f"{fragment.name}:\n{fragment.raw_content(runtime).strip()}"
+            f"{fragment.name.title()}:\n{fragment.raw_content(runtime).strip()}"
             for fragment in self.fragments
             if fragment.is_enabled(runtime)
         )
