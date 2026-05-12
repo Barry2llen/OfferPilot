@@ -183,9 +183,8 @@ class ModelCallGraph(BaseGraph):
                 model_selection = model_selection(state=state)
             model = load_chat_model(model_selection).bind_tools(tools)
         except Exception as e:
-            logger.error(f"Error loading model: {e}")
-            resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Error loading model: {e}"))
-            return BaseAgentState()
+            logger.error(f"Error loading model:\n{e}")
+            raise e
         
         while True:
             max_retries = self.config.model_call_retry_attempts

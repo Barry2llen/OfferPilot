@@ -42,7 +42,7 @@ class SupervisorAgent(BaseAgent[State]):
         tools: Sequence[BaseTool] | None = None,
         **kwargs,
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, config=config, **kwargs)
         self.tools = tuple(tools or ())
         self._model_call_node = ModelCallGraph(
             *args,
