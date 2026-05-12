@@ -181,8 +181,8 @@ async def get_web_search_tools(
             pattern = re.compile(link_regex)
             for result in response.results:
                 if result.extras:
-                    links = result.extras.get("links", [])
-                    filtered_links = [link for link in links if pattern.search(link)]
+                    searched_links: list[str] = result.extras.get("links", [])
+                    filtered_links = [link for link in searched_links if pattern.search(link)]
                     result.extras = {**result.extras, "links": filtered_links}
 
         return _optimize_search_response(

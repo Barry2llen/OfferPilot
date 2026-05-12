@@ -48,7 +48,7 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
             **kwargs,
         )
         return RunnableLambda(
-            lambda input_: self._prepend_json_output_instruction(input_, schema)
+            lambda input_: self._prepend_json_output_instruction(input_, schema) # type: ignore
         ) | structured_model
 
     def _get_request_payload(

@@ -4,15 +4,18 @@ from typing import override
 
 from langgraph.types import interrupt
 from langgraph.constants import START, END
-from langgraph.graph.state import StateGraph
+from langgraph.graph.state import Runnable, StateGraph
 from langchain.messages import HumanMessage, SystemMessage
+from langchain_core.language_models import LanguageModelInput
 from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
+from schemas.resume_document import ResumeDocument
 from exceptions.agent import ModelCallExecutionError
 from utils.logger import logger
 from schemas.command import BaseCommand
 from exceptions.resume import ResumePreviewConversionError
 from exceptions.validation import ValidationError
+from schemas.model_selection import ModelSelection
 from schemas.resume import (
     Resume,
     ResumeFact,
@@ -26,6 +29,7 @@ from .prompt import (
     section_extraction_system_prompt,
     facts_extraction_system_prompt
 )
+from ...annotations.types import MaybeCallable
 from .state import State
 from .model import TextValidation
 from ...events import ModelCallErrorEvent, ProgressUpdateEvent
@@ -69,8 +73,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
             message="Starting resume extraction.",
         ))
 
-        model_selection = state['model'](state) if callable(state['model']) else state['model']
-        resume_document = state["resume_document"]
+        model: MaybeCallable[ModelSelection] = state.get('model') # type: ignore
+        model_selection = model(state) if callable(model) else model
+        resume_document: ResumeDocument = state.get('resume_document') # type: ignore
 
         try:
             resume_text = resume_document.extract_text()
@@ -95,7 +100,10 @@ class ResumeExtractorAgent(BaseAgent[State]):
             raise ResumePreviewConversionError(f"Failed to convert resume to image: {e}")
         
         # Check text extraction result.
-        validator = load_chat_model(model_selection).with_structured_output(TextValidation)
+        validator: Runnable[LanguageModelInput, TextValidation] = (
+            load_chat_model(model_selection).with_structured_output(TextValidation)
+        ) # type: ignore
+        
         while True:
             flag = False
             max_retries = self.config.model_call_retry_attempts
@@ -181,8 +189,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
         Extract sections from the resume text.
         """
 
-        model_selection = state['model'](state) if callable(state['model']) else state['model']
-        resume_text = state['resume_text']
+        model: MaybeCallable[ModelSelection] = state.get('model') # type: ignore
+        model_selection = model(state) if callable(model) else model
+        resume_text: str = state.get('resume_text') # type: ignore
 
         logger.debug("Extracting sections from the resume text.")
         _dispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
@@ -190,7 +199,10 @@ class ResumeExtractorAgent(BaseAgent[State]):
             message="Extracting resume sections.",
         ))
 
-        extractor = load_chat_model(model_selection).with_structured_output(ResumeSections)
+        extractor: Runnable[LanguageModelInput, ResumeSections] = (
+            load_chat_model(model_selection).with_structured_output(ResumeSections)
+        ) # type: ignore
+
         while True:
             flag = False
             max_retries = self.config.model_call_retry_attempts
@@ -250,11 +262,14 @@ class ResumeExtractorAgent(BaseAgent[State]):
 
         logger.debug("Extracting facts from each resume section.")
 
-        model_selection = state['model'](state) if callable(state['model']) else state['model']
-        sections = state['sections']
+        model: MaybeCallable[ModelSelection] = state.get('model') # type: ignore
+        model_selection = model(state) if callable(model) else model
+        sections: list[ResumeSectionEx] = state.get('sections') # type: ignore
         total_sections = len(sections)
         sections_with_facts = []
-        extractor = load_chat_model(model_selection).with_structured_output(ResumeFacts)
+        extractor: Runnable[LanguageModelInput, ResumeFacts] = (
+            load_chat_model(model_selection).with_structured_output(ResumeFacts)
+        ) # type: ignore
         await _adispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
             progress=0.6,
             message="Extracting facts from resume sections.",
@@ -337,8 +352,8 @@ class ResumeExtractorAgent(BaseAgent[State]):
                     ))
                     return State(
                         resume=Resume(
-                            raw_text=state['resume_text'],
-                            document=state['resume_document'],
+                            raw_text=state.get('resume_text'), # type: ignore
+                            document=state.get('resume_document'), # type: ignore
                             sections=sections_with_facts
                         )
                     )
