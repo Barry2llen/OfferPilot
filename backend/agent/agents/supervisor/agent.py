@@ -20,7 +20,7 @@ def _metadata(runtime: Runtime) -> list[SystemMessage]:
         return model.model_name if model else "unknown"
 
     return (
-        f"Today is {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}."
+        f"Today is {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}.\n"
         f"You are called as '{_get_model_name(runtime.state)}' in OfferPilot's agent framework."
     )
 
