@@ -1,6 +1,6 @@
 from typing import (
     Annotated,
-    Protocol
+    Callable
 )
 
 from .reducers import (
@@ -9,9 +9,7 @@ from .reducers import (
 
 type Displace[T] = Annotated[T, update_if_not_none]
 
-class MaybeCallable[T](Protocol):
-    def __call__(self, *args, **kwargs) -> T: ...
-    def __get__(self, instance, owner) -> T: ...
+type MaybeCallable[T] = T | Callable[..., T]
 
 __all__ = [
     "Displace",
