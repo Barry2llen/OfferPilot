@@ -107,7 +107,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               collapsed ? "h-0 opacity-0" : "h-auto opacity-100"
             }`}
           >
-            OfferPilot v0.1
+            OfferPilot v0.0.2
           </p>
           <button
             onClick={onToggle}
