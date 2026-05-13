@@ -56,13 +56,20 @@ def temporary_resume_upload_dir(workspace_tmp_dir: Path) -> Path:
 
 
 @pytest.fixture
+def temporary_chat_file_upload_dir(workspace_tmp_dir: Path) -> Path:
+    return workspace_tmp_dir / "chat-files"
+
+
+@pytest.fixture
 def temporary_app_config(
     temporary_sqlite_config: SQLiteDatabaseConfig,
     temporary_resume_upload_dir: Path,
+    temporary_chat_file_upload_dir: Path,
 ) -> Config:
     return Config(
         database=temporary_sqlite_config,
         resume_upload_dir=str(temporary_resume_upload_dir),
+        chat_file_upload_dir=str(temporary_chat_file_upload_dir),
     )
 
 

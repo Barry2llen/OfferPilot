@@ -2,14 +2,39 @@
 
 import { useState, useRef, useEffect } from "react";
 import Button from "@/app/components/ui/button";
+import { useToast } from "@/app/components/ui/toast";
+import ChatAttachmentCard, {
+  isAttachmentImage,
+} from "@/app/components/chat/chat-attachment-card";
+import {
+  chatFilesApi,
+  CHAT_ATTACHMENT_ACCEPT,
+  isSupportedChatAttachment,
+} from "@/app/lib/api/chat-files";
+import type { ChatFileListItem } from "@/app/lib/api/types";
+import type { ChatAttachmentItem } from "@/app/hooks/use-chat-stream";
+
+interface LocalUploadItem {
+  key: string;
+  file: File;
+  previewUrl?: string;
+}
+
+export interface ChatComposerPayload {
+  prompt: string;
+  localFiles: File[];
+  fileIds: string[];
+  draftAttachments: ChatAttachmentItem[];
+}
 
 interface ChatInputProps {
-  onSend: (prompt: string) => void;
+  onSend: (payload: ChatComposerPayload, onAccepted: () => void) => void;
   onStop: () => void;
   onRetry: () => void;
   isStreaming: boolean;
   isInterrupted: boolean;
   disabled: boolean;
+  noticeMessage?: string | null;
 }
 
 export default function ChatInput({
@@ -19,9 +44,22 @@ export default function ChatInput({
   isStreaming,
   isInterrupted,
   disabled,
+  noticeMessage = null,
 }: ChatInputProps) {
+  const { addToast } = useToast();
   const [input, setInput] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [libraryFiles, setLibraryFiles] = useState<ChatFileListItem[]>([]);
+  const [selectedLibraryFiles, setSelectedLibraryFiles] = useState<ChatFileListItem[]>([]);
+  const [localUploads, setLocalUploads] = useState<LocalUploadItem[]>([]);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentMenuRef = useRef<HTMLDivElement>(null);
+  const uploadIdRef = useRef(0);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -31,11 +69,77 @@ export default function ChatInput({
     }
   }, [input]);
 
+  useEffect(() => {
+    if (!attachmentMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!attachmentMenuRef.current?.contains(event.target as Node)) {
+        setAttachmentMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAttachmentMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [attachmentMenuOpen]);
+
+  const buildDraftAttachments = (): ChatAttachmentItem[] => [
+    ...selectedLibraryFiles.map((file) => ({
+      fileId: file.id,
+      originalFilename: file.original_filename,
+      mediaType: file.media_type,
+      injectionMode: null,
+      pending: false,
+      rawUrl: chatFilesApi.rawUrl(file.id),
+      sizeBytes: file.size_bytes,
+    })),
+    ...localUploads.map((item) => ({
+      fileId: null,
+      originalFilename: item.file.name,
+      mediaType: item.file.type || null,
+      injectionMode: null,
+      pending: true,
+      previewUrl: item.previewUrl,
+      sizeBytes: item.file.size,
+    })),
+  ];
+
+  const resetDraft = () => {
+    setInput("");
+    setSelectedLibraryFiles([]);
+    setLocalUploads([]);
+    setAttachmentMenuOpen(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleSend = () => {
     const trimmed = input.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed);
-    setInput("");
+    if (
+      (!trimmed && localUploads.length === 0 && selectedLibraryFiles.length === 0) ||
+      disabled
+    ) {
+      return;
+    }
+    onSend(
+      {
+        prompt: trimmed,
+        localFiles: localUploads.map((item) => item.file),
+        fileIds: selectedLibraryFiles.map((file) => file.id),
+        draftAttachments: buildDraftAttachments(),
+      },
+      resetDraft
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -45,11 +149,175 @@ export default function ChatInput({
     }
   };
 
+  const loadLibraryFiles = async () => {
+    setPickerLoading(true);
+    setPickerError(null);
+    try {
+      const data = await chatFilesApi.list();
+      setLibraryFiles(data);
+    } catch (error: unknown) {
+      setPickerError(error instanceof Error ? error.message : "加载文件库失败");
+    } finally {
+      setPickerLoading(false);
+    }
+  };
+
+  const openPicker = async () => {
+    setAttachmentMenuOpen(false);
+    setPickerOpen(true);
+    await loadLibraryFiles();
+  };
+
+  const openLocalFileDialog = () => {
+    setAttachmentMenuOpen(false);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const pickedFiles = Array.from(event.target.files ?? []);
+    const supported: LocalUploadItem[] = [];
+
+    for (const file of pickedFiles) {
+      if (!isSupportedChatAttachment(file)) {
+        addToast(`不支持的附件类型：${file.name}`, "warning");
+        continue;
+      }
+      uploadIdRef.current += 1;
+      supported.push({
+        key: `upload-${uploadIdRef.current}`,
+        file,
+        previewUrl: isAttachmentImage(file.name, file.type)
+          ? URL.createObjectURL(file)
+          : undefined,
+      });
+    }
+
+    if (supported.length > 0) {
+      setLocalUploads((prev) => [...prev, ...supported]);
+    }
+
+    event.target.value = "";
+  };
+
+  const removeLibraryFile = (fileId: string) => {
+    setSelectedLibraryFiles((prev) => prev.filter((item) => item.id !== fileId));
+  };
+
+  const removeLocalUpload = (uploadKey: string) => {
+    setLocalUploads((prev) => {
+      const target = prev.find((upload) => upload.key === uploadKey);
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((upload) => upload.key !== uploadKey);
+    });
+  };
+
+  const filteredLibraryFiles = libraryFiles.filter((file) => {
+    const query = pickerQuery.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+    return (
+      file.id.toLowerCase().includes(query) ||
+      file.original_filename.toLowerCase().includes(query)
+    );
+  });
+
+  const selectedLibraryIds = new Set(selectedLibraryFiles.map((file) => file.id));
+  const hasDraftAttachments =
+    selectedLibraryFiles.length > 0 || localUploads.length > 0;
+  const canSend = Boolean(input.trim() || hasDraftAttachments) && !disabled;
+
   return (
     <div className="shrink-0 bg-gradient-to-t from-white via-white to-white/75 px-4 pb-5 pt-3 sm:px-6">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={CHAT_ATTACHMENT_ACCEPT}
+        className="hidden"
+        onChange={handleFileSelection}
+      />
+
       <div className="mx-auto w-full max-w-3xl">
+        {(selectedLibraryFiles.length > 0 || localUploads.length > 0) && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {selectedLibraryFiles.map((file) => (
+              <ChatAttachmentCard
+                key={file.id}
+                attachment={{
+                  fileId: file.id,
+                  originalFilename: file.original_filename,
+                  mediaType: file.media_type,
+                  rawUrl: chatFilesApi.rawUrl(file.id),
+                  sizeBytes: file.size_bytes,
+                }}
+                variant="composer"
+                onRemove={() => removeLibraryFile(file.id)}
+              />
+            ))}
+            {localUploads.map((item) => (
+              <ChatAttachmentCard
+                key={item.key}
+                attachment={{
+                  fileId: null,
+                  originalFilename: item.file.name,
+                  mediaType: item.file.type || null,
+                  pending: true,
+                  previewUrl: item.previewUrl,
+                  sizeBytes: item.file.size,
+                }}
+                variant="composer"
+                onRemove={() => removeLocalUpload(item.key)}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="rounded-3xl bg-white p-2 shadow-[0_14px_40px_rgba(15,23,42,0.12)] transition-shadow focus-within:shadow-[0_0_0_2px_rgba(20,86,240,0.15),0_14px_40px_rgba(44,30,116,0.16)]">
           <div className="flex items-end gap-3 rounded-[1.25rem] bg-surface-secondary/80 p-2 pl-4">
+            <div ref={attachmentMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setAttachmentMenuOpen((open) => !open)}
+                disabled={disabled || isStreaming}
+                className="rounded-full bg-white p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40"
+                title="添加附件"
+                aria-label="添加附件"
+                aria-expanded={attachmentMenuOpen}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
+                </svg>
+              </button>
+
+              {attachmentMenuOpen && (
+                <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-48 overflow-hidden rounded-2xl border border-border-light bg-white p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]">
+                  <button
+                    type="button"
+                    onClick={openLocalFileDialog}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
+                  >
+                    <svg className="h-4 w-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16V4m0 0l-4 4m4-4l4 4M4 16.5A2.5 2.5 0 006.5 19h11a2.5 2.5 0 002.5-2.5" />
+                    </svg>
+                    <span>上传文件</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openPicker}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
+                  >
+                    <svg className="h-4 w-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V7z" />
+                    </svg>
+                    <span>从文件库选择</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <textarea
               ref={textareaRef}
               value={input}
@@ -62,7 +330,7 @@ export default function ChatInput({
               }
               disabled={disabled}
               rows={1}
-              className="flex-1 bg-transparent resize-none text-sm py-2 focus:outline-none text-text-primary placeholder:text-text-muted disabled:text-text-muted/50"
+              className="flex-1 resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:text-text-muted/50"
             />
             <div className="flex items-center gap-1.5">
               {isStreaming ? (
@@ -70,7 +338,12 @@ export default function ChatInput({
                   停止
                 </Button>
               ) : isInterrupted ? (
-                <Button variant="primary" size="sm" onClick={onRetry} pill>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={onRetry}
+                  pill
+                >
                   重试
                 </Button>
               ) : (
@@ -78,10 +351,10 @@ export default function ChatInput({
                   variant="primary"
                   size="sm"
                   onClick={handleSend}
-                  disabled={!input.trim() || disabled}
+                  disabled={!canSend}
                   pill
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                   </svg>
                 </Button>
@@ -89,10 +362,102 @@ export default function ChatInput({
             </div>
           </div>
         </div>
-        <p className="text-[11px] text-text-muted text-center mt-2">
-          Shift + Enter 换行，Enter 发送
+        <p className="mt-2 text-center text-[11px] text-text-muted">
+          {noticeMessage ? noticeMessage : "Shift + Enter 换行，Enter 发送"}
         </p>
       </div>
+
+      {pickerOpen && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+            onClick={() => setPickerOpen(false)}
+          />
+          <div className="relative flex max-h-[80vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
+            <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
+              <div>
+                <h3 className="font-display text-lg font-semibold text-text-primary">
+                  选择文件库附件
+                </h3>
+                <p className="text-xs text-text-muted">
+                  复用已经上传过的聊天文件
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(false)}
+                className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="border-b border-border-light px-5 py-4">
+              <input
+                value={pickerQuery}
+                onChange={(event) => setPickerQuery(event.target.value)}
+                placeholder="搜索文件名或文件 ID"
+                className="h-10 w-full rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
+              />
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {pickerLoading ? (
+                <p className="py-8 text-center text-sm text-text-muted">正在加载文件库...</p>
+              ) : pickerError ? (
+                <div className="py-8 text-center">
+                  <p className="mb-3 text-sm text-error-text">{pickerError}</p>
+                  <Button variant="secondary" size="sm" onClick={loadLibraryFiles}>
+                    重试
+                  </Button>
+                </div>
+              ) : filteredLibraryFiles.length === 0 ? (
+                <p className="py-8 text-center text-sm text-text-muted">暂无可用文件</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {filteredLibraryFiles.map((file) => {
+                    const selected = selectedLibraryIds.has(file.id);
+                    return (
+                      <ChatAttachmentCard
+                        key={file.id}
+                        onClick={() =>
+                          setSelectedLibraryFiles((prev) =>
+                            selected
+                              ? prev.filter((item) => item.id !== file.id)
+                              : [...prev, file]
+                          )
+                        }
+                        selected={selected}
+                        variant="picker"
+                        attachment={{
+                          fileId: file.id,
+                          originalFilename: file.original_filename,
+                          mediaType: file.media_type,
+                          rawUrl: chatFilesApi.rawUrl(file.id),
+                          sizeBytes: file.size_bytes,
+                          referenceCount: file.reference_count,
+                          createdAt: file.created_at,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border-light px-5 py-4">
+              <span className="text-xs text-text-muted">
+                已选 {selectedLibraryFiles.length} 个文件
+              </span>
+              <Button variant="primary" size="sm" onClick={() => setPickerOpen(false)}>
+                完成
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

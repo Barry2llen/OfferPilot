@@ -4,6 +4,7 @@ database:
   echo: false
 
 resume_upload_dir: "./data/resumes"
+chat_file_upload_dir: "./data/chat_files"
 
 graph_recursion_limit: 100
 

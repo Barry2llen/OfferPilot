@@ -2,10 +2,12 @@
 
 import { useState, useRef, useCallback } from "react";
 import { aiChatApi } from "@/app/lib/api/ai";
+import { chatFilesApi } from "@/app/lib/api/chat-files";
 import { useAppActions } from "@/app/lib/context/app-context";
 import type {
   SSEEvent,
   AIChatHistoryMessage,
+  ChatAttachmentRef,
 } from "@/app/lib/api/types";
 
 export interface ToolCallEntry {
@@ -16,10 +18,29 @@ export interface ToolCallEntry {
   status: "running" | "success" | "error";
 }
 
+export interface ChatAttachmentItem {
+  fileId: string | null;
+  originalFilename: string;
+  mediaType?: string | null;
+  injectionMode?: string | null;
+  pending?: boolean;
+  rawUrl?: string;
+  previewUrl?: string;
+  sizeBytes?: number;
+}
+
+export interface ChatStartOptions {
+  localFiles?: File[];
+  fileIds?: string[];
+  draftAttachments?: ChatAttachmentItem[];
+  onAccepted?: () => void;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool";
   content: string;
+  attachments?: ChatAttachmentItem[];
   reasoning?: string;
   reasoningDurationMs?: number;
   toolCallId?: string;
@@ -145,7 +166,10 @@ function toolCallToMessage(entry: ToolCallEntry, id: string): ChatMessage {
 }
 
 function cloneMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => ({ ...message }));
+  return messages.map((message) => ({
+    ...message,
+    attachments: message.attachments ? [...message.attachments] : undefined,
+  }));
 }
 
 function shouldDisplayHistoryMessage(message: ChatMessage): boolean {
@@ -156,9 +180,133 @@ function shouldDisplayHistoryMessage(message: ChatMessage): boolean {
   return Boolean(message.content.trim() || message.reasoning?.trim());
 }
 
+function normalizeAttachmentRef(
+  attachment: ChatAttachmentRef
+): ChatAttachmentItem {
+  return {
+    fileId: attachment.file_id,
+    originalFilename: attachment.original_filename,
+    mediaType: attachment.media_type,
+    injectionMode: attachment.injection_mode,
+    pending: false,
+    rawUrl: chatFilesApi.rawUrl(attachment.file_id),
+  };
+}
+
+function parseAttachments(value: unknown): ChatAttachmentItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const attachment = item as Partial<ChatAttachmentRef>;
+    if (
+      typeof attachment.file_id !== "string" ||
+      typeof attachment.original_filename !== "string" ||
+      typeof attachment.injection_mode !== "string"
+    ) {
+      return [];
+    }
+    return [
+      normalizeAttachmentRef({
+        file_id: attachment.file_id,
+        original_filename: attachment.original_filename,
+        media_type:
+          typeof attachment.media_type === "string" ? attachment.media_type : null,
+        injection_mode: attachment.injection_mode,
+      }),
+    ];
+  });
+}
+
+function mergeResolvedAttachments(
+  current: ChatAttachmentItem[] | undefined,
+  resolved: ChatAttachmentItem[]
+): ChatAttachmentItem[] {
+  if (!current || current.length === 0) {
+    return resolved;
+  }
+
+  const remaining = [...resolved];
+  const merged: ChatAttachmentItem[] = [];
+
+  for (const item of current) {
+    let matchIndex = -1;
+    if (item.fileId && !item.pending) {
+      matchIndex = remaining.findIndex((candidate) => candidate.fileId === item.fileId);
+    }
+    if (matchIndex < 0) {
+      matchIndex = remaining.findIndex(
+        (candidate) => candidate.originalFilename === item.originalFilename
+      );
+    }
+
+    if (matchIndex >= 0) {
+      merged.push(remaining.splice(matchIndex, 1)[0]);
+    } else {
+      merged.push(item);
+    }
+  }
+
+  return [...merged, ...remaining];
+}
+
+function buildStreamBody(
+  selectionId: number,
+  prompt: string,
+  threadId: string | null | undefined,
+  command: { type: "prompt" | "continue" | "retry"; prompt?: string | null } | undefined,
+  options: ChatStartOptions | undefined
+): FormData | {
+  selection_id: number;
+  prompt?: string | null;
+  thread_id?: string | null;
+  file_ids?: string[];
+  command?: { type: "prompt" | "continue" | "retry"; prompt?: string | null } | null;
+} {
+  const fileIds = options?.fileIds ?? [];
+  const localFiles = options?.localFiles ?? [];
+
+  if (fileIds.length === 0 && localFiles.length === 0) {
+    return {
+      selection_id: selectionId,
+      prompt: command ? (command.prompt ?? null) : prompt,
+      thread_id: threadId ?? null,
+      file_ids: fileIds,
+      command: command ?? null,
+    };
+  }
+
+  const formData = new FormData();
+  formData.append("selection_id", String(selectionId));
+  if (command) {
+    formData.append("command", JSON.stringify(command));
+  }
+  if (command?.prompt ?? prompt) {
+    formData.append("prompt", command?.prompt ?? prompt);
+  }
+  if (threadId) {
+    formData.append("thread_id", threadId);
+  }
+  for (const fileId of fileIds) {
+    formData.append("file_ids", fileId);
+  }
+  for (const file of localFiles) {
+    formData.append("files", file);
+  }
+  return formData;
+}
+
 export function useChatStream() {
-  const { setThreadId, setAgentStatus, bumpChatHistoryVersion } =
-    useAppActions();
+  const {
+    setThreadId,
+    setThreadRequiresImageInput,
+    setAgentStatus,
+    bumpChatHistoryVersion,
+  } = useAppActions();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
@@ -204,7 +352,8 @@ export function useChatStream() {
       selectionId: number,
       prompt: string,
       threadId?: string | null,
-      command?: { type: "prompt" | "continue" | "retry"; prompt?: string | null }
+      command?: { type: "prompt" | "continue" | "retry"; prompt?: string | null },
+      options?: ChatStartOptions
     ) => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -215,19 +364,14 @@ export function useChatStream() {
       setIsStreaming(true);
       setAgentStatus("generating");
 
-      if (!command || command.type === "prompt") {
-        setMessages((prev) => [
-          ...prev,
-          { id: createMessageId("user"), role: "user", content: prompt },
-        ]);
-      }
-
       let accumulatedText = "";
       let accumulatedReasoning = "";
       const currentToolCalls: ToolCallEntry[] = [];
       let currentLiveMessages: ChatMessage[] = [];
       let currentAssistantIndex: number | null = null;
       let visibleAssistantText = "";
+      let userMessageId: string | null = null;
+      let requestAccepted = false;
 
       const publishLiveMessages = () => {
         setLiveMessages([...currentLiveMessages]);
@@ -279,14 +423,37 @@ export function useChatStream() {
         setStreamingReasoning("");
       };
 
+      const body = buildStreamBody(selectionId, prompt, threadId, command, options);
+      const shouldCreateUserMessage = !command || command.type === "prompt";
+
+      if (shouldCreateUserMessage) {
+        const newUserMessageId = createMessageId("user");
+        userMessageId = newUserMessageId;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: newUserMessageId,
+            role: "user",
+            content: prompt,
+            attachments: options?.draftAttachments
+              ? [...options.draftAttachments]
+              : undefined,
+          },
+        ]);
+      }
+
+      const removeOptimisticUserMessage = () => {
+        if (!userMessageId) {
+          return;
+        }
+        setMessages((prev) =>
+          prev.filter((message) => message.id !== userMessageId)
+        );
+      };
+
       try {
         await aiChatApi.streamChat(
-          {
-            selection_id: selectionId,
-            prompt: command ? (command.prompt ?? null) : prompt,
-            thread_id: threadId ?? null,
-            command: command ?? null,
-          },
+          body,
           (event: SSEEvent) => {
             const kind = event.event || event.type;
 
@@ -297,6 +464,30 @@ export function useChatStream() {
                   (event.data as Record<string, unknown>).thread_id;
                 if (typeof tid === "string") {
                   setThreadId(tid);
+                }
+                if (typeof event.data.requires_image_input === "boolean") {
+                  setThreadRequiresImageInput(event.data.requires_image_input);
+                }
+
+                if (userMessageId) {
+                  const resolvedAttachments = parseAttachments(
+                    event.data.resolved_attachments
+                  );
+                  if (resolvedAttachments.length > 0) {
+                    setMessages((prev) =>
+                      prev.map((message) =>
+                        message.id === userMessageId
+                          ? {
+                              ...message,
+                              attachments: mergeResolvedAttachments(
+                                message.attachments,
+                                resolvedAttachments
+                              ),
+                            }
+                          : message
+                      )
+                    );
+                  }
                 }
                 break;
               }
@@ -548,15 +739,24 @@ export function useChatStream() {
               rafIdRef.current = null;
             }
             pendingTokenRef.current = "";
+            if (!requestAccepted) {
+              removeOptimisticUserMessage();
+            }
             setStreamError(error.message);
             setAgentStatus("error");
             setIsStreaming(false);
           },
-          controller.signal
+          controller.signal,
+          () => {
+            requestAccepted = true;
+            options?.onAccepted?.();
+          }
         );
 
         if (!controller.signal.aborted) {
           setIsStreaming(false);
+        } else if (!requestAccepted) {
+          removeOptimisticUserMessage();
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== "AbortError") {
@@ -565,6 +765,9 @@ export function useChatStream() {
             rafIdRef.current = null;
           }
           pendingTokenRef.current = "";
+          if (!requestAccepted) {
+            removeOptimisticUserMessage();
+          }
           setStreamError(err.message);
           setAgentStatus("error");
           setIsStreaming(false);
@@ -576,6 +779,7 @@ export function useChatStream() {
       clearStreamingState,
       setAgentStatus,
       setThreadId,
+      setThreadRequiresImageInput,
       createMessageId,
     ]
   );
@@ -602,16 +806,20 @@ export function useChatStream() {
   const loadHistory = useCallback(
     (historyMessages: AIChatHistoryMessage[]) => {
       const msgs: ChatMessage[] = historyMessages
-        .map((m) => ({
-          id: createMessageId((m.role as ChatMessage["role"]) || "assistant"),
-          role: m.role as ChatMessage["role"],
-          content: formatDisplayContent(m.content),
-          reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
-          reasoningDurationMs: parseDurationMs(m.reasoning_duration_ms),
-          toolCallId: m.tool_call_id ?? undefined,
-          toolName: m.name ?? undefined,
-          toolStatus: m.status ?? undefined,
-          toolOutput: m.role === "tool" ? m.content : undefined,
+        .map((message) => ({
+          id: createMessageId((message.role as ChatMessage["role"]) || "assistant"),
+          role: message.role as ChatMessage["role"],
+          content: formatDisplayContent(message.content),
+          attachments: Array.isArray(message.attachments)
+            ? message.attachments.map(normalizeAttachmentRef)
+            : undefined,
+          reasoning:
+            typeof message.reasoning === "string" ? message.reasoning : undefined,
+          reasoningDurationMs: parseDurationMs(message.reasoning_duration_ms),
+          toolCallId: message.tool_call_id ?? undefined,
+          toolName: message.name ?? undefined,
+          toolStatus: message.status ?? undefined,
+          toolOutput: message.role === "tool" ? message.content : undefined,
         }))
         .filter(shouldDisplayHistoryMessage);
       setMessages(msgs);

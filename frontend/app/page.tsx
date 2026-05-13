@@ -7,13 +7,20 @@ import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
 import { useChatStream } from "@/app/hooks/use-chat-stream";
 import ChatArea from "@/app/components/chat/chat-area";
 import ChatHeader from "@/app/components/chat/chat-header";
-import ChatInput from "@/app/components/chat/chat-input";
+import ChatInput, {
+  type ChatComposerPayload,
+} from "@/app/components/chat/chat-input";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
 
 export default function Home() {
   const { state } = useAppContext();
-  const { setThreadId, setModelSelection, setAgentStatus } = useAppActions();
+  const {
+    setThreadId,
+    setThreadRequiresImageInput,
+    setModelSelection,
+    setAgentStatus,
+  } = useAppActions();
 
   const {
     messages,
@@ -33,6 +40,15 @@ export default function Home() {
   const [models, setModels] = useState<ModelSelectionResponse[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  const currentModel = models.find(
+    (model) => model.id === state.currentModelSelection
+  );
+  const threadModelMismatchMessage =
+    state.currentThreadRequiresImageInput &&
+    currentModel?.supports_image_input === false
+      ? "当前会话包含以图片模式注入的附件，切换到仅文本模型后可能无法正确利用原始图片内容。"
+      : null;
 
   useEffect(() => {
     let mounted = true;
@@ -58,20 +74,40 @@ export default function Home() {
   }, []);
 
   const handleSend = useCallback(
-    (prompt: string) => {
+    (payload: ChatComposerPayload, onAccepted: () => void) => {
       if (!state.currentModelSelection) return;
       if (!state.currentThreadId) {
         clearMessages();
       }
-      startChat(state.currentModelSelection, prompt, state.currentThreadId);
+      startChat(
+        state.currentModelSelection,
+        payload.prompt,
+        state.currentThreadId,
+        undefined,
+        {
+          localFiles: payload.localFiles,
+          fileIds: payload.fileIds,
+          draftAttachments: payload.draftAttachments,
+          onAccepted,
+        }
+      );
     },
-    [state.currentModelSelection, state.currentThreadId, startChat, clearMessages]
+    [
+      clearMessages,
+      startChat,
+      state.currentModelSelection,
+      state.currentThreadId,
+    ]
   );
 
   const handleRetry = useCallback(() => {
     if (!state.currentModelSelection || !state.currentThreadId) return;
     retry(state.currentModelSelection, state.currentThreadId);
-  }, [state.currentModelSelection, state.currentThreadId, retry]);
+  }, [
+    retry,
+    state.currentModelSelection,
+    state.currentThreadId,
+  ]);
 
   const handleSelectThread = useCallback(
     async (threadId: string) => {
@@ -80,22 +116,32 @@ export default function Home() {
         resetStreamingState();
         clearMessages();
         setThreadId(null);
+        setThreadRequiresImageInput(false);
         return;
       }
       setHistoryLoading(true);
       setThreadId(threadId);
       try {
         const history = await aiChatApi.getHistory(threadId);
+        setThreadRequiresImageInput(history.requires_image_input);
         loadHistory(history.messages);
       } catch {
         resetStreamingState();
         clearMessages();
         setThreadId(null);
+        setThreadRequiresImageInput(false);
       } finally {
         setHistoryLoading(false);
       }
     },
-    [clearMessages, loadHistory, resetStreamingState, setThreadId, stopStream]
+    [
+      clearMessages,
+      loadHistory,
+      resetStreamingState,
+      setThreadId,
+      setThreadRequiresImageInput,
+      stopStream,
+    ]
   );
 
   const handleNewChat = useCallback(() => {
@@ -103,12 +149,14 @@ export default function Home() {
     resetStreamingState();
     clearMessages();
     setThreadId(null);
+    setThreadRequiresImageInput(false);
     setAgentStatus("idle");
   }, [
     clearMessages,
     resetStreamingState,
     setAgentStatus,
     setThreadId,
+    setThreadRequiresImageInput,
     stopStream,
   ]);
 
@@ -120,6 +168,13 @@ export default function Home() {
     setSidebarOpen((open) => !open);
   }, []);
 
+  const handleModelChange = useCallback(
+    (id: number | null) => {
+      setModelSelection(id);
+    },
+    [setModelSelection]
+  );
+
   const handleQuickPrompt = useCallback(
     (prompt: string) => {
       if (!state.currentModelSelection) return;
@@ -128,7 +183,12 @@ export default function Home() {
       }
       startChat(state.currentModelSelection, prompt, state.currentThreadId);
     },
-    [state.currentModelSelection, state.currentThreadId, startChat, clearMessages]
+    [
+      clearMessages,
+      startChat,
+      state.currentModelSelection,
+      state.currentThreadId,
+    ]
   );
 
   const hasNoModel = state.currentModelSelection === null;
@@ -154,7 +214,7 @@ export default function Home() {
           modelsLoading={modelsLoading}
           currentModelSelection={state.currentModelSelection}
           isStreaming={isStreaming}
-          onModelChange={setModelSelection}
+          onModelChange={handleModelChange}
         />
 
         <ChatArea
@@ -164,6 +224,7 @@ export default function Home() {
           historyLoading={historyLoading}
           interrupt={interrupt}
           streamError={streamError}
+          threadModelMismatchMessage={threadModelMismatchMessage}
           hasNoModel={hasNoModel}
           onRetry={handleRetry}
           onPrompt={handleQuickPrompt}
@@ -176,6 +237,7 @@ export default function Home() {
           isStreaming={isStreaming}
           isInterrupted={!!interrupt}
           disabled={hasNoModel}
+          noticeMessage={threadModelMismatchMessage}
         />
       </div>
     </div>

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from schemas.chat_file import ChatAttachmentRef
 
 
 class AIChatCommand(BaseModel):
@@ -24,6 +25,7 @@ class AIChatRequest(BaseModel):
                     "selection_id": 1,
                     "prompt": "请帮我总结这份简历的优势。",
                     "thread_id": "conversation-001",
+                    "file_ids": ["A1B2C3"],
                 }
             ]
         }
@@ -33,15 +35,20 @@ class AIChatRequest(BaseModel):
         description="模型选择记录 ID，对应 tb_model_selection.id。",
         examples=[1],
     )
-    prompt: str = Field(
-        min_length=1,
-        description="用户输入的文本消息。",
+    prompt: str | None = Field(
+        default=None,
+        description="用户输入的文本消息。带附件请求可省略，纯文本请求必填。",
         examples=["请帮我总结这份简历的优势。"],
     )
     thread_id: str | None = Field(
         default=None,
         description="会话线程 ID。传入时续聊；省略时由服务端生成。",
         examples=["conversation-001"],
+    )
+    file_ids: list[str] = Field(
+        default_factory=list,
+        description="需要在当前请求中复用的历史文件 ID 列表。",
+        examples=[["A1B2C3"]],
     )
 
 
@@ -106,8 +113,12 @@ class AIChatHistoryMessage(BaseModel):
         examples=["ai"],
     )
     content: Any = Field(
-        description="消息内容。字符串内容会原样返回，复杂内容保持 JSON 可序列化结构。",
+        description="消息内容。用户消息会返回对用户可见的 display_content，隐藏附件正文不会暴露给前端。",
         examples=["这份简历的主要优势是项目经历完整、技术栈清晰。"],
+    )
+    attachments: list[ChatAttachmentRef] | None = Field(
+        default=None,
+        description="用户消息关联的附件列表。仅用户消息存在附件时返回。",
     )
     reasoning: str | None = Field(
         default=None,
@@ -153,6 +164,16 @@ class AIChatHistorySummary(BaseModel):
         description="当前最新 checkpoint 中的消息数量。",
         examples=[2],
     )
+    attachment_count: int = Field(
+        default=0,
+        description="当前线程已关联的唯一附件数量。",
+        examples=[1],
+    )
+    requires_image_input: bool = Field(
+        default=False,
+        description="当前线程是否已包含 image 模式附件，用于前端提示仅文本模型可能无法继续利用原始图片内容。",
+        examples=[True],
+    )
     updated_at: datetime = Field(
         description="会话最新 checkpoint 创建时间。",
         examples=["2026-04-25T20:00:00"],
@@ -170,6 +191,8 @@ class AIChatHistoryListResponse(BaseModel):
                             "title": "请帮我总结这份简历的优势。",
                             "last_message_preview": "这份简历的主要优势是项目经历完整、技术栈清晰。",
                             "message_count": 2,
+                            "attachment_count": 1,
+                            "requires_image_input": True,
                             "updated_at": "2026-04-25T20:00:00",
                         }
                     ],
@@ -202,12 +225,22 @@ class AIChatHistoryDetailResponse(AIChatHistorySummary):
                     "title": "请帮我总结这份简历的优势。",
                     "last_message_preview": "这份简历的主要优势是项目经历完整、技术栈清晰。",
                     "message_count": 2,
+                    "attachment_count": 1,
+                    "requires_image_input": False,
                     "updated_at": "2026-04-25T20:00:00",
                     "messages": [
                         {
                             "role": "user",
                             "type": "human",
                             "content": "请帮我总结这份简历的优势。",
+                            "attachments": [
+                                {
+                                    "file_id": "A1B2C3",
+                                    "original_filename": "resume.pdf",
+                                    "media_type": "application/pdf",
+                                    "injection_mode": "image",
+                                }
+                            ],
                         },
                         {
                             "role": "assistant",
@@ -233,6 +266,7 @@ class AIChatStreamRequest(BaseModel):
                     "selection_id": 1,
                     "prompt": "请帮我总结这份简历的优势。",
                     "thread_id": "conversation-001",
+                    "file_ids": ["A1B2C3"],
                 },
                 {
                     "selection_id": 1,
@@ -249,14 +283,18 @@ class AIChatStreamRequest(BaseModel):
     )
     prompt: str | None = Field(
         default=None,
-        min_length=1,
-        description="用户输入的文本消息。首次流式调用必填；retry 命令可省略。",
+        description="用户输入的文本消息。带附件请求可省略；retry 命令可省略。",
         examples=["请帮我总结这份简历的优势。"],
     )
     thread_id: str | None = Field(
         default=None,
         description="会话线程 ID。retry 命令必须传入上一次中断返回的线程 ID。",
         examples=["conversation-001"],
+    )
+    file_ids: list[str] = Field(
+        default_factory=list,
+        description="需要在当前请求中复用的历史文件 ID 列表。",
+        examples=[["A1B2C3"]],
     )
     command: AIChatCommand | None = Field(
         default=None,
@@ -267,14 +305,10 @@ class AIChatStreamRequest(BaseModel):
     @model_validator(mode="after")
     def validate_stream_command(self) -> "AIChatStreamRequest":
         command_type = self.command.type if self.command else "prompt"
-        command_prompt = self.command.prompt if self.command else None
 
         if command_type == "retry":
             if not self.thread_id:
                 raise ValueError("thread_id is required when command.type is retry")
             return self
-
-        if not (command_prompt or self.prompt):
-            raise ValueError("prompt is required for stream prompt commands")
 
         return self

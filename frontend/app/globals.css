@@ -76,6 +76,48 @@ body {
   padding-top: calc(var(--electron-titlebar-height) + 1.5rem);
 }
 
+.chat-message-enter {
+  animation: chat-message-enter 220ms ease-out both;
+}
+
+.chat-attachment-pending::after {
+  animation: chat-attachment-pulse 1.4s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(59, 130, 246, 0.12),
+    transparent
+  );
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-100%);
+}
+
+@keyframes chat-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes chat-attachment-pulse {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  55%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @media (min-width: 64rem) {
   .electron-titlebar-safe-top {
     padding-top: calc(var(--electron-titlebar-height) + 2rem);

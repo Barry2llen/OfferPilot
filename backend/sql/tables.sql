@@ -26,6 +26,27 @@ CREATE TABLE IF NOT EXISTS tb_chat (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS tb_chat_file (
+    id VARCHAR(6) PRIMARY KEY,
+    storage_path VARCHAR(512) NOT NULL,
+    original_filename VARCHAR(255) NOT NULL,
+    media_type VARCHAR(255),
+    size_bytes INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tb_chat_thread_file (
+    thread_id VARCHAR(255) NOT NULL,
+    file_id VARCHAR(6) NOT NULL,
+    injection_mode VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (thread_id, file_id),
+    FOREIGN KEY (file_id) REFERENCES tb_chat_file(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_tb_chat_thread_file_thread_id
+ON tb_chat_thread_file (thread_id);
+
 CREATE TABLE IF NOT EXISTS tb_resume (
     id INTEGER PRIMARY KEY,
     file_path VARCHAR(512),

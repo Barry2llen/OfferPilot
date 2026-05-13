@@ -1,5 +1,7 @@
 
 from .base import Base
+from .chat_file import ChatFileORM
+from .chat_thread_file import ChatThreadFileORM
 from .chat import ChatORM
 from .graph_checkpoint import (
     GraphCheckpointBlobORM,
@@ -13,6 +15,8 @@ from .resume_extraction import ResumeExtractionORM
 
 __all__ = [
     "Base",
+    "ChatFileORM",
+    "ChatThreadFileORM",
     "ChatORM",
     "GraphCheckpointBlobORM",
     "GraphCheckpointORM",

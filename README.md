@@ -1,6 +1,6 @@
 # OfferPilot
 
-OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Next.js 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、LangGraph checkpoint 会话恢复，以及 Windows 桌面安装包构建。
+OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Next.js 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、聊天附件上传与文件库复用、LangGraph checkpoint 会话恢复，以及 Windows 桌面安装包构建。
 
 ## 项目结构
 
@@ -23,7 +23,8 @@ OfferPilot/
 
 - 简历管理：上传解析、替换解析、列表、详情、删除和原文件预览；支持 PDF、DOCX、PNG、JPG、JPEG。解析任务在后端后台运行，前端路由切换不会中断已开始的解析。
 - 模型配置：维护模型供应商、API Key、Base URL 和具体模型选择；响应不回显 API Key 明文。
-- AI 对话：提供 `/ai/chat` 同步对话和 `/ai/chat/stream` SSE 流式对话。
+- AI 对话：提供 `/ai/chat` 同步对话和 `/ai/chat/stream` SSE 流式对话，支持文本、图片、PDF、DOCX 和常见文本文件附件。
+- 文件库：前端新增“文件库”页面，后端提供 `/ai/files` 系列接口，可查看历史聊天附件并在不同会话中复用。
 - Agent 运行：基于 LangChain/LangGraph，支持工具调用、失败 interrupt/retry 和数据库 checkpoint。
 - 桌面运行：Electron 开发模式自动启动后端和前端，打包后从 Electron resources 启动本地服务。
 
@@ -46,7 +47,7 @@ uv sync
 uv run uvicorn main:app --reload --host 127.0.0.1 --port 8080
 ```
 
-后端默认读取 `backend/config.yaml`。如果需要新建本地配置，可参考 `backend/config.example.yaml`。默认 SQLite 数据库位于 `backend/data/offer_pilot.db`，简历文件位于 `backend/data/resumes`。
+后端默认读取 `backend/config.yaml`。如果需要新建本地配置，可参考 `backend/config.example.yaml`。默认 SQLite 数据库位于 `backend/data/offer_pilot.db`，简历文件位于 `backend/data/resumes`，聊天附件文件位于 `backend/data/chat_files`。
 
 启动后可访问：
 
@@ -126,6 +127,7 @@ npm run build
 
 - `database`：默认 SQLite，路径 `./data/offer_pilot.db`；可切换 PostgreSQL。
 - `resume_upload_dir`：默认 `./data/resumes`。
+- `chat_file_upload_dir`：默认 `./data/chat_files`，用于 AI 对话附件和文件库。
 - `cors`：本地开发默认允许跨域。
 - `exa_api_key`：存在时启用 Exa Web Search 工具；缺失时禁用相关工具。
 - `web_search`、`model_call_retry_attempts`、`graph_recursion_limit`、`debug`：用于 Agent 工具、重试、LangGraph 递归上限和调试行为。
@@ -144,8 +146,9 @@ Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置；首次
 - `/model-selections`：模型选择配置 CRUD。
 - `/ai/chat`：同步 AI 对话。
 - `/ai/chat/stream`：SSE 流式 AI 对话。
+- `/ai/files`：聊天附件文件库列表、详情和原文件查看。
 
-AI 对话流式事件包括 `thread`、`token`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。前端当前也支持展示 `reasoning` 类型事件。
+AI 对话流式事件包括 `thread`、`token`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。前端当前也支持展示 `reasoning` 类型事件。`thread` 事件会额外返回 `resolved_attachments`、`attachment_count` 和 `requires_image_input`，用于前端回填正式文件 ID，并在图片模式附件线程切换到仅文本模型时展示非阻塞提示。
 
 简历上传和替换接口使用 `text/event-stream` 返回解析进度，事件包括 `resume`、`progress`、`model_error`、`final`、`error`，请求必须携带 `selection_id`。SSE 连接断开不代表解析取消，最终结果以列表/详情接口持久化的解析状态为准。
 

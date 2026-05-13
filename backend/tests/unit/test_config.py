@@ -25,6 +25,7 @@ def test_default_config_uses_sqlite() -> None:
     assert config.database.type == "sqlite"
     assert config.database.path == "./data/offer_pilot.db"
     assert config.resume_upload_dir == "./data/resumes"
+    assert config.chat_file_upload_dir == "./data/chat_files"
     assert config.graph_recursion_limit == 100
     assert isinstance(config.cors, CorsConfig)
     assert config.cors.allow_origins == ["*"]
@@ -38,6 +39,7 @@ def test_config_loads_example(sample_config: Config) -> None:
     assert sample_config.database.type == "sqlite"
     assert sample_config.database.path == "./data/offer_pilot.db"
     assert sample_config.resume_upload_dir == "./data/resumes"
+    assert sample_config.chat_file_upload_dir == "./data/chat_files"
     assert sample_config.graph_recursion_limit == 100
     assert sample_config.cors.allow_origins == ["*"]
 

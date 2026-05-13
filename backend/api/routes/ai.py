@@ -1,24 +1,47 @@
 import json
+from dataclasses import dataclass
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
-from fastapi.responses import StreamingResponse
-from langchain_core.messages import BaseMessage, HumanMessage
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, StreamingResponse
+from langchain_core.messages import BaseMessage
 from langgraph.types import Command
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from sqlalchemy.orm import Session
 
-from db.repositories import CheckpointRepository, ModelSelectionRepository
-from exceptions import ChatModelLoadError, ModelCallExecutionError
+from db.repositories import (
+    ChatFileRepository,
+    ChatThreadFileRepository,
+    CheckpointRepository,
+    ModelSelectionRepository,
+)
+from exceptions import (
+    ChatFileNotFoundError,
+    ChatFileProcessingError,
+    ChatModelLoadError,
+    EmptyChatFileContentError,
+    ModelCallExecutionError,
+    ResumeValidationError,
+    UnsupportedChatFileError,
+)
 from schemas.ai import (
+    AIChatCommand,
     AIChatHistoryDetailResponse,
     AIChatHistoryListResponse,
     AIChatRequest,
     AIChatResponse,
     AIChatStreamRequest,
 )
-from services import ChatHistoryService, ModelSelectionService
+from schemas.chat_file import ChatFileDetail, ChatFileListItem
+from services import (
+    ChatFileService,
+    ChatHistoryService,
+    ModelSelectionService,
+    UploadedChatFile,
+)
 from utils.tool_outputs import summarize_tool_output
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -53,6 +76,172 @@ def _get_request_db_session(request: Request) -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+@dataclass(slots=True)
+class ParsedAIChatPayload:
+    selection_id: int
+    prompt: str | None
+    thread_id: str | None
+    command: AIChatCommand | None
+    file_ids: list[str]
+    uploaded_files: list[UploadedChatFile]
+
+
+def _build_chat_file_service(request: Request, session: Session) -> ChatFileService:
+    return ChatFileService(
+        file_repository=ChatFileRepository(session),
+        thread_file_repository=ChatThreadFileRepository(session),
+        upload_dir=request.app.state.config.chat_file_upload_dir,
+    )
+
+
+async def _parse_ai_chat_payload(
+    request: Request,
+    *,
+    stream: bool,
+) -> ParsedAIChatPayload:
+    if not _is_multipart_request(request):
+        return await _parse_json_ai_chat_payload(request, stream=stream)
+    return await _parse_multipart_ai_chat_payload(request, stream=stream)
+
+
+def _is_multipart_request(request: Request) -> bool:
+    content_type = request.headers.get("content-type", "")
+    return content_type.startswith("multipart/form-data")
+
+
+async def _parse_json_ai_chat_payload(
+    request: Request,
+    *,
+    stream: bool,
+) -> ParsedAIChatPayload:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as error:
+        raise RequestValidationError(
+            [{"loc": ("body",), "msg": str(error), "type": "json_invalid"}]
+        ) from error
+
+    try:
+        if stream:
+            payload = AIChatStreamRequest(**body)
+            return ParsedAIChatPayload(
+                selection_id=payload.selection_id,
+                prompt=payload.prompt,
+                thread_id=payload.thread_id,
+                command=payload.command,
+                file_ids=payload.file_ids,
+                uploaded_files=[],
+            )
+
+        payload = AIChatRequest(**body)
+        return ParsedAIChatPayload(
+            selection_id=payload.selection_id,
+            prompt=payload.prompt,
+            thread_id=payload.thread_id,
+            command=None,
+            file_ids=payload.file_ids,
+            uploaded_files=[],
+        )
+    except Exception as error:
+        if isinstance(error, RequestValidationError):
+            raise
+        if hasattr(error, "errors"):
+            raise RequestValidationError(error.errors()) from error  # type: ignore[arg-type]
+        raise
+
+
+async def _parse_multipart_ai_chat_payload(
+    request: Request,
+    *,
+    stream: bool,
+) -> ParsedAIChatPayload:
+    form = await request.form()
+    payload_data: dict[str, Any] = {
+        "selection_id": form.get("selection_id"),
+        "prompt": _none_if_blank(form.get("prompt")),
+        "thread_id": _none_if_blank(form.get("thread_id")),
+        "file_ids": _form_list(form, "file_ids"),
+    }
+
+    command_raw = form.get("command")
+    if isinstance(command_raw, str) and command_raw.strip():
+        try:
+            payload_data["command"] = json.loads(command_raw)
+        except json.JSONDecodeError as error:
+            raise RequestValidationError(
+                [{"loc": ("body", "command"), "msg": str(error), "type": "json_invalid"}]
+            ) from error
+
+    uploaded_files = await _read_uploaded_chat_files(form)
+
+    try:
+        if stream:
+            payload = AIChatStreamRequest(**payload_data)
+            return ParsedAIChatPayload(
+                selection_id=payload.selection_id,
+                prompt=payload.prompt,
+                thread_id=payload.thread_id,
+                command=payload.command,
+                file_ids=payload.file_ids,
+                uploaded_files=uploaded_files,
+            )
+
+        payload = AIChatRequest(**payload_data)
+        return ParsedAIChatPayload(
+            selection_id=payload.selection_id,
+            prompt=payload.prompt,
+            thread_id=payload.thread_id,
+            command=None,
+            file_ids=payload.file_ids,
+            uploaded_files=uploaded_files,
+        )
+    except Exception as error:
+        if hasattr(error, "errors"):
+            raise RequestValidationError(error.errors()) from error  # type: ignore[arg-type]
+        raise
+
+
+def _form_list(form: Any, key: str) -> list[str]:
+    values: list[str] = []
+    for name in (key, f"{key}[]"):
+        for item in form.getlist(name):
+            if isinstance(item, str):
+                normalized = item.strip()
+                if normalized:
+                    values.append(normalized)
+    return values
+
+
+def _none_if_blank(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+async def _read_uploaded_chat_files(form: Any) -> list[UploadedChatFile]:
+    uploaded_files: list[UploadedChatFile] = []
+    for name in ("files", "files[]"):
+        for item in form.getlist(name):
+            if not isinstance(item, StarletteUploadFile):
+                continue
+            uploaded_files.append(
+                UploadedChatFile(
+                    filename=item.filename or "",
+                    content_type=item.content_type,
+                    content=await _read_upload_file(item),
+                )
+            )
+    return uploaded_files
+
+
+async def _read_upload_file(file: StarletteUploadFile) -> bytes:
+    try:
+        return await file.read()
+    finally:
+        await file.close()
 
 
 def _make_thread_id(thread_id: str | None) -> str:
@@ -222,6 +411,29 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
 
 
+def _get_model_selection(selection_id: int, session: Session):
+    selection_service = ModelSelectionService(ModelSelectionRepository(session))
+    selection = selection_service.get_by_id(selection_id)
+    if selection is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model selection not found: {selection_id}",
+        )
+    return selection
+
+
+def _raise_chat_input_error(error: Exception) -> None:
+    if isinstance(error, ChatFileNotFoundError):
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    if isinstance(error, UnsupportedChatFileError):
+        raise HTTPException(status_code=415, detail=str(error)) from error
+    if isinstance(error, (EmptyChatFileContentError, ResumeValidationError)):
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if isinstance(error, ChatFileProcessingError):
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    raise error
+
+
 @router.get(
     "/chats",
     response_model=AIChatHistoryListResponse,
@@ -252,6 +464,7 @@ async def list_chat_histories(
     history_service = ChatHistoryService(
         CheckpointRepository(session),
         request.app.state.checkpointer,
+        ChatThreadFileRepository(session),
     )
     return history_service.list_histories(limit=limit, offset=offset)
 
@@ -281,6 +494,7 @@ async def get_chat_history(
     history_service = ChatHistoryService(
         CheckpointRepository(session),
         request.app.state.checkpointer,
+        ChatThreadFileRepository(session),
     )
     history = history_service.get_history(thread_id)
     if history is None:
@@ -326,41 +540,118 @@ async def delete_chat_history(
             status_code=404,
             detail=f"Chat history not found: {thread_id}",
         )
+    _build_chat_file_service(request, session).delete_thread_attachments(thread_id)
     session.commit()
     return Response(status_code=204)
+
+
+@router.get(
+    "/files",
+    response_model=list[ChatFileListItem],
+    summary="列出聊天文件库",
+    description="返回当前可复用的聊天附件文件列表及其线程引用数量。",
+    response_description="按入库时间倒序返回聊天附件列表。",
+)
+async def list_chat_files(
+    request: Request,
+    session: Session = Depends(_get_request_db_session),
+) -> list[ChatFileListItem]:
+    return _build_chat_file_service(request, session).list_files()
+
+
+@router.get(
+    "/files/{file_id}",
+    response_model=ChatFileDetail,
+    summary="获取聊天文件详情",
+    description="根据聊天文件短 ID 返回文件详情与引用数量。",
+    response_description="返回指定聊天文件详情。",
+    responses={
+        404: _error_response("未找到指定聊天文件。", example="Chat file not found: A1B2C3"),
+    },
+)
+async def get_chat_file(
+    request: Request,
+    file_id: str = Path(
+        ...,
+        description="聊天文件短 ID。",
+        examples=["A1B2C3"],
+    ),
+    session: Session = Depends(_get_request_db_session),
+) -> ChatFileDetail:
+    try:
+        return _build_chat_file_service(request, session).get_file_detail(file_id)
+    except ChatFileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.get(
+    "/files/{file_id}/raw",
+    response_class=FileResponse,
+    summary="查看聊天文件原始内容",
+    description="返回聊天文件原始内容，适用于预览和复用前确认文件。",
+    response_description="返回聊天文件原始文件流。",
+    responses={
+        404: _error_response("未找到指定聊天文件。", example="Chat file not found: A1B2C3"),
+    },
+)
+async def get_chat_file_raw(
+    request: Request,
+    file_id: str = Path(
+        ...,
+        description="聊天文件短 ID。",
+        examples=["A1B2C3"],
+    ),
+    session: Session = Depends(_get_request_db_session),
+) -> FileResponse:
+    try:
+        stored = _build_chat_file_service(request, session).get_file_raw(file_id)
+    except ChatFileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    return FileResponse(
+        path=stored.path,
+        media_type=stored.media_type,
+        filename=stored.filename,
+    )
 
 
 @router.post(
     "/chat",
     response_model=AIChatResponse,
     summary="调用基础 AI 对话",
-    description="使用指定模型选择记录调用 SupervisorAgent，并通过 DatabaseCheckpointer 保存会话状态。",
+    description=(
+        "使用指定模型选择记录调用 SupervisorAgent，并通过 DatabaseCheckpointer 保存会话状态。"
+        "支持纯 JSON 请求，以及带 files[] / file_ids[] 的 multipart 请求。"
+    ),
     response_description="返回 AI 最终回复和本次会话线程 ID。",
     responses={
         404: _error_response("未找到指定模型选择配置。", example="Model selection not found: 1"),
+        415: _error_response("上传了不支持的聊天文件类型。", example="Unsupported chat file type: .exe"),
+        422: _error_response("聊天附件无效或无法处理。", example="Uploaded chat file is empty."),
         502: _error_response("模型加载或调用失败。", example="Model call failed after 3 retries."),
     },
 )
 async def chat(
-    payload: AIChatRequest,
     request: Request,
     session: Session = Depends(_get_request_db_session),
 ) -> AIChatResponse:
-    selection_service = ModelSelectionService(ModelSelectionRepository(session))
-    selection = selection_service.get_by_id(payload.selection_id)
-    if selection is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Model selection not found: {payload.selection_id}",
-        )
-
+    payload = await _parse_ai_chat_payload(request, stream=False)
+    selection = _get_model_selection(payload.selection_id, session)
     thread_id = _make_thread_id(payload.thread_id)
-    state = {
-        "model": selection,
-        "messages": [HumanMessage(content=payload.prompt)],
-    }
-
+    chat_file_service = _build_chat_file_service(request, session)
+    prepared_prompt = None
     try:
+        prepared_prompt = chat_file_service.prepare_prompt(
+            thread_id=thread_id,
+            selection=selection,
+            prompt=payload.prompt or "",
+            file_ids=payload.file_ids,
+            uploaded_files=payload.uploaded_files,
+        )
+        state = {
+            "model": selection,
+            "messages": [prepared_prompt.human_message],
+        }
         final_state = await request.app.state.supervisor_agent.ainvoke(
             state,
             _agent_config(
@@ -368,7 +659,21 @@ async def chat(
                 recursion_limit=request.app.state.config.graph_recursion_limit,
             ),
         )
+        session.commit()
+    except (
+        ChatFileNotFoundError,
+        ChatFileProcessingError,
+        EmptyChatFileContentError,
+        ResumeValidationError,
+        UnsupportedChatFileError,
+    ) as error:
+        session.rollback()
+        _raise_chat_input_error(error)
     except (ChatModelLoadError, ModelCallExecutionError, ValueError) as error:
+        session.rollback()
+        if prepared_prompt is not None:
+            for path in prepared_prompt.created_file_paths:
+                path.unlink(missing_ok=True)
         raise HTTPException(status_code=502, detail=str(error)) from error
 
     return AIChatResponse(
@@ -383,7 +688,8 @@ async def chat(
     description=(
         "使用指定模型选择记录调用 SupervisorAgent，并以 SSE 返回会话线程、工具调用过程、"
         "失败中断和最终回复。首次请求传 prompt；收到 interrupt 后可使用同一 thread_id "
-        "和 command.type=retry 恢复失败节点。"
+        "和 command.type=retry 恢复失败节点。支持纯 JSON 请求，以及带 files[] / file_ids[] "
+        "的 multipart 请求。"
     ),
     response_description="返回 text/event-stream 事件流。",
     responses={
@@ -391,7 +697,8 @@ async def chat(
             "description": (
                 "返回 SSE 事件流。事件包括 thread、token、reasoning、reasoning_done、"
                 "tool_start、tool_end、tool_error、interrupt、final，失败时返回 error。搜索类工具的 tool_end.output "
-                "仅包含前端安全摘要字段 url、title、favicon。"
+                "仅包含前端安全摘要字段 url、title、favicon。thread 事件会额外返回 resolved_attachments、"
+                "attachment_count 和 requires_image_input。"
             ),
             "content": {
                 "text/event-stream": {
@@ -401,38 +708,73 @@ async def chat(
             },
         },
         404: _error_response("未找到指定模型选择配置。", example="Model selection not found: 1"),
+        415: _error_response("上传了不支持的聊天文件类型。", example="Unsupported chat file type: .exe"),
+        422: _error_response("聊天附件无效或无法处理。", example="Uploaded chat file is empty."),
     },
 )
 async def chat_stream(
-    payload: AIChatStreamRequest,
     request: Request,
     session: Session = Depends(_get_request_db_session),
 ) -> StreamingResponse:
-    selection_service = ModelSelectionService(ModelSelectionRepository(session))
-    selection = selection_service.get_by_id(payload.selection_id)
-    if selection is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Model selection not found: {payload.selection_id}",
-        )
+    payload = await _parse_ai_chat_payload(request, stream=True)
+    selection = _get_model_selection(payload.selection_id, session)
 
     command_type = payload.command.type if payload.command else "prompt"
     thread_id = payload.thread_id if command_type == "retry" else _make_thread_id(payload.thread_id)
+    prepared_prompt = None
 
     if command_type == "retry":
         assert payload.command is not None
+        chat_file_service = _build_chat_file_service(request, session)
         agent_input: dict[str, Any] | Command = Command(
             resume=payload.command.model_dump(exclude_none=True)
         )
+        requires_image_input = chat_file_service.thread_requires_image_input(thread_id or "")
+        attachment_count = ChatThreadFileRepository(session).count_by_thread(thread_id or "")
+        resolved_attachments: list[dict[str, Any]] = []
     else:
         prompt = payload.command.prompt if payload.command and payload.command.prompt else payload.prompt
+        chat_file_service = _build_chat_file_service(request, session)
+        try:
+            prepared_prompt = chat_file_service.prepare_prompt(
+                thread_id=thread_id or "",
+                selection=selection,
+                prompt=prompt or "",
+                file_ids=payload.file_ids,
+                uploaded_files=payload.uploaded_files,
+            )
+        except (
+            ChatFileNotFoundError,
+            ChatFileProcessingError,
+            EmptyChatFileContentError,
+            ResumeValidationError,
+            UnsupportedChatFileError,
+        ) as error:
+            session.rollback()
+            _raise_chat_input_error(error)
+
         agent_input = {
             "model": selection,
-            "messages": [HumanMessage(content=prompt or "")],
+            "messages": [prepared_prompt.human_message],
         }
+        requires_image_input = prepared_prompt.requires_image_input
+        attachment_count = prepared_prompt.attachment_count
+        resolved_attachments = [
+            attachment.model_dump(mode="json")
+            for attachment in prepared_prompt.attachments
+        ]
+        session.commit()
 
     async def event_stream() -> AsyncGenerator[str, None]:
-        yield _sse("thread", {"thread_id": thread_id})
+        yield _sse(
+            "thread",
+            {
+                "thread_id": thread_id,
+                "resolved_attachments": resolved_attachments,
+                "attachment_count": attachment_count,
+                "requires_image_input": requires_image_input,
+            },
+        )
         final_state: dict[str, Any] | None = None
         try:
             async for event in request.app.state.supervisor_agent.astream_events(

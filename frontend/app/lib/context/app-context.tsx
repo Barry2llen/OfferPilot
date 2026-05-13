@@ -12,6 +12,7 @@ import type { AgentStatus } from "@/app/lib/api/types";
 interface AppState {
   currentModelSelection: number | null;
   currentThreadId: string | null;
+  currentThreadRequiresImageInput: boolean;
   agentStatus: AgentStatus;
   chatHistoryVersion: number;
 }
@@ -19,12 +20,14 @@ interface AppState {
 type AppAction =
   | { type: "SET_MODEL_SELECTION"; payload: number | null }
   | { type: "SET_THREAD_ID"; payload: string | null }
+  | { type: "SET_THREAD_REQUIRES_IMAGE_INPUT"; payload: boolean }
   | { type: "SET_AGENT_STATUS"; payload: AgentStatus }
   | { type: "BUMP_CHAT_HISTORY_VERSION" };
 
 const initialState: AppState = {
   currentModelSelection: null,
   currentThreadId: null,
+  currentThreadRequiresImageInput: false,
   agentStatus: "idle",
   chatHistoryVersion: 0,
 };
@@ -35,6 +38,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, currentModelSelection: action.payload };
     case "SET_THREAD_ID":
       return { ...state, currentThreadId: action.payload };
+    case "SET_THREAD_REQUIRES_IMAGE_INPUT":
+      return { ...state, currentThreadRequiresImageInput: action.payload };
     case "SET_AGENT_STATUS":
       return { ...state, agentStatus: action.payload };
     case "BUMP_CHAT_HISTORY_VERSION":
@@ -77,6 +82,11 @@ export function useAppActions() {
     ),
     setThreadId: useCallback(
       (id: string | null) => dispatch({ type: "SET_THREAD_ID", payload: id }),
+      [dispatch]
+    ),
+    setThreadRequiresImageInput: useCallback(
+      (value: boolean) =>
+        dispatch({ type: "SET_THREAD_REQUIRES_IMAGE_INPUT", payload: value }),
       [dispatch]
     ),
     setAgentStatus: useCallback(

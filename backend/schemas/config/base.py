@@ -29,6 +29,7 @@ class Config(BaseModel):
     cors: CorsConfig = Field(default_factory=CorsConfig)
 
     resume_upload_dir: str = "./data/resumes"
+    chat_file_upload_dir: str = "./data/chat_files"
 
     debug: bool = False
 

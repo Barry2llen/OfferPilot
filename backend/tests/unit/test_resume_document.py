@@ -130,7 +130,7 @@ def test_convert_docx_raises_dependency_error_when_aspose_missing(
     file_path = workspace_tmp_dir / "resume.docx"
     _create_docx(file_path, ["Jane Doe"])
     monkeypatch.setattr(
-        "schemas.resume_document.import_module",
+        "utils.document_assets.import_module",
         lambda _: (_ for _ in ()).throw(ImportError("missing aspose.words")),
     )
 

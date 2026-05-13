@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -6,24 +7,32 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Too
 from langgraph.types import Command
 
 from agent.tools import get_all_tools
+from db.models import ChatFileORM, ChatThreadFileORM
 from main import create_app
 from schemas.command import BaseCommand
 from schemas.config import Config
 
 
-def _create_model_selection(client: TestClient) -> int:
+def _create_model_selection(
+    client: TestClient,
+    *,
+    provider_name: str = "default-openai",
+    model_name: str = "gpt-4o-mini",
+    supports_image_input: bool = False,
+) -> int:
     provider = client.post(
         "/model-providers",
         json={
             "provider": "OpenAI",
-            "name": "default-openai",
+            "name": provider_name,
         },
     )
     selection = client.post(
         "/model-selections",
         json={
-            "provider_name": "default-openai",
-            "model_name": "gpt-4o-mini",
+            "provider_name": provider_name,
+            "model_name": model_name,
+            "supports_image_input": supports_image_input,
         },
     )
 
@@ -668,6 +677,356 @@ def test_ai_chat_history_delete_endpoint_returns_404_for_missing_thread(
     assert response.json()["detail"] == "Chat history not found: missing-thread"
 
 
+def test_ai_chat_stream_endpoint_accepts_multipart_text_file_and_lists_chat_files(
+    temporary_app_config: Config,
+    workspace_tmp_dir: Path,
+) -> None:
+    app = create_app(temporary_app_config)
+    seen_states: list[dict] = []
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+        file_path = workspace_tmp_dir / "notes.md"
+        file_path.write_text("alpha\nbeta", encoding="utf-8")
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                seen_states.append(state)
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        with file_path.open("rb") as uploaded:
+            response = client.post(
+                "/ai/chat/stream",
+                data={
+                    "selection_id": str(selection_id),
+                    "prompt": "请总结附件",
+                    "thread_id": "thread-text-file",
+                },
+                files={"files": ("notes.md", uploaded, "text/markdown")},
+            )
+
+        files_response = client.get("/ai/files")
+
+    assert response.status_code == 200
+    assert files_response.status_code == 200
+    listed_files = files_response.json()
+    assert len(listed_files) == 1
+    assert listed_files[0]["original_filename"] == "notes.md"
+    assert listed_files[0]["reference_count"] == 1
+    assert '"requires_image_input": false' in response.text
+    assert '"original_filename": "notes.md"' in response.text
+    assert '"injection_mode": "text"' in response.text
+
+    human_message = seen_states[0]["messages"][0]
+    assert human_message.additional_kwargs["display_content"] == "请总结附件"
+    assert human_message.additional_kwargs["attachments"][0]["original_filename"] == "notes.md"
+    assert isinstance(human_message.content, list)
+    assert "notes.md" in human_message.content[0]["text"]
+    assert "alpha" in human_message.content[1]["text"]
+
+
+def test_ai_chat_stream_endpoint_accepts_attachment_without_prompt(
+    temporary_app_config: Config,
+    workspace_tmp_dir: Path,
+) -> None:
+    app = create_app(temporary_app_config)
+    seen_states: list[dict] = []
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+        file_path = workspace_tmp_dir / "attachment-only.md"
+        file_path.write_text("alpha\nbeta", encoding="utf-8")
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                seen_states.append(state)
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        with file_path.open("rb") as uploaded:
+            response = client.post(
+                "/ai/chat/stream",
+                data={
+                    "selection_id": str(selection_id),
+                    "thread_id": "thread-attachment-only",
+                },
+                files={"files": ("attachment-only.md", uploaded, "text/markdown")},
+            )
+
+    assert response.status_code == 200
+    assert '"original_filename": "attachment-only.md"' in response.text
+
+    human_message = seen_states[0]["messages"][0]
+    assert human_message.additional_kwargs["display_content"] == ""
+    assert isinstance(human_message.content, list)
+    assert "请分析这些附件内容。" in human_message.content[0]["text"]
+    assert "attachment-only.md" in human_message.content[0]["text"]
+    assert "alpha" in human_message.content[1]["text"]
+
+
+def test_ai_chat_history_prefers_display_content_and_returns_attachments(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        session = client.app.state.database.get_session_factory()()
+        try:
+            session.add(
+                ChatFileORM(
+                    id="A1B2C3",
+                    storage_path="data/chat_files/a1b2c3.md",
+                    original_filename="notes.md",
+                    media_type="text/markdown",
+                    size_bytes=12,
+                )
+            )
+            session.add(
+                ChatThreadFileORM(
+                    thread_id="thread-display-content",
+                    file_id="A1B2C3",
+                    injection_mode="text",
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(
+                    content=[
+                        {"type": "text", "text": "用户不可见的隐藏附件正文"},
+                    ],
+                    additional_kwargs={
+                        "display_content": "用户可见提问",
+                        "attachments": [
+                            {
+                                "file_id": "A1B2C3",
+                                "original_filename": "notes.md",
+                                "media_type": "text/markdown",
+                                "injection_mode": "text",
+                            }
+                        ],
+                    },
+                ),
+                AIMessage(content="处理完成。"),
+            ],
+        )
+        client.app.state.checkpointer.put(
+            {"configurable": {"thread_id": "thread-display-content"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-display-content", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+
+        response = client.get("/ai/chats/thread-display-content/history")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["attachment_count"] == 1
+    assert payload["requires_image_input"] is False
+    assert payload["messages"][0] == {
+        "role": "user",
+        "type": "human",
+        "content": "用户可见提问",
+        "attachments": [
+            {
+                "file_id": "A1B2C3",
+                "original_filename": "notes.md",
+                "media_type": "text/markdown",
+                "injection_mode": "text",
+            }
+        ],
+    }
+    assert "隐藏附件正文" not in response.text
+
+
+def test_ai_chat_history_delete_endpoint_keeps_reused_files_until_last_thread_deleted(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        upload_dir = Path(temporary_app_config.chat_file_upload_dir)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        stored_path = upload_dir / "shared.txt"
+        stored_path.write_text("shared content", encoding="utf-8")
+
+        session = client.app.state.database.get_session_factory()()
+        try:
+            session.add(
+                ChatFileORM(
+                    id="SHARED",
+                    storage_path=str(stored_path),
+                    original_filename="shared.txt",
+                    media_type="text/plain",
+                    size_bytes=len("shared content"),
+                )
+            )
+            session.add_all(
+                [
+                    ChatThreadFileORM(
+                        thread_id="thread-file-a",
+                        file_id="SHARED",
+                        injection_mode="text",
+                    ),
+                    ChatThreadFileORM(
+                        thread_id="thread-file-b",
+                        file_id="SHARED",
+                        injection_mode="text",
+                    ),
+                ]
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        for thread_id in ("thread-file-a", "thread-file-b"):
+            checkpoint = _message_checkpoint(
+                f"{uuid4().hex}.0000000000000001",
+                [HumanMessage(content=f"会话 {thread_id}")],
+            )
+            client.app.state.checkpointer.put(
+                {"configurable": {"thread_id": thread_id}},
+                checkpoint,
+                {"source": "input", "step": -1, "run_id": f"run-{thread_id}", "parents": {}},
+                checkpoint["channel_versions"],
+            )
+
+        first_delete = client.delete("/ai/chats/thread-file-a")
+        files_after_first_delete = client.get("/ai/files")
+        second_delete = client.delete("/ai/chats/thread-file-b")
+        files_after_second_delete = client.get("/ai/files")
+
+    assert first_delete.status_code == 204
+    assert second_delete.status_code == 204
+    assert files_after_first_delete.status_code == 200
+    assert len(files_after_first_delete.json()) == 1
+    assert files_after_second_delete.status_code == 200
+    assert files_after_second_delete.json() == []
+    assert stored_path.exists() is False
+
+
+def test_ai_chat_endpoints_allow_non_vision_model_when_thread_requires_image_input(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        vision_selection_id = _create_model_selection(
+            client,
+            provider_name="vision-openai",
+            model_name="gpt-4o-vision",
+            supports_image_input=True,
+        )
+        text_selection_id = _create_model_selection(
+            client,
+            provider_name="text-openai",
+            model_name="gpt-4o-text",
+            supports_image_input=False,
+        )
+
+        image_path = Path(temporary_app_config.chat_file_upload_dir)
+        image_path.mkdir(parents=True, exist_ok=True)
+        (image_path / "vision.png").write_bytes(b"fake-png")
+
+        session = client.app.state.database.get_session_factory()()
+        try:
+            session.add(
+                ChatFileORM(
+                    id="IMG001",
+                    storage_path=str(image_path / "vision.png"),
+                    original_filename="vision.png",
+                    media_type="image/png",
+                    size_bytes=8,
+                )
+            )
+            session.add(
+                ChatThreadFileORM(
+                    thread_id="thread-requires-vision",
+                    file_id="IMG001",
+                    injection_mode="image",
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        class FakeSupervisorAgent:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
+                return {"messages": [AIMessage(content="text ok")]}
+
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="vision ok")]}}
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": text_selection_id,
+                "prompt": "继续分析",
+                "thread_id": "thread-requires-vision",
+            },
+        )
+
+        basic_response = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": text_selection_id,
+                "prompt": "继续分析",
+                "thread_id": "thread-requires-vision",
+            },
+        )
+
+        allowed_response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": vision_selection_id,
+                "prompt": "继续分析",
+                "thread_id": "thread-requires-vision",
+            },
+        )
+
+    assert response.status_code == 200
+    assert '"requires_image_input": true' in response.text
+    assert basic_response.status_code == 200
+    assert basic_response.json()["content"] == "text ok"
+    assert allowed_response.status_code == 200
+
+
 def test_ai_chat_endpoint_returns_404_for_missing_selection(
     temporary_app_config: Config,
 ) -> None:
@@ -733,7 +1092,12 @@ def test_ai_chat_stream_endpoint_returns_sse_final_event(
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
-    assert 'event: thread\ndata: {"thread_id": "thread-stream"}' in response.text
+    assert (
+        'event: thread\ndata: {"thread_id": "thread-stream", '
+        '"resolved_attachments": [], "attachment_count": 0, '
+        '"requires_image_input": false}'
+        in response.text
+    )
     assert 'event: token\ndata: {"thread_id": "thread-stream", "content": "streamed "}' in response.text
     assert 'event: token\ndata: {"thread_id": "thread-stream", "content": "response"}' in response.text
     assert 'event: final\ndata: {"thread_id": "thread-stream", "content": "streamed response"}' in response.text

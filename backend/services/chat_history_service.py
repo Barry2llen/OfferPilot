@@ -5,13 +5,14 @@ from langchain_core.messages import BaseMessage
 
 from agent.checkpointers import DatabaseCheckpointer
 from db.models import GraphCheckpointORM
-from db.repositories import CheckpointRepository
+from db.repositories import CheckpointRepository, ChatThreadFileRepository
 from schemas.ai import (
     AIChatHistoryDetailResponse,
     AIChatHistoryListResponse,
     AIChatHistoryMessage,
     AIChatHistorySummary,
 )
+from schemas.chat_file import ChatAttachmentRef
 from utils.tool_outputs import summarize_tool_output
 
 
@@ -29,9 +30,11 @@ class ChatHistoryService:
         self,
         repository: CheckpointRepository,
         checkpointer: DatabaseCheckpointer,
+        thread_file_repository: ChatThreadFileRepository | None = None,
     ) -> None:
         self._repository = repository
         self._checkpointer = checkpointer
+        self._thread_file_repository = thread_file_repository
 
     def list_histories(
         self,
@@ -56,7 +59,7 @@ class ChatHistoryService:
 
         messages = self._get_messages(row.thread_id)
         normalized_messages = _to_history_messages(messages)
-        summary = _build_summary(row, messages)
+        summary = _build_summary(row, messages, self._thread_file_repository)
         return AIChatHistoryDetailResponse(
             **summary.model_dump(),
             messages=normalized_messages,
@@ -71,7 +74,11 @@ class ChatHistoryService:
         return True
 
     def _to_summary(self, row: GraphCheckpointORM) -> AIChatHistorySummary:
-        return _build_summary(row, self._get_messages(row.thread_id))
+        return _build_summary(
+            row,
+            self._get_messages(row.thread_id),
+            self._thread_file_repository,
+        )
 
     def _get_messages(self, thread_id: str) -> list[Any]:
         checkpoint_tuple = self._checkpointer.get_tuple(
@@ -87,7 +94,18 @@ class ChatHistoryService:
 def _build_summary(
     row: GraphCheckpointORM,
     messages: list[Any],
+    thread_file_repository: ChatThreadFileRepository | None = None,
 ) -> AIChatHistorySummary:
+    attachment_count = (
+        thread_file_repository.count_by_thread(row.thread_id)
+        if thread_file_repository is not None
+        else 0
+    )
+    requires_image_input = (
+        thread_file_repository.has_image_mode(row.thread_id)
+        if thread_file_repository is not None
+        else False
+    )
     return AIChatHistorySummary(
         thread_id=row.thread_id,
         title=_build_title(row.thread_id, messages),
@@ -95,6 +113,8 @@ def _build_summary(
         if messages
         else "",
         message_count=len(messages),
+        attachment_count=attachment_count,
+        requires_image_input=requires_image_input,
         updated_at=row.created_at,
     )
 
@@ -119,6 +139,10 @@ def _to_history_message(message: Any) -> AIChatHistoryMessage:
     message_type = _message_type(message)
     message_name = _message_attr(message, "name")
     content = _message_content(message)
+    if message_type == "human":
+        display_content = _message_display_content(message)
+        if display_content is not None:
+            content = display_content
     reasoning = _message_reasoning_content(message)
     if message_type == "ai" and not _has_display_content(content) and reasoning:
         content = ""
@@ -131,6 +155,9 @@ def _to_history_message(message: Any) -> AIChatHistoryMessage:
         "type": message_type,
         "content": _jsonable(content),
     }
+    attachments = _message_attachments(message)
+    if attachments:
+        payload["attachments"] = [item.model_dump(mode="json") for item in attachments]
     if reasoning:
         payload["reasoning"] = reasoning
         reasoning_duration_ms = _message_reasoning_duration_ms(message)
@@ -178,6 +205,37 @@ def _message_reasoning_content(message: Any) -> str:
     return ""
 
 
+def _message_display_content(message: Any) -> str | None:
+    additional_kwargs = _message_attr(message, "additional_kwargs")
+    if not isinstance(additional_kwargs, dict):
+        return None
+
+    display_content = additional_kwargs.get("display_content")
+    if isinstance(display_content, str):
+        return display_content
+    return None
+
+
+def _message_attachments(message: Any) -> list[ChatAttachmentRef]:
+    additional_kwargs = _message_attr(message, "additional_kwargs")
+    if not isinstance(additional_kwargs, dict):
+        return []
+
+    attachments = additional_kwargs.get("attachments")
+    if not isinstance(attachments, list):
+        return []
+
+    normalized: list[ChatAttachmentRef] = []
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        try:
+            normalized.append(ChatAttachmentRef(**attachment))
+        except Exception:
+            continue
+    return normalized
+
+
 def _message_reasoning_duration_ms(message: Any) -> int | None:
     additional_kwargs = _message_attr(message, "additional_kwargs")
     if not isinstance(additional_kwargs, dict):
@@ -202,6 +260,10 @@ def _has_display_content(content: Any) -> bool:
 
 
 def _message_text(message: Any) -> str:
+    display_content = _message_display_content(message)
+    if display_content is not None:
+        return display_content
+
     content = _message_content(message)
     text = _content_text(content)
     if text:

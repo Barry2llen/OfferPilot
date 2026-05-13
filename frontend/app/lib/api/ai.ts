@@ -32,28 +32,31 @@ export const aiChatApi = {
     }),
 
   streamChat: (
-    body: AIChatStreamRequest,
+    body: AIChatStreamRequest | FormData,
     onEvent: (event: SSEEvent) => void,
     onError?: (error: Error) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onOpen?: () => void
   ): Promise<void> => {
     const url = apiUrl("/ai/chat/stream");
-    return streamSSE(url, body, onEvent, onError, signal);
+    return streamSSE(url, body, onEvent, onError, signal, onOpen);
   },
 };
 
 async function streamSSE(
   url: string,
-  body: AIChatStreamRequest,
+  body: AIChatStreamRequest | FormData,
   onEvent: (event: SSEEvent) => void,
   onError?: (error: Error) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onOpen?: () => void
 ): Promise<void> {
   try {
+    const isFormData = body instanceof FormData;
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: isFormData ? undefined : { "Content-Type": "application/json" },
+      body: isFormData ? body : JSON.stringify(body),
       signal,
     });
 
@@ -67,6 +70,8 @@ async function streamSSE(
       }
       throw new Error(detail);
     }
+
+    onOpen?.();
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

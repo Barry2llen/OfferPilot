@@ -97,12 +97,34 @@ export interface ModelSelectionUpdate {
   supports_image_input?: boolean | null;
 }
 
+// ─── Chat Files ───
+export interface ChatAttachmentRef {
+  file_id: string;
+  original_filename: string;
+  media_type: string | null;
+  injection_mode: string;
+}
+
+export interface ChatFileListItem {
+  id: string;
+  original_filename: string;
+  media_type: string | null;
+  size_bytes: number;
+  created_at: string;
+  reference_count: number;
+  raw_url: string;
+}
+
+export type ChatFileDetail = ChatFileListItem;
+
 // ─── AI Chat ───
 export interface AIChatHistorySummary {
   thread_id: string;
   title: string;
   last_message_preview: string;
   message_count: number;
+  attachment_count: number;
+  requires_image_input: boolean;
   updated_at: string;
 }
 
@@ -116,6 +138,7 @@ export interface AIChatHistoryMessage {
   role: string;
   type: string;
   content: string | unknown;
+  attachments?: ChatAttachmentRef[] | null;
   reasoning?: string | null;
   reasoning_duration_ms?: number | null;
   name?: string | null;
@@ -128,14 +151,17 @@ export interface AIChatHistoryDetailResponse {
   title: string;
   last_message_preview: string;
   message_count: number;
+  attachment_count: number;
+  requires_image_input: boolean;
   updated_at: string;
   messages: AIChatHistoryMessage[];
 }
 
 export interface AIChatRequest {
   selection_id: number;
-  prompt: string;
+  prompt?: string | null;
   thread_id?: string | null;
+  file_ids?: string[];
 }
 
 export interface AIChatResponse {
@@ -152,6 +178,7 @@ export interface AIChatStreamRequest {
   selection_id: number;
   prompt?: string | null;
   thread_id?: string | null;
+  file_ids?: string[];
   command?: AIChatCommand | null;
 }
 

@@ -17,6 +17,7 @@ interface ChatAreaProps {
   historyLoading: boolean;
   interrupt: { interruptId: string; message: string } | null;
   streamError: string | null;
+  threadModelMismatchMessage: string | null;
   hasNoModel: boolean;
   onRetry: () => void;
   onPrompt: (prompt: string) => void;
@@ -29,6 +30,7 @@ export default function ChatArea({
   historyLoading,
   interrupt,
   streamError,
+  threadModelMismatchMessage,
   hasNoModel,
   onRetry,
   onPrompt,
@@ -123,6 +125,14 @@ export default function ChatArea({
             <div className="flex justify-center py-3">
               <div className="rounded-full bg-error-bg px-4 py-2 text-xs text-error-text">
                 {streamError}
+              </div>
+            </div>
+          )}
+
+          {threadModelMismatchMessage && (
+            <div className="flex justify-center py-3">
+              <div className="rounded-2xl bg-warning-bg px-4 py-3 text-xs text-warning-text">
+                {threadModelMismatchMessage}
               </div>
             </div>
           )}

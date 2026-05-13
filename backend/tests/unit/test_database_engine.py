@@ -105,7 +105,7 @@ def test_initialize_tables_creates_expected_tables(
                 text(
                     "SELECT name FROM sqlite_master "
                     "WHERE type = 'table' AND name IN "
-                    "('tb_model_provider', 'tb_model_selection', 'tb_chat', "
+                    "('tb_model_provider', 'tb_model_selection', 'tb_chat', 'tb_chat_file', 'tb_chat_thread_file', "
                     "'tb_resume', 'tb_resume_extraction', 'tb_graph_checkpoint', 'tb_graph_checkpoint_blob', "
                     "'tb_graph_checkpoint_write')"
                 )
@@ -116,6 +116,8 @@ def test_initialize_tables_creates_expected_tables(
         "tb_model_provider",
         "tb_model_selection",
         "tb_chat",
+        "tb_chat_file",
+        "tb_chat_thread_file",
         "tb_resume",
         "tb_resume_extraction",
         "tb_graph_checkpoint",
