@@ -2,13 +2,11 @@
 import asyncio
 from time import perf_counter
 
-from typing import Any
-
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langchain_core.tools import BaseTool
-from langchain_core.messages import ToolMessage, ToolCall, BaseMessage, SystemMessage
+from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
 from langchain_core.callbacks.manager import adispatch_custom_event
 
 from ..models import load_chat_model
@@ -23,7 +21,11 @@ from ..prompts import (
     Prompts,
     normalize_system_prompts
 )
-from ..events import ToolCallErrorEvent, ModelCallErrorEvent
+from ..events import (
+    ToolCallErrorEvent,
+    ModelCallErrorEvent,
+    ModelLoadErrorEvent
+)
 from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.command import BaseCommand
 from utils.logger import logger
@@ -174,17 +176,34 @@ class ModelCallGraph(BaseGraph):
         It switchs the model based on the state.model and calls the model with the state.messages.
         """
         
-        try:
-            tools = await resolve_tools(self.tools, self.get_runtime(state))
-            system_prompts = self.system_prompts(self.get_runtime(state))
-            
-            model_selection = state.get('model')
-            if callable(model_selection):
-                model_selection = model_selection(state=state)
-            model = load_chat_model(model_selection).bind_tools(tools)
-        except Exception as e:
-            logger.error(f"Error loading model:\n{e}")
-            raise e
+        while True:
+            try:
+                tools = await resolve_tools(self.tools, self.get_runtime(state))
+                system_prompts = self.system_prompts(self.get_runtime(state))
+                
+                model_selection = state.get('model')
+                if callable(model_selection):
+                    model_selection = model_selection(state=state)
+                model = load_chat_model(model_selection).bind_tools(tools)
+
+                break
+            except Exception as e:
+                msg = f"Error loading model:\n{e}"
+                logger.error(msg)
+                
+                await _adispatch_custom_event_safely("on_model_load_error", ModelLoadErrorEvent(
+                    error=msg,
+                    model=model_selection # type: ignore
+                ))
+
+                resp: BaseCommand = interrupt(BaseInterupt(type='error', message=msg))
+
+                if resp['type'] == 'retry':
+                    continue
+                else:
+                    raise ModelCallExecutionError(
+                        f"Model loading failed with error: {msg}. Interrupt received with type {resp['type']} and message {resp.get('prompt', '')}"
+                    )
         
         while True:
             max_retries = self.config.model_call_retry_attempts

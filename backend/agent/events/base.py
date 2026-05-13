@@ -1,6 +1,8 @@
 
 from typing import TypedDict, NotRequired
 
+from schemas.model_selection import ModelSelection
+
 class BaseEvent(TypedDict):
     """
     Base class for custom events' data payload.
@@ -20,6 +22,12 @@ class ModelCallErrorEvent(ErrorEvent):
     attempt: int
     max_attempts: int
 
+class ModelLoadErrorEvent(ErrorEvent):
+    """
+    Event data for model load error events.
+    """
+    model: ModelSelection
+
 class ToolCallErrorEvent(ErrorEvent):
     """
     Event data for tool call error events.
@@ -35,4 +43,10 @@ class ProgressUpdateEvent(BaseEvent):
     progress: float
     message: NotRequired[str | None]
 
-__all__ = ["BaseEvent", "ErrorEvent", "ModelCallErrorEvent", "ToolCallErrorEvent", "ProgressUpdateEvent"]
+__all__ = [
+    "BaseEvent",
+    "ErrorEvent",
+    "ModelCallErrorEvent",
+    "ToolCallErrorEvent",
+    "ProgressUpdateEvent"
+]
