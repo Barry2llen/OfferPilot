@@ -9,6 +9,7 @@ from schemas.config import Config
 from ...prompts import PromptComposer, PromptFragment
 from .state import State, BaseAgentState
 from ...base import BaseAgent, GraphRuntime
+from ...tools import Tools, ToolsBuilder
 
 def _metadata(runtime: GraphRuntime[State]) -> str:
 
@@ -39,11 +40,11 @@ class SupervisorAgent(BaseAgent[State]):
         self,
         *args,
         config: Config | None = None,
-        tools: Sequence[BaseTool] | None = None,
+        tools: Tools | ToolsBuilder | None = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, config=config, **kwargs)
-        self.tools = tuple(tools or ())
+        self.tools = tools or tuple()
         self._model_call_node = ModelCallGraph(
             *args,
             **kwargs,
