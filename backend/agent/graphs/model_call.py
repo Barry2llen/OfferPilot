@@ -1,6 +1,7 @@
 
 import asyncio
 from time import perf_counter
+from typing import override
 
 from langgraph.types import interrupt
 from langgraph.constants import START, END
@@ -66,16 +67,16 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
     additional_kwargs["reasoning_duration_ms"] = duration_ms
     return True
 
-class ModelCallGraph(BaseGraph):
+class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
-    system_prompts: PromptBuilder
-    tools: ToolsBuilder
+    system_prompts: PromptBuilder[State]
+    tools: ToolsBuilder[State]
 
     def __init__(
             self,
             *args,
-            system_prompts: Prompts | PromptBuilder | None = None,
-            tools: Tools | ToolsBuilder | None = None,
+            system_prompts: Prompts | PromptBuilder[State] | None = None,
+            tools: Tools | ToolsBuilder[State] | None = None,
             **kwargs
         ):
         
@@ -243,7 +244,7 @@ class ModelCallGraph(BaseGraph):
                     f"{resp['type']} and message {resp.get('prompt', '')}"
                 )
             
-    def _dicide_next_action(self, state: BaseAgentState) -> str:
+    def _dicide_next_action(self, state: State) -> str:
         """
         Decide next action node. This node is responsible for deciding the next action based on the state.messages.
         """
@@ -261,9 +262,10 @@ class ModelCallGraph(BaseGraph):
         tool_calls = getattr(messages[-1], 'tool_calls', None) or []
         return 'tool' if tool_calls else 'end'
             
+    @override
     def get_graph(self) -> StateGraph[BaseAgentState]:
         
-        graph = StateGraph[BaseAgentState](BaseAgentState)
+        graph = StateGraph(BaseAgentState)
         graph.add_node('model', self._model_call_node)
         graph.add_node('tool', self._tool_node)
         graph.add_edge(START, 'model')

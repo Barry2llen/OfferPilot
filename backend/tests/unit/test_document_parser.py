@@ -76,6 +76,40 @@ def test_extract_text_from_image_uses_ocr_module(
     assert extracted == "Jane Doe"
 
 
+def test_extract_image_data_url_ocr_uses_ocr_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_payloads: list[bytes] = []
+
+    class FakeRapidOCR:
+        def __call__(self, payload: str | Path | bytes):
+            assert isinstance(payload, bytes)
+            seen_payloads.append(payload)
+            return [([0, 0, 1, 1], "JD text", 0.99)], None
+
+    fake_module = ModuleType("rapidocr_onnxruntime")
+    fake_module.RapidOCR = FakeRapidOCR
+    monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", fake_module)
+    monkeypatch.setattr(document_parser, "_ocr_engine", None)
+
+    extracted = document_parser.extract_image_data_url_ocr(
+        "data:image/png;base64,ZmFrZS1pbWFnZQ=="
+    )
+
+    assert extracted == "JD text"
+    assert seen_payloads == [b"fake-image"]
+
+
+def test_extract_image_data_url_ocr_rejects_non_image_data_url() -> None:
+    with pytest.raises(UnsupportedResumeFileError, match="Unsupported image data URL"):
+        document_parser.extract_image_data_url_ocr("data:text/plain;base64,SGVsbG8=")
+
+
+def test_extract_image_data_url_ocr_rejects_invalid_base64() -> None:
+    with pytest.raises(ResumeParsingError, match="Invalid image data URL base64 payload"):
+        document_parser.extract_image_data_url_ocr("data:image/png;base64,not-base64")
+
+
 def test_extract_text_ocr_from_pdf_renders_pages_before_ocr(
     workspace_tmp_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

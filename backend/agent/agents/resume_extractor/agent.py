@@ -4,9 +4,10 @@ from typing import override
 
 from langgraph.types import interrupt
 from langgraph.constants import START, END
-from langgraph.graph.state import Runnable, StateGraph
+from langgraph.graph.state import StateGraph
 from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.language_models import LanguageModelInput
+from langchain_core.runnables import Runnable
 from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from schemas.resume_document import ResumeDocument

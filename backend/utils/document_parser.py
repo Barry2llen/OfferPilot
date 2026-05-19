@@ -1,3 +1,6 @@
+import base64
+import binascii
+import re
 from pathlib import Path
 from types import ModuleType
 from xml.etree import ElementTree
@@ -9,6 +12,10 @@ from exceptions import ResumeParsingError, UnsupportedResumeFileError
 from utils.logger import logger
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
+_IMAGE_DATA_URL_PATTERN = re.compile(
+    r"^data:(image/(?:png|jpe?g));base64,(?P<payload>.+)$",
+    re.DOTALL,
+)
 _ocr_engine: object | None = None
 
 
@@ -41,6 +48,32 @@ def extract_text_ocr(file_path: Path) -> str:
         raise UnsupportedResumeFileError("Legacy .doc files are not supported.")
 
     raise UnsupportedResumeFileError(f"Unsupported resume file type: {suffix}")
+
+
+def decode_image_data_url(data_url: str) -> tuple[str, bytes]:
+    """Decode a png/jpeg data URL into OCR-ready image bytes."""
+    if not isinstance(data_url, str):
+        raise UnsupportedResumeFileError("Unsupported image data URL.")
+
+    match = _IMAGE_DATA_URL_PATTERN.match(data_url.strip())
+    if match is None:
+        raise UnsupportedResumeFileError("Unsupported image data URL.")
+
+    try:
+        payload = base64.b64decode(match.group("payload"), validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ResumeParsingError("Invalid image data URL base64 payload.") from error
+
+    if not payload:
+        raise ResumeParsingError("Image data URL payload is empty.")
+
+    return match.group(1), payload
+
+
+def extract_image_data_url_ocr(data_url: str) -> str:
+    """Extract text from an image data URL using the configured OCR engine."""
+    _, payload = decode_image_data_url(data_url)
+    return _extract_ocr_text(payload, "Failed to OCR image data URL.")
 
 
 def _extract_pdf_text(file_path: Path) -> str:

@@ -64,6 +64,8 @@ async def get_web_search_tools(
         
         return json.dumps(res, indent=2, ensure_ascii=False)
 
+    # TODO: Cut down web_search tool response tokens by limiting characters per result.
+    # Refer to Exa's highlights option for guidance
     @tool
     async def web_search_exa(
         query: str = Field(
