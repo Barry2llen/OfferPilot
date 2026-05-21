@@ -1,6 +1,6 @@
 import inspect
-from collections.abc import AsyncIterable, Awaitable, Iterable
 from typing import Protocol
+from collections.abc import AsyncIterable, Awaitable, Iterable
 
 from langgraph._internal._typing import StateLike
 from langchain_core.tools import BaseTool
@@ -60,13 +60,10 @@ async def resolve_tools[State: StateLike = BaseAgentState](
 
 
 async def get_all_tools(
-    config: Config | None = None,
-    *,
-    allow_mcp_fallback: bool = True,
+    config: Config | None = None
 ) -> list[BaseTool]:
     return await get_web_search_tools(
-        config,
-        allow_mcp_fallback=allow_mcp_fallback,
+        config
     )
 
 __all__ = [

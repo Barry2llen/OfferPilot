@@ -41,7 +41,7 @@ def _build_cached_tools(config: Config) -> ToolsBuilder:
         async with lock:
             if cached_tools is None:
                 cached_tools = tuple(
-                    await get_all_tools(config, allow_mcp_fallback=True)
+                    await get_all_tools(config)
                 )
             return cached_tools
 

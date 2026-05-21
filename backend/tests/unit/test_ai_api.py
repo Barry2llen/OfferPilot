@@ -152,8 +152,8 @@ def test_ai_chat_endpoint_generates_thread_id_when_missing(
 def test_ai_chat_endpoint_uses_configured_graph_recursion_limit(
     temporary_app_config: Config,
 ) -> None:
-    temporary_app_config.graph_recursion_limit = 250
-    app = create_app(temporary_app_config)
+    config = temporary_app_config.model_copy(update={"graph_recursion_limit": 250})
+    app = create_app(config)
     seen_configs: list[dict] = []
 
     with TestClient(app) as client:
@@ -2188,7 +2188,7 @@ async def test_get_all_tools_builds_exa_tools_from_config() -> None:
     tools = await get_all_tools(config)
 
     assert [tool.name for tool in tools] == [
-        "web_search_exa",
-        "web_fetch_exa",
-        "find_similar_exa",
+        "web_search",
+        "web_fetch",
+        "find_similar",
     ]

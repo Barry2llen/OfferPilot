@@ -24,8 +24,6 @@ jd_web_search_system_prompt = (
     "- If sources conflict, prefer fetched URL content over image/OCR text, and image/OCR text "
     "over loose user commentary.\n"
     "- You MUST NOT guess, search, or infer a JD from vague or incomplete input.\n"
-    "- Do NOT use web search to find JDs on behalf of the user. Only use the web fetch tool "
-    "when an explicit source URL is provided in the current input.\n"
     "- If no valid JD can be obtained from the provided text, URL, image blocks, or OCR text, "
     "respond with [JD_EXTRACTION_FAILED] and a brief reason.\n\n"
     "Output rules:\n"

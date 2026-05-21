@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class BaseDatabaseConfig(BaseModel):
     """Shared runtime settings for relational databases."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     echo: bool = False
     pool_pre_ping: bool = True

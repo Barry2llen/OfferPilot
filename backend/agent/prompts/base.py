@@ -43,15 +43,15 @@ class PromptComposer[State: StateLike = BaseAgentState]:
     def __init__(self, fragments: list[PromptFragment[State]]):
         self.fragments = fragments
 
-    def __call__(self, runtime: GraphRuntime[State]) -> list[SystemMessage]:
-        
-        prompt = "\n\n".join(
+    def raw_prompt(self, runtime: GraphRuntime[State]) -> str:
+        return "\n\n".join(
             f"{fragment.name.title()}:\n{fragment.raw_content(runtime).strip()}"
             for fragment in self.fragments
             if fragment.is_enabled(runtime)
         )
 
-        return [SystemMessage(content=prompt)]
+    def __call__(self, runtime: GraphRuntime[State]) -> list[SystemMessage]:
+        return [SystemMessage(content=self.raw_prompt(runtime))]
     
 def default_system_prompt_builder[State: StateLike = BaseAgentState](runtime: GraphRuntime[State]) -> list[SystemMessage]:
     return []

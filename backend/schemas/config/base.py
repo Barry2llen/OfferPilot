@@ -2,27 +2,33 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from ruamel.yaml import YAML
 
 from .database import DatabaseConfig, SQLiteDatabaseConfig
 from utils.logger import logger
 
 class WebSearchConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     type: Literal["auto", "fast", "instant", "deep", "deep-lite", "deep-reasoning"] = "auto"
     max_characters: int = 2000
     guiding_query: str | None = None
 
 
 class CorsConfig(BaseModel):
-    allow_origins: list[str] = Field(default_factory=lambda: ["*"])
+    model_config = ConfigDict(frozen=True)
+
+    allow_origins: tuple[str, ...] = Field(default_factory=lambda: ("*",))
     allow_credentials: bool = False
-    allow_methods: list[str] = Field(default_factory=lambda: ["*"])
-    allow_headers: list[str] = Field(default_factory=lambda: ["*"])
+    allow_methods: tuple[str, ...] = Field(default_factory=lambda: ("*",))
+    allow_headers: tuple[str, ...] = Field(default_factory=lambda: ("*",))
 
 
 class Config(BaseModel):
     """Configuration for the application."""
+
+    model_config = ConfigDict(frozen=True)
 
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)

@@ -9,24 +9,86 @@ class JdSchemaModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ---- Ex 后缀：LLM 直接产出的结构 ----
+# ---- 基础枚举 ----
 
-JdRequirementType = Literal[
+type JdBlockType = Literal[
+    "job_summary",
+    "responsibility",
+    "must_have",
+    "nice_to_have",
+    "benefit",
+    "company_intro",
+    "team_intro",
+    "work_condition",
+    "hiring_process",
+    "other",
+]
+
+type JdFactType = Literal[
+    "skill",
+    "tool",
+    "framework",
+    "programming_language",
+    "experience",
+    "education",
+    "major",
+    "certificate",
+    "language",
+    "domain_knowledge",
+    "soft_skill",
+    "responsibility",
+    "benefit",
+    "work_condition",
+    "company_info",
+    "other",
+]
+
+type JdFactImportance = Literal[
     "must_have",
     "nice_to_have",
     "responsibility",
+    "unknown",
 ]
+
+type RemotePolicy = Literal["onsite", "hybrid", "remote", "unknown"]
+type EmploymentType = Literal["full_time", "part_time", "intern", "contract", "unknown"]
+type EducationLevel = Literal["college", "bachelor", "master", "phd", "unknown"]
+type ExperienceLevel = Literal[
+    "intern",
+    "new_grad",
+    "junior",
+    "mid",
+    "senior",
+    "lead",
+    "unknown",
+]
+
+
+# ---- Ex 后缀：LLM 直接产出的结构 ----
 
 
 class JdFactEx(JdSchemaModel):
     """A specific fact extracted from a JD block, symmetric to ResumeFactEx for matching."""
 
-    fact_type: str = Field(
-        description=(
-            "Fact type, e.g. skill, experience, education, certificate, "
-            "language, domain_knowledge, soft_skill, responsibility, benefit."
-        ),
+    fact_type: JdFactType = Field(
+        description="Normalized fact type for matching and downstream analysis.",
         examples=["skill"],
+    )
+    custom_fact_type: str | None = Field(
+        default=None,
+        description=(
+            "Original or more specific fact type when fact_type is 'other', "
+            "or when the model needs to preserve a nuanced category."
+        ),
+        examples=["distributed_system_experience"],
+    )
+    importance: JdFactImportance = Field(
+        default="unknown",
+        description=(
+            "Importance of this fact in the JD. Put requirement strength here instead "
+            "of only on the block, because one block may contain both must-have and nice-to-have items."
+        ),
+        examples=["must_have"],
     )
     text: str = Field(
         description="Fact text, kept close to the original wording.",
@@ -44,10 +106,10 @@ class JdFactEx(JdSchemaModel):
 
 
 class JdRequirementBlockEx(JdSchemaModel):
-    """A semantically continuous block from a JD (responsibility / requirement / nice-to-have)."""
+    """A semantically continuous block from a JD, preserving source text."""
 
-    block_type: JdRequirementType = Field(
-        description="Block category.",
+    block_type: JdBlockType = Field(
+        description="Normalized block category.",
         examples=["must_have"],
     )
     title: str = Field(
@@ -90,8 +152,8 @@ class JdSalaryEx(JdSchemaModel):
     )
 
 
-class JobDescriptionEx(JdSchemaModel):
-    """Flat structured fields extracted from a JD in one model call."""
+class JobDescriptionFields(JdSchemaModel):
+    """Common flat fields shared by LLM extraction output and final aggregated JD model."""
 
     # Company & position
     company_name: str | None = Field(
@@ -116,7 +178,7 @@ class JobDescriptionEx(JdSchemaModel):
     )
     job_level: str | None = Field(
         default=None,
-        description="Seniority level, e.g. P6, Senior, Lead.",
+        description="Seniority level from the source or normalized by the model, e.g. P6, Senior, Lead.",
         examples=["Senior"],
     )
     job_family: str | None = Field(
@@ -126,38 +188,65 @@ class JobDescriptionEx(JdSchemaModel):
     )
 
     # Work conditions
-    location: str | None = Field(
+    primary_location: str | None = Field(
         default=None,
-        description="Work location.",
+        description="Primary display location when the JD has one obvious main location.",
         examples=["上海"],
     )
-    remote_policy: Literal["onsite", "hybrid", "remote", "unknown"] = Field(
+    locations: list[str] = Field(
+        default_factory=list,
+        description="All work locations mentioned in the JD.",
+        examples=[["北京", "上海", "深圳"]],
+    )
+    remote_policy: RemotePolicy = Field(
         default="unknown",
         description="Remote work policy.",
         examples=["hybrid"],
     )
-    employment_type: Literal["full_time", "part_time", "intern", "contract", "unknown"] = Field(
+    employment_type: EmploymentType = Field(
         default="unknown",
         description="Employment type.",
         examples=["full_time"],
     )
 
+    # Experience & education
+    experience_raw: str | None = Field(
+        default=None,
+        description="Original experience requirement text, e.g. '3年以上', '1-3年', '应届生可投'.",
+        examples=["3年以上后端开发经验"],
+    )
     years_experience_min: int | None = Field(
         default=None,
-        description="Minimum years of experience required.",
+        description="Minimum years of experience required when it can be safely normalized.",
         examples=[3],
     )
     years_experience_max: int | None = Field(
         default=None,
-        description="Maximum years of experience.",
+        description="Maximum years of experience when explicitly mentioned.",
         examples=[5],
     )
-    education_min: Literal["college", "bachelor", "master", "phd", "unknown"] = Field(
+    experience_level: ExperienceLevel = Field(
         default="unknown",
-        description="Minimum education requirement.",
+        description="Normalized experience level inferred from the JD.",
+        examples=["mid"],
+    )
+    education_raw: str | None = Field(
+        default=None,
+        description="Original education requirement text, e.g. '本科及以上', '计算机相关专业优先'.",
+        examples=["本科及以上，计算机相关专业优先"],
+    )
+    education_min: EducationLevel = Field(
+        default="unknown",
+        description="Minimum education requirement when it can be safely normalized.",
         examples=["bachelor"],
     )
+    major_requirement: str | None = Field(
+        default=None,
+        description="Major or discipline requirement mentioned in the JD.",
+        examples=["计算机、软件工程或相关专业"],
+    )
 
+    # Compensation & benefits
     salary: JdSalaryEx | None = Field(
         default=None,
         description="Salary information.",
@@ -168,7 +257,10 @@ class JobDescriptionEx(JdSchemaModel):
         examples=[["五险一金", "年终奖"]],
     )
 
-    # Text blocks (preserving original text, symmetric to Resume sections)
+
+class JobDescriptionEx(JobDescriptionFields):
+    """Flat structured fields and text blocks extracted from a JD in one model call."""
+
     blocks: list[JdRequirementBlockEx] = Field(
         default_factory=list,
         description="Requirement/responsibility blocks from the JD.",
@@ -198,12 +290,12 @@ class JdRequirementBlock(JdRequirementBlockEx):
     )
 
 
-class JobDescription(JdSchemaModel):
-    """Aggregated JD model: flat fields + blocks with facts. Symmetric to Resume."""
+class JobDescription(JobDescriptionFields):
+    """Aggregated JD model: raw text + flat fields + blocks with facts. Symmetric to Resume."""
 
     raw_text: str = Field(
         default="",
-        description="Original JD text used for analysis.",
+        description="Original JD text used for analysis. This remains the source of truth.",
         examples=["岗位职责：负责后端服务开发。任职要求：熟悉 Python。"],
     )
     source_url: str | None = Field(
@@ -211,79 +303,6 @@ class JobDescription(JdSchemaModel):
         description="JD source URL for tracing.",
         examples=["https://example.com/jobs/123"],
     )
-
-    # Flat fields
-    company_name: str | None = Field(
-        default=None,
-        description="Company name.",
-        examples=["示例科技有限公司"],
-    )
-    company_industry: str | None = Field(
-        default=None,
-        description="Industry of the company.",
-        examples=["企业服务"],
-    )
-    company_size: str | None = Field(
-        default=None,
-        description="Company size description.",
-        examples=["500-1000人"],
-    )
-    job_title: str = Field(
-        default="",
-        description="Position title, original wording.",
-        examples=["后端开发工程师"],
-    )
-    job_level: str | None = Field(
-        default=None,
-        description="Seniority level.",
-        examples=["Senior"],
-    )
-    job_family: str | None = Field(
-        default=None,
-        description="Job family.",
-        examples=["backend"],
-    )
-    location: str | None = Field(
-        default=None,
-        description="Work location.",
-        examples=["上海"],
-    )
-    remote_policy: Literal["onsite", "hybrid", "remote", "unknown"] = Field(
-        default="unknown",
-        description="Remote work policy.",
-        examples=["hybrid"],
-    )
-    employment_type: Literal["full_time", "part_time", "intern", "contract", "unknown"] = Field(
-        default="unknown",
-        description="Employment type.",
-        examples=["full_time"],
-    )
-    years_experience_min: int | None = Field(
-        default=None,
-        description="Minimum years of experience required.",
-        examples=[3],
-    )
-    years_experience_max: int | None = Field(
-        default=None,
-        description="Maximum years of experience.",
-        examples=[5],
-    )
-    education_min: Literal["college", "bachelor", "master", "phd", "unknown"] = Field(
-        default="unknown",
-        description="Minimum education requirement.",
-        examples=["bachelor"],
-    )
-    salary: JdSalaryEx | None = Field(
-        default=None,
-        description="Salary information.",
-    )
-    benefits: list[str] = Field(
-        default_factory=list,
-        description="List of benefits mentioned.",
-        examples=[["五险一金", "年终奖"]],
-    )
-
-    # Structured blocks + facts, symmetric to Resume.sections
     blocks: list[JdRequirementBlock] = Field(
         default_factory=list,
         description="Structured JD blocks with extracted facts.",
@@ -293,11 +312,18 @@ class JobDescription(JdSchemaModel):
 __all__ = [
     "JobDescription",
     "JobDescriptionEx",
+    "JobDescriptionFields",
+    "JdBlockType",
     "JdRequirementBlock",
     "JdRequirementBlockEx",
-    "JdRequirementType",
     "JdFact",
     "JdFactEx",
     "JdFactsEx",
+    "JdFactImportance",
+    "JdFactType",
     "JdSalaryEx",
+    "RemotePolicy",
+    "EmploymentType",
+    "EducationLevel",
+    "ExperienceLevel",
 ]

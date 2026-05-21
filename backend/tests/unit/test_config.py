@@ -28,9 +28,9 @@ def test_default_config_uses_sqlite() -> None:
     assert config.chat_file_upload_dir == "./data/chat_files"
     assert config.graph_recursion_limit == 100
     assert isinstance(config.cors, CorsConfig)
-    assert config.cors.allow_origins == ["*"]
-    assert config.cors.allow_methods == ["*"]
-    assert config.cors.allow_headers == ["*"]
+    assert config.cors.allow_origins == ("*",)
+    assert config.cors.allow_methods == ("*",)
+    assert config.cors.allow_headers == ("*",)
     assert config.cors.allow_credentials is False
 
 
@@ -41,7 +41,14 @@ def test_config_loads_example(sample_config: Config) -> None:
     assert sample_config.resume_upload_dir == "./data/resumes"
     assert sample_config.chat_file_upload_dir == "./data/chat_files"
     assert sample_config.graph_recursion_limit == 100
-    assert sample_config.cors.allow_origins == ["*"]
+    assert sample_config.cors.allow_origins == ("*",)
+
+
+def test_config_is_hashable() -> None:
+    config = Config()
+
+    assert isinstance(hash(config), int)
+    assert {config: "cached"}[Config()] == "cached"
 
 
 def test_config_validation_rejects_invalid_graph_recursion_limit() -> None:

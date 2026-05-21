@@ -1,5 +1,6 @@
 
 from typing import cast
+from functools import lru_cache
 
 from langchain_core.tools import BaseTool, tool
 from pydantic import Field
@@ -7,17 +8,12 @@ from pydantic import Field
 from schemas.config import Config, load_config
 from utils.logger import logger
 
+@lru_cache(maxsize=10)
 async def get_web_search_tools(
-    config: Config | None = None,
-    *,
-    allow_mcp_fallback: bool = False,
+    config: Config | None = None
 ) -> list[BaseTool]:
     target_config = config or load_config()
     if not target_config.exa_api_key:
-        if not allow_mcp_fallback:
-            logger.warning("No Exa API key configured; web search tools are disabled.")
-            return []
-
         try:
             from ..mcps.web_search import get_web_search_mcp_tools
         except Exception as error:
@@ -67,7 +63,7 @@ async def get_web_search_tools(
     # TODO: Cut down web_search tool response tokens by limiting characters per result.
     # Refer to Exa's highlights option for guidance
     @tool
-    async def web_search_exa(
+    async def web_search(
         query: str = Field(
             description=(
                 "Precise natural-language search query. Include topic, entity, "
@@ -132,7 +128,7 @@ async def get_web_search_tools(
         return _optimize_search_response(query, response, target_name="query", index_name="rank")
 
     @tool
-    async def web_fetch_exa(
+    async def web_fetch(
         urls: list[str] = Field(
             description=(
                 "Exact URLs to read, including webpages or PDF URLs from search "
@@ -194,7 +190,7 @@ async def get_web_search_tools(
         )
 
     @tool
-    async def find_similar_exa(
+    async def find_similar(
         url: str = Field(
             description=(
                 "Known reference URL used to discover similar pages."
@@ -242,7 +238,7 @@ async def get_web_search_tools(
         )
         return _optimize_search_response(url, response, target_name="url", index_name="rank")
 
-    return [web_search_exa, web_fetch_exa, find_similar_exa]
+    return [web_search, web_fetch, find_similar]
 
 __all__ = [
     "get_web_search_tools",
