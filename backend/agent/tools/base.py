@@ -66,10 +66,16 @@ async def get_all_tools(
         config
     )
 
+async def get_tools(*names: str, config: Config | None = None) -> list[BaseTool]:
+    all_tools = await get_all_tools(config)
+    name_set = set(names)
+    return [tool for tool in all_tools if tool.name in name_set]
+
 __all__ = [
     "Tools",
     "ToolsBuilder",
     "normalize_tools",
     "resolve_tools",
     "get_all_tools",
+    "get_tools"
 ]

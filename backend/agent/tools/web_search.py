@@ -8,6 +8,11 @@ from pydantic import Field
 from schemas.config import Config, load_config
 from utils.logger import logger
 
+"""
+If config.exa_api_key is not set, we fall back to loading MCP-based web search tools, which are less powerful but require no setup.
+NOTICE: MCP-based 'web_fetch' tool's name is 'get_content'.
+"""
+
 @lru_cache(maxsize=10)
 async def get_web_search_tools(
     config: Config | None = None
