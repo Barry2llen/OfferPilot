@@ -8,7 +8,6 @@ from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
 from langgraph.graph.message import REMOVE_ALL_MESSAGES, RemoveMessage
 from langchain_core.runnables import Runnable
-from langchain_core.tools import BaseTool
 from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
@@ -28,15 +27,15 @@ from schemas.job_description import (
     JdRequirementBlock,
     JdRequirementBlockEx,
 )
+from .state import State
 from .prompt import (
     jd_web_search_system_prompt,
     jd_extraction_system_prompt,
     jd_facts_extraction_system_prompt,
 )
 from ...graphs.model_call import ModelCallGraph
-from ...tools.web_search import get_web_search_tools
+from ...tools import get_tools
 from ...annotations.types import MaybeCallable
-from .state import State
 from ...events import ModelCallErrorEvent, ProgressUpdateEvent
 from ...base import BaseAgent, BaseInterupt
 from ...models import load_chat_model
@@ -114,21 +113,6 @@ def _image_data_url_to_content_block(data_url: str) -> dict[str, object]:
         "image_url": {"url": data_url},
     }
 
-
-async def _get_web_fetch_tools(config: Config | None) -> Sequence[BaseTool]:
-    """Get web fetch tool only (no search). Used to retrieve JD from a user-provided URL."""
-    tools = await get_web_search_tools(config)
-    target: BaseTool | None = None
-    for tool in tools:
-        if tool.name.startswith("web_fetch") or tool.name.startswith("get_content"):
-            target = tool
-            break
-    if not target:
-        logger.warning("No web fetch tool found in the available tools.")
-        return ()
-    return (target,)
-
-
 class JdAnalyzerAgent(BaseAgent[State]):
 
     def __init__(
@@ -139,15 +123,12 @@ class JdAnalyzerAgent(BaseAgent[State]):
     ) -> None:
         super().__init__(*args, config=config, **kwargs)
 
-        async def build_web_fetch_tools(runtime) -> Sequence[BaseTool]:
-            return await _get_web_fetch_tools(config)
-
         self._model_call_node = ModelCallGraph[State](
             *args,
             **kwargs,
             system_prompts=jd_web_search_system_prompt,
             config=config,
-            tools=build_web_fetch_tools,
+            tools=get_tools("web_fetch", "get_content", config=config),
         ).get_compiled_graph()
 
     def _prepare_jd_source_node(self, state: State) -> State:

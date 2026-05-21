@@ -57,12 +57,12 @@ class BaseGraph[State: StateLike = BaseAgentState](ABC):
     def __init__(
             self,
             *args,
-            config: Config | None= None,
+            config: Config | None = None,
             **kwargs
         ):
         self.additional_args = args or ()
         self.additional_keywords = kwargs or {}
-        self.config: Config = config if config is not None else load_config()
+        self.config = config if config is not None else load_config()
 
     """Base graph"""
     @abstractmethod

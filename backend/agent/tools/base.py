@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 from typing import Protocol
 from collections.abc import AsyncIterable, Awaitable, Iterable
@@ -11,7 +13,6 @@ from ..base import BaseAgentState, GraphRuntime
 from .web_search import get_web_search_tools
 
 type Tools = Iterable[BaseTool] | Awaitable[Iterable[BaseTool]] | AsyncIterable[BaseTool]
-
 
 class ToolsBuilder[State: StateLike = BaseAgentState](Protocol):
     def __call__(self, runtime: GraphRuntime[State]) -> Tools: ...

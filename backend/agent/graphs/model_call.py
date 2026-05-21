@@ -28,6 +28,7 @@ from ..events import (
     ModelLoadErrorEvent
 )
 from exceptions import AgentStateError, ModelCallExecutionError
+from schemas.config.base import Config
 from schemas.command import BaseCommand
 from utils.logger import logger
 
@@ -75,12 +76,13 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     def __init__(
             self,
             *args,
+            config: Config | None = None,
             system_prompts: Prompts | PromptBuilder[State] | None = None,
             tools: Tools | ToolsBuilder[State] | None = None,
             **kwargs
         ):
         
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
         self.system_prompts = normalize_system_prompts(system_prompts)
 
@@ -129,7 +131,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         async def _call_tool(tool_call: ToolCall) -> ToolMessage:
             name = tool_call["name"]
             args = tool_call["args"]
-            tool_call_id = tool_call.get("id") or ""
+            tool_call_id = tool_call.get("id", "")
 
             logger.debug(f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})")
 
