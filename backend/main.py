@@ -1,15 +1,12 @@
-import asyncio
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
-from agent.agents.supervisor import SupervisorAgent
-from agent.base import GraphRuntime
+from agent.agents.supervisor import SupervisorAgent, get_supervisor_tools
 from agent.checkpointers import DatabaseCheckpointer
-from agent.tools import ToolsBuilder, get_all_tools
 from api import ai_router, model_config_router, resume_router
 from db.engine import (
     configure_async_database_manager,
@@ -27,26 +24,6 @@ class RootMessageResponse(BaseModel):
         description="服务探活响应信息。",
         examples=["Hello World!"],
     )
-
-
-def _build_cached_tools(config: Config) -> ToolsBuilder:
-    cached_tools: tuple[BaseTool, ...] | None = None
-    lock = asyncio.Lock()
-
-    async def load_tools(runtime: GraphRuntime) -> tuple[BaseTool, ...]:
-        nonlocal cached_tools
-        if cached_tools is not None:
-            return cached_tools
-
-        async with lock:
-            if cached_tools is None:
-                cached_tools = tuple(
-                    await get_all_tools(config)
-                )
-            return cached_tools
-
-    return load_tools
-
 
 def create_app(config: Config | None = None) -> FastAPI:
     target_config = config or load_config()
@@ -69,7 +46,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         app.state.supervisor_agent = SupervisorAgent(
             checkpointer=app.state.checkpointer,
             config=target_config,
-            tools=_build_cached_tools(target_config),
+            tools=await get_supervisor_tools(config=target_config),
         ).get_agent()
         yield
         await app.state.resume_extraction_jobs.shutdown()
