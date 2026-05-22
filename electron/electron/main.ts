@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu } from 'electron'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,7 @@ process.env.VITE_PUBLIC = path.join(process.env.APP_ROOT, 'public')
 interface ManagedProcess {
   name: string
   child: ChildProcessWithoutNullStreams
+  trackedPids: Set<number>
 }
 
 interface RuntimeServices {
@@ -24,6 +25,11 @@ interface RuntimeServices {
 interface ManagedProcessCommand {
   command: string
   args: string[]
+}
+
+interface NextDevLock {
+  pid?: number
+  port?: number
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -70,6 +76,7 @@ async function startApplication() {
     process.env.OFFER_PILOT_APP_URL = services.appUrl
     createWindow(services.appUrl)
   } catch (error) {
+    stopManagedProcesses()
     showStartupFailure(error)
   }
 }
@@ -89,9 +96,9 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
   const frontendPort = await findAvailablePort(3000)
   const apiBaseUrl = `http://127.0.0.1:${backendPort}`
   const appUrl = `http://127.0.0.1:${frontendPort}`
-  const frontendCommand = frontendDevCommand(frontendPort)
+  const frontendCommand = frontendDevCommand(frontendDir, frontendPort)
 
-  startManagedProcess('backend-dev', 'uv', [
+  const backendProcess = startManagedProcess('backend-dev', 'uv', [
     'run',
     'uvicorn',
     'main:app',
@@ -103,12 +110,15 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
     PYTHONUNBUFFERED: '1',
   })
 
-  startManagedProcess('frontend-dev', frontendCommand.command, frontendCommand.args, frontendDir, {
+  trackBackendServerPid(backendProcess)
+
+  const frontendProcess = startManagedProcess('frontend-dev', frontendCommand.command, frontendCommand.args, frontendDir, {
     NEXT_PUBLIC_API_URL: apiBaseUrl,
   })
 
   await waitForUrl(`${apiBaseUrl}/`, 'backend')
   await waitForUrl(appUrl, 'frontend')
+  trackNextDevServerPid(frontendProcess, frontendDir, frontendPort)
 
   return { apiBaseUrl, appUrl }
 }
@@ -236,7 +246,10 @@ function startManagedProcess(
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to start ${name} with "${formatCommand(command, args)}" in ${cwd}: ${message}`)
   }
-  const managed = { name, child }
+  const managed = { name, child, trackedPids: new Set<number>() }
+  if (child.pid) {
+    managed.trackedPids.add(child.pid)
+  }
   managedProcesses.push(managed)
   attachProcessLogging(managed)
 
@@ -247,6 +260,8 @@ function startManagedProcess(
   child.on('exit', (code, signal) => {
     console.info(`[${name}] exited with code=${code ?? 'null'} signal=${signal ?? 'null'}`)
   })
+
+  return managed
 }
 
 function attachProcessLogging(processInfo: ManagedProcess) {
@@ -272,11 +287,74 @@ function attachProcessLogging(processInfo: ManagedProcess) {
 
 function stopManagedProcesses() {
   for (const processInfo of [...managedProcesses].reverse()) {
-    if (!processInfo.child.killed) {
-      processInfo.child.kill()
-    }
+    stopManagedProcess(processInfo)
   }
   managedProcesses = []
+}
+
+function stopManagedProcess(processInfo: ManagedProcess) {
+  const pids = [...processInfo.trackedPids]
+  if (processInfo.child.pid) {
+    pids.push(processInfo.child.pid)
+  }
+
+  for (const pid of [...new Set(pids)].reverse()) {
+    killProcessTree(pid)
+  }
+
+  if (!processInfo.child.killed) {
+    try {
+      processInfo.child.kill()
+    } catch {
+      // The direct child may already be gone after process-tree cleanup.
+    }
+  }
+}
+
+function killProcessTree(pid: number) {
+  if (process.platform === 'win32') {
+    killWindowsProcessTree(pid)
+    return
+  }
+
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    // The process may have exited between tracking and cleanup.
+  }
+}
+
+function killWindowsProcessTree(pid: number) {
+  spawnSync('taskkill.exe', ['/pid', String(pid), '/t', '/f'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  })
+}
+
+function trackBackendServerPid(processInfo: ManagedProcess) {
+  processInfo.child.stdout.on('data', (chunk: Buffer) => {
+    const output = chunk.toString('utf-8')
+    const match = output.match(/Started server process \[(\d+)]/)
+    if (match) {
+      processInfo.trackedPids.add(Number(match[1]))
+    }
+  })
+}
+
+function trackNextDevServerPid(processInfo: ManagedProcess, frontendDir: string, expectedPort: number) {
+  const lockPath = path.join(frontendDir, '.next', 'dev', 'lock')
+  if (!existsSync(lockPath)) {
+    return
+  }
+
+  try {
+    const lock = JSON.parse(readFileSync(lockPath, 'utf-8')) as NextDevLock
+    if (lock.pid && lock.port === expectedPort) {
+      processInfo.trackedPids.add(lock.pid)
+    }
+  } catch {
+    // Next may briefly hold the lock while writing it; direct child cleanup still applies.
+  }
 }
 
 function resolveProjectDir(envName: string, folderName: string, markerFile: string): string {
@@ -400,28 +478,35 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function frontendDevCommand(port: number): ManagedProcessCommand {
-  const npmArgs = [
-    'run',
-    'dev',
-    '--',
-    '--hostname',
-    '127.0.0.1',
-    '--port',
-    String(port),
-  ]
+function frontendDevCommand(frontendDir: string, port: number): ManagedProcessCommand {
+  const nextCli = path.join(frontendDir, 'node_modules', 'next', 'dist', 'bin', 'next')
+  const nodeCommand = resolveNodeCommand()
 
-  if (process.platform === 'win32') {
-    return {
-      command: process.env.ComSpec || 'cmd.exe',
-      args: ['/d', '/s', '/c', 'npm.cmd', ...npmArgs],
-    }
+  if (!existsSync(nextCli)) {
+    throw new Error(`Next.js CLI not found: ${nextCli}`)
   }
 
   return {
-    command: 'npm',
-    args: npmArgs,
+    command: nodeCommand,
+    args: [
+      nextCli,
+      'dev',
+      '--hostname',
+      '127.0.0.1',
+      '--port',
+      String(port),
+    ],
   }
+}
+
+function resolveNodeCommand() {
+  const npmNode = process.env.npm_node_execpath
+  if (!npmNode) {
+    return 'node'
+  }
+
+  const executableName = path.basename(npmNode).toLowerCase()
+  return executableName.startsWith('bun') ? 'node' : npmNode
 }
 
 function formatCommand(command: string, args: string[]) {
