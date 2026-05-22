@@ -68,6 +68,8 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
     additional_kwargs["reasoning_duration_ms"] = duration_ms
     return True
 
+
+
 class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
     system_prompts: PromptBuilder[State]
@@ -142,10 +144,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     tool_call_id=tool_call_id,
                     name=name,
                     status="error",
-            )
+                )
             
             try:
-                result = await tools_dict[name].ainvoke(tool_call)
+                tool = tools_dict[name]
+                result = await tool.ainvoke(tool_call)
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
                 await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(
@@ -160,15 +163,19 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     name=name,
                     status="error",
                 )
-
-            if isinstance(result, ToolMessage):
-                return result
-
-            return ToolMessage(
+            
+            tool_msg = result if isinstance(result, ToolMessage) else ToolMessage(
                 content=result,
                 tool_call_id=tool_call_id,
                 name=name,
             )
+
+            if tool.return_direct:
+                tool_msg.additional_kwargs.update({
+                    'return_direct': True
+                })
+
+            return tool_msg
         
         results = await asyncio.gather(*(_call_tool(tool_call) for tool_call in tool_calls))
         return BaseAgentState(messages=list(results))
@@ -257,11 +264,15 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             logger.error("No messages in state, this should not happen.")
             raise AgentStateError("No messages in state, this should not happen.")
         
-        if messages[-1].type != 'ai':
-            logger.error("Last message is not from AI, this should not happen.")
-            raise AgentStateError("Last message is not from AI, this should not happen.")
+        msg = messages[-1]
+        return_direct = msg.additional_kwargs.get('return_direct')
+
+        if return_direct:
+            logger.debug("Message has return_direct flag, ending the graph.")
+            return 'end'
         
-        tool_calls = getattr(messages[-1], 'tool_calls', None) or []
+        tool_calls = getattr(msg, 'tool_calls', None) or []
+
         return 'tool' if tool_calls else 'end'
             
     @override
