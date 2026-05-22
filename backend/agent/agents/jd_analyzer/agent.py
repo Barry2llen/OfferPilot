@@ -1,6 +1,5 @@
 
 import asyncio
-import re
 from typing import Sequence, override
 
 from langgraph.types import interrupt
@@ -33,6 +32,7 @@ from .prompt import (
     jd_extraction_system_prompt,
     jd_facts_extraction_system_prompt,
 )
+from .tool import mark_jd_extraction_failure, mark_jd_extraction_success
 from ...graphs.model_call import ModelCallGraph
 from ...tools import get_tools
 from ...annotations.types import MaybeCallable
@@ -41,10 +41,15 @@ from ...base import BaseAgent, BaseInterupt
 from ...models import load_chat_model
 
 
-# Regex to extract JD text from ```jd ... ``` fenced block in AI response
-_JD_BLOCK_PATTERN = re.compile(r"```jd\s*\n(.*?)```", re.DOTALL)
-_JD_FAILED_PATTERN = re.compile(r"\[JD_EXTRACTION_FAILED\]")
 _FACT_EXTRACTION_CONCURRENCY = 5
+
+
+async def _get_jd_source_tools(config: Config | None = None):
+    return (
+        *await get_tools("web_fetch", "get_content", config=config),
+        mark_jd_extraction_success,
+        mark_jd_extraction_failure,
+    )
 
 
 def _is_missing_parent_run_error(error: RuntimeError) -> bool:
@@ -128,7 +133,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
             **kwargs,
             system_prompts=jd_web_search_system_prompt,
             config=config,
-            tools=get_tools("web_fetch", "get_content", config=config),
+            tools=lambda runtime: _get_jd_source_tools(config),
         ).get_compiled_graph()
 
     def _prepare_jd_source_node(self, state: State) -> State:
@@ -219,56 +224,62 @@ class JdAnalyzerAgent(BaseAgent[State]):
 
     def _parse_jd_text_node(self, state: State) -> State:
         """
-        Parse jd_text from the model_call node's AI response.
-        Looks for ```jd ... ``` block in the last AI message.
+        Parse jd_text from the JD extraction marker tool called by model_call.
         """
         source_url = state.get("source_url")
         messages = state.get("messages", [])
-        ai_content = ""
+        tool_name = ""
+        tool_content = ""
         for msg in reversed(messages):
-            if msg.type == "ai":
-                ai_content = _message_content_to_text(msg.content)
+            if getattr(msg, "type", "") == "tool":
+                tool_name = getattr(msg, "name", "") or ""
+                tool_content = _message_content_to_text(getattr(msg, "content", None)).strip()
                 break
 
-        if not ai_content:
-            logger.warning("No AI response found for JD text extraction.")
+        if not tool_name:
+            logger.warning("No JD extraction marker tool call found.")
+            _dispatch_custom_event_safely(
+                "on_progress_update",
+                ProgressUpdateEvent(
+                    progress=1.0,
+                    message="JD extraction failed: missing marker tool call.",
+                ),
+            )
             return State(jd_text=None, source_url=source_url)
 
-        # Check for extraction failure
-        if _JD_FAILED_PATTERN.search(ai_content):
-            logger.warning(f"JD extraction failed: {ai_content[:200]}")
+        if tool_name == mark_jd_extraction_failure.name:
+            logger.warning(f"JD extraction failed: {tool_content[:200]}")
             _dispatch_custom_event_safely(
                 "on_progress_update",
                 ProgressUpdateEvent(
                     progress=1.0,
                     message="JD extraction failed.",
-                    additional_data={"reason": ai_content[:500]},
+                    additional_data={"reason": tool_content[:500]},
                 ),
             )
             return State(jd_text=None, source_url=source_url)
 
-        # Extract from ```jd block
-        match = _JD_BLOCK_PATTERN.search(ai_content)
-        if match:
-            jd_text = match.group(1).strip()
-            if jd_text:
-                _dispatch_custom_event_safely(
-                    "on_progress_update",
-                    ProgressUpdateEvent(
-                        progress=0.15,
-                        message="Extracted JD text from model response.",
-                        additional_data={"text_length": len(jd_text)},
-                    ),
-                )
-                return State(jd_text=jd_text, source_url=source_url)
+        if tool_name == mark_jd_extraction_success.name and tool_content:
+            _dispatch_custom_event_safely(
+                "on_progress_update",
+                ProgressUpdateEvent(
+                    progress=0.15,
+                    message="Extracted JD text from marker tool.",
+                    additional_data={"text_length": len(tool_content)},
+                ),
+            )
+            return State(jd_text=tool_content, source_url=source_url)
 
-        logger.warning("No ```jd block found in JD extraction response.")
+        logger.warning(f"Unexpected or empty JD extraction tool result: {tool_name}")
         _dispatch_custom_event_safely(
             "on_progress_update",
             ProgressUpdateEvent(
                 progress=1.0,
-                message="JD extraction failed: missing fenced jd block.",
-                additional_data={"text_length": len(ai_content)},
+                message="JD extraction failed: invalid marker tool result.",
+                additional_data={
+                    "tool_name": tool_name,
+                    "text_length": len(tool_content),
+                },
             ),
         )
         return State(jd_text=None, source_url=source_url)
@@ -547,12 +558,17 @@ class JdAnalyzerAgent(BaseAgent[State]):
             job_title=extracted.job_title,
             job_level=extracted.job_level,
             job_family=extracted.job_family,
-            location=extracted.location,
+            primary_location=extracted.primary_location,
+            locations=extracted.locations,
             remote_policy=extracted.remote_policy,
             employment_type=extracted.employment_type,
+            experience_raw=extracted.experience_raw,
             years_experience_min=extracted.years_experience_min,
             years_experience_max=extracted.years_experience_max,
+            experience_level=extracted.experience_level,
+            education_raw=extracted.education_raw,
             education_min=extracted.education_min,
+            major_requirement=extracted.major_requirement,
             salary=extracted.salary,
             benefits=extracted.benefits,
             blocks=blocks_with_facts,

@@ -6,7 +6,7 @@ _system_prompt = PromptComposer([
         name="Instructions",
         content=(
             "You are a job description analysis assistant.\n"
-            "Analyze the provided JD text and answer user questions about it."
+            "Your job is to analyze the provided JD text."
         ),
     )
 ])
@@ -25,16 +25,16 @@ jd_web_search_system_prompt = (
     "over loose user commentary.\n"
     "- You MUST NOT guess, search, or infer a JD from vague or incomplete input.\n"
     "- If no valid JD can be obtained from the provided text, URL, image blocks, or OCR text, "
-    "respond with [JD_EXTRACTION_FAILED] and a brief reason.\n\n"
-    "Output rules:\n"
-    "- Your final message MUST contain the extracted JD text wrapped in a fenced block:\n"
-    "  ```jd\\n<full JD text here>\\n```\n"
+    "call mark_jd_extraction_failure with a brief reason.\n\n"
+    "Tool rules:\n"
+    "- You MUST finish by calling exactly one marker tool.\n"
+    "- If you obtained the complete JD text, call mark_jd_extraction_success with jd_text set to "
+    "the complete original JD text.\n"
+    "- If you cannot obtain a valid JD, call mark_jd_extraction_failure with reason set to a brief "
+    "explanation.\n"
+    "- Do NOT finish with a plain text answer instead of a marker tool call.\n"
     "- Preserve the original language and wording of the JD. Do NOT translate or rewrite.\n"
-    "- If JD text is already provided directly, still wrap the clean JD text in the ```jd block.\n"
-    "- If you cannot obtain a valid JD, respond with ONLY:\n"
-    "  [JD_EXTRACTION_FAILED] followed by a brief reason.\n"
-    "- Do NOT add your own commentary inside the ```jd block. Only the JD content goes there.\n"
-    "- Outside the ```jd block, you may briefly explain what you did (e.g. 'I fetched the page from ...').\n"
+    "- If JD text is already provided directly, pass the clean JD text to mark_jd_extraction_success.\n"
 )
 
 
@@ -69,10 +69,13 @@ jd_facts_extraction_system_prompt = (
     "requested by the caller.\n\n"
     "Strict field-name rules:\n"
     "- The top-level field MUST be named facts.\n"
-    "- Each fact object MUST contain exactly: fact_type, text, evidence, keywords.\n"
+    "- Each fact object must follow the JdFactEx schema fields: fact_type, custom_fact_type, "
+    "importance, text, evidence, keywords.\n"
     "- The fact content field MUST be named text.\n"
     "- Do NOT use content, description, summary, or any other name instead of text.\n"
     "- Do NOT include extra fields.\n"
+    "- custom_fact_type may be null unless fact_type is 'other' or a nuanced category should be preserved.\n"
+    "- importance MUST be one of: must_have, nice_to_have, responsibility, unknown.\n"
     "- keywords MUST be a list of strings. If no useful keywords, use an empty list.\n\n"
     "Fact extraction rules:\n"
     "- Use only the input block text.\n"

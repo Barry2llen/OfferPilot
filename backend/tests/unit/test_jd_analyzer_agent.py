@@ -1,5 +1,5 @@
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.constants import END
 
 from agent.agents.jd_analyzer import agent as jd_agent_module
@@ -114,24 +114,43 @@ def test_prepare_jd_source_ocr_images_for_text_model(
     assert "OCR 岗位职责：负责后端开发。" in content[1]["text"]
 
 
-async def test_get_web_fetch_tools_returns_empty_when_unavailable(
+async def test_get_jd_source_tools_includes_marker_tools_when_web_fetch_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_get_web_search_tools(config):
+    async def fake_get_tools(*names, config):
         return []
 
-    monkeypatch.setattr(jd_agent_module, "get_web_search_tools", fake_get_web_search_tools)
+    monkeypatch.setattr(jd_agent_module, "get_tools", fake_get_tools)
 
-    assert await jd_agent_module._get_web_fetch_tools(None) == ()
+    tools = await jd_agent_module._get_jd_source_tools(None)
+
+    assert [tool.name for tool in tools] == [
+        "mark_jd_extraction_success",
+        "mark_jd_extraction_failure",
+    ]
 
 
-def test_parse_jd_text_extracts_fenced_block_and_source_url() -> None:
+def test_parse_jd_text_extracts_success_tool_result_and_source_url() -> None:
     agent = JdAnalyzerAgent()
     state = {
         "source_url": "https://example.com/jobs/123",
         "messages": [
             HumanMessage(content="请分析这个岗位。"),
-            AIMessage(content="已提取：\n```jd\n岗位职责：负责后端开发\n```"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "mark_jd_extraction_success",
+                        "args": {"jd_text": "岗位职责：负责后端开发"},
+                        "id": "call-success",
+                    }
+                ],
+            ),
+            ToolMessage(
+                content="岗位职责：负责后端开发",
+                tool_call_id="call-success",
+                name="mark_jd_extraction_success",
+            ),
         ]
     }
 
@@ -146,7 +165,11 @@ def test_parse_jd_text_does_not_programmatically_extract_source_url() -> None:
     state = {
         "messages": [
             HumanMessage(content="https://example.com/jobs/123"),
-            AIMessage(content="```jd\n岗位职责：负责后端开发\n```"),
+            ToolMessage(
+                content="岗位职责：负责后端开发",
+                tool_call_id="call-success",
+                name="mark_jd_extraction_success",
+            ),
         ]
     }
 
@@ -156,17 +179,25 @@ def test_parse_jd_text_does_not_programmatically_extract_source_url() -> None:
     assert result["source_url"] is None
 
 
-def test_parse_jd_text_marks_failed_response_as_terminal() -> None:
+def test_parse_jd_text_marks_failure_tool_result_as_terminal() -> None:
     agent = JdAnalyzerAgent()
     result = agent._parse_jd_text_node(
-        {"messages": [AIMessage(content="[JD_EXTRACTION_FAILED] not a JD")]}
+        {
+            "messages": [
+                ToolMessage(
+                    content="not a JD",
+                    tool_call_id="call-failure",
+                    name="mark_jd_extraction_failure",
+                )
+            ]
+        }
     )
 
     assert result["jd_text"] is None
     assert agent._should_continue(result) == "end"
 
 
-def test_parse_jd_text_rejects_unfenced_ai_response() -> None:
+def test_parse_jd_text_rejects_plain_ai_response_without_marker_tool() -> None:
     agent = JdAnalyzerAgent()
     result = agent._parse_jd_text_node(
         {"messages": [AIMessage(content="岗位职责：负责后端开发")]}
@@ -230,7 +261,17 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
             content="负责服务端开发。",
         ),
     ]
-    extracted = JobDescriptionEx(job_title="后端开发工程师", blocks=blocks)
+    extracted = JobDescriptionEx(
+        job_title="后端开发工程师",
+        primary_location="上海",
+        locations=["上海", "杭州"],
+        experience_raw="3年以上后端开发经验",
+        years_experience_min=3,
+        years_experience_max=5,
+        education_raw="本科及以上",
+        major_requirement="计算机相关专业",
+        blocks=blocks,
+    )
 
     result = await JdAnalyzerAgent()._extract_facts_node(
         {
@@ -250,4 +291,11 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
         "第二 fact",
         "第三 fact",
     ]
+    assert job_description.primary_location == "上海"
+    assert job_description.locations == ["上海", "杭州"]
+    assert job_description.experience_raw == "3年以上后端开发经验"
+    assert job_description.years_experience_min == 3
+    assert job_description.years_experience_max == 5
+    assert job_description.education_raw == "本科及以上"
+    assert job_description.major_requirement == "计算机相关专业"
     assert calls_by_title["第二"] == 2
