@@ -234,14 +234,10 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
                 ]
             )
 
-    class FakeChatModel:
-        def with_structured_output(self, schema):
-            return FakeExtractor()
-
     monkeypatch.setattr(
         jd_agent_module,
-        "load_chat_model",
-        lambda model_selection: FakeChatModel(),
+        "load_structured_model",
+        lambda model_selection, schema: FakeExtractor(),
     )
 
     blocks = [

@@ -18,6 +18,7 @@ from ..base import (
     BaseInterupt
 )
 from ..prompts import (
+    PromptMessageBuilder,
     PromptBuilder,
     Prompts,
     normalize_system_prompts
@@ -72,7 +73,7 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
 
 class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
-    system_prompts: PromptBuilder[State]
+    system_prompts: PromptMessageBuilder[State]
     tools: ToolsBuilder[State]
 
     def __init__(
@@ -86,9 +87,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
-        self.system_prompts = normalize_system_prompts(system_prompts)
 
-    async def _tool_node(self, state: BaseAgentState) -> BaseAgentState:
+        prompts = normalize_system_prompts(system_prompts)
+        self.system_prompts = prompts if callable(prompts) else lambda runtime: prompts
+
+    async def _tool_node(self, state: State) -> State:
         """
         Tool node. This node is responsible for calling the tool and getting the response.
         It calls the tool with the state.messages and returns the response.
@@ -133,7 +136,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         async def _call_tool(tool_call: ToolCall) -> ToolMessage:
             name = tool_call["name"]
             args = tool_call["args"]
-            tool_call_id = tool_call.get("id", "")
+            tool_call_id = tool_call.get("id") or ""
 
             logger.debug(f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})")
 
@@ -178,9 +181,9 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             return tool_msg
         
         results = await asyncio.gather(*(_call_tool(tool_call) for tool_call in tool_calls))
-        return BaseAgentState(messages=list(results))
+        return {'messages': list(results)} # type: ignore
 
-    async def _model_call_node(self, state: BaseAgentState) -> BaseAgentState:
+    async def _model_call_node(self, state: State) -> State:
         """
         Model call node. This node is responsible for calling the model and getting the response.
         It switchs the model based on the state.model and calls the model with the state.messages.
@@ -223,7 +226,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
                     #logger.debug(f"Invoking model with system prompts '{system_prompts}' and messages:\n{state.get('messages')}")
 
-                    response = await model.ainvoke(system_prompts + state.get('messages', [])) # type: ignore
+                    response = await model.ainvoke(system_prompts + state.get('messages', []))
 
                     duration_ms = max(0, round((perf_counter() - started_at) * 1000))
                     if _record_reasoning_duration(response, duration_ms):
@@ -231,7 +234,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                             "on_reasoning_done",
                             {"duration_ms": duration_ms},
                         )
-                    return BaseAgentState(messages=[response])
+                    return {'messages': [response]} # type: ignore
                 except Exception as e:
                     await _adispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
                         error=str(e),
@@ -265,6 +268,14 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             raise AgentStateError("No messages in state, this should not happen.")
         
         msg = messages[-1]
+        if msg.type not in {"ai", "tool"}:
+            logger.error(
+                "Last message in state is not an AI or tool message, this should not happen."
+            )
+            raise AgentStateError(
+                "Last message in state is not an AI or tool message, this should not happen."
+            )
+
         return_direct = msg.additional_kwargs.get('return_direct')
 
         if return_direct:

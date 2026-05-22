@@ -38,7 +38,7 @@ from ...tools import get_tools
 from ...annotations.types import MaybeCallable
 from ...events import ModelCallErrorEvent, ProgressUpdateEvent
 from ...base import BaseAgent, BaseInterupt
-from ...models import load_chat_model
+from ...models import load_structured_model
 
 
 _FACT_EXTRACTION_CONCURRENCY = 5
@@ -216,8 +216,8 @@ class JdAnalyzerAgent(BaseAgent[State]):
         return State(
             messages=[
                 RemoveMessage(id=REMOVE_ALL_MESSAGES),
-                HumanMessage(content=content_blocks),
-            ],  # type: ignore
+                HumanMessage(content=content_blocks), # type: ignore
+            ],
             source_url=source_url,
             images=images,
         )
@@ -309,9 +309,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
             max_retries = self.config.model_call_retry_attempts
             for attempt in range(max_retries):
                 try:
-                    extractor: Runnable[LanguageModelInput, JobDescriptionEx] = (
-                        load_chat_model(model_selection).with_structured_output(JobDescriptionEx)
-                    )  # type: ignore
+                    extractor = load_structured_model(model_selection, JobDescriptionEx)
                     logger.debug("Invoking model for JD structure extraction.")
                     candidate = await extractor.ainvoke([
                         SystemMessage(content=jd_extraction_system_prompt),
@@ -449,9 +447,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
             max_retries = self.config.model_call_retry_attempts
             for attempt in range(max_retries):
                 try:
-                    extractor: Runnable[LanguageModelInput, JdFactsEx] = (
-                        load_chat_model(model_selection).with_structured_output(JdFactsEx)
-                    )  # type: ignore
+                    extractor = load_structured_model(model_selection, JdFactsEx)
                 except Exception as e:
                     logger.error(
                         f"Error loading model for JD fact extraction, attempt {attempt + 1}/{max_retries}:\n{e}"

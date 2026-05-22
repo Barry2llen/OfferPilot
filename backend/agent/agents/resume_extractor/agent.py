@@ -30,13 +30,13 @@ from .prompt import (
     section_extraction_system_prompt,
     facts_extraction_system_prompt
 )
-from ...annotations.types import MaybeCallable
 from .state import State
 from .model import TextValidation
+from ...models.structured import load_structured_model
+from ...annotations.types import MaybeCallable
 from ...events import ModelCallErrorEvent, ProgressUpdateEvent
 from ...base import BaseAgent, BaseInterupt
 from ...nodes.wrappers import require_fields
-from ...models import load_chat_model
 
 
 def _is_missing_parent_run_error(error: RuntimeError) -> bool:
@@ -101,9 +101,7 @@ class ResumeExtractorAgent(BaseAgent[State]):
             raise ResumePreviewConversionError(f"Failed to convert resume to image: {e}")
         
         # Check text extraction result.
-        validator: Runnable[LanguageModelInput, TextValidation] = (
-            load_chat_model(model_selection).with_structured_output(TextValidation)
-        ) # type: ignore
+        validator = load_structured_model(model_selection, TextValidation)
         
         while True:
             flag = False
@@ -198,11 +196,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
         _dispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
             progress=0.4,
             message="Extracting resume sections.",
-        ))
+        ))  
 
-        extractor: Runnable[LanguageModelInput, ResumeSections] = (
-            load_chat_model(model_selection).with_structured_output(ResumeSections)
-        ) # type: ignore
+        extractor = load_structured_model(model_selection, ResumeSections)
 
         while True:
             flag = False
@@ -268,9 +264,7 @@ class ResumeExtractorAgent(BaseAgent[State]):
         sections: list[ResumeSectionEx] = state.get('sections') # type: ignore
         total_sections = len(sections)
         sections_with_facts = []
-        extractor: Runnable[LanguageModelInput, ResumeFacts] = (
-            load_chat_model(model_selection).with_structured_output(ResumeFacts)
-        ) # type: ignore
+        extractor = load_structured_model(model_selection, ResumeFacts)
         await _adispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
             progress=0.6,
             message="Extracting facts from resume sections.",

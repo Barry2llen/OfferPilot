@@ -3,6 +3,7 @@ from .base import (
     PromptBuilder,
     PromptFragment,
     PromptComposer,
+    PromptMessageBuilder,
     normalize_system_prompts,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "PromptBuilder",
     "PromptFragment",
     "PromptComposer",
+    "PromptMessageBuilder",
     "normalize_system_prompts",
 ]

@@ -271,6 +271,16 @@ def test_dicide_next_action_returns_end_without_tool_calls() -> None:
     assert result == "end"
 
 
+def test_dicide_next_action_returns_end_with_tool_message() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[echo_value])
+
+    result = graph._dicide_next_action(
+        make_state([ToolMessage(content="done", tool_call_id="call-done")])
+    )
+
+    assert result == "end"
+
+
 def test_dicide_next_action_returns_tool_with_tool_calls() -> None:
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
 

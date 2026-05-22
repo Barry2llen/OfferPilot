@@ -15,19 +15,15 @@ def _is_debug_enabled() -> bool:
         return False
 
 
-class LoggerProxy:
+class LoggerProxy(type(_logger)):
     """Proxy Loguru logger and gate debug logs by runtime config."""
 
-    def __init__(self, wrapped_logger: Any) -> None:
-        self._wrapped_logger = wrapped_logger
+    def __init__(self, wrapped_logger) -> None:
+        self.__dict__.update(wrapped_logger.__dict__)
 
-    def debug(self, message: Any, *args: Any, **kwargs: Any) -> Any | None:
-        if not _is_debug_enabled():
-            return None
-        return self._wrapped_logger.debug(message, *args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._wrapped_logger, name)
+    def debug(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        if _is_debug_enabled():
+            super().debug(message, *args, **kwargs)
 
 
 _logger.remove()

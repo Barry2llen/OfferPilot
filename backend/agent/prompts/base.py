@@ -1,7 +1,8 @@
 
 from typing import (
     Protocol,
-    Callable
+    Callable,
+    overload
 )
 from dataclasses import dataclass
 
@@ -19,6 +20,9 @@ type Prompts = (
 
 class PromptBuilder[State: StateLike = BaseAgentState](Protocol):
     def __call__(self, runtime: GraphRuntime[State]) -> Prompts: ...
+
+class PromptMessageBuilder[State: StateLike = BaseAgentState](Protocol):
+    def __call__(self, runtime: GraphRuntime[State]) -> list[SystemMessage]: ...
 
 @dataclass
 class PromptFragment[State: StateLike = BaseAgentState]:
@@ -52,18 +56,27 @@ class PromptComposer[State: StateLike = BaseAgentState]:
 
     def __call__(self, runtime: GraphRuntime[State]) -> list[SystemMessage]:
         return [SystemMessage(content=self.raw_prompt(runtime))]
-    
-def default_system_prompt_builder[State: StateLike = BaseAgentState](runtime: GraphRuntime[State]) -> list[SystemMessage]:
-    return []
+
+@overload
+def normalize_system_prompts(
+    system_prompts: Prompts | None,
+) -> list[SystemMessage]:
+    ...
+
+@overload
+def normalize_system_prompts[State: StateLike = BaseAgentState](
+    system_prompts: PromptBuilder[State],
+) -> PromptMessageBuilder[State]:
+    ...
 
 def normalize_system_prompts[State: StateLike = BaseAgentState](
     system_prompts: Prompts | PromptBuilder[State] | None,
-) -> PromptBuilder[State]:
+) -> PromptMessageBuilder[State] | list[SystemMessage]:
     if system_prompts is None:
-        return lambda runtime: []
+        return []
 
     if callable(system_prompts):
-        return system_prompts
+        return lambda runtime: normalize_system_prompts(system_prompts(runtime))
 
     if isinstance(system_prompts, str):
         prompts = [SystemMessage(content=system_prompts)]
@@ -96,5 +109,6 @@ __all__ = [
     "PromptBuilder",
     "PromptFragment",
     "PromptComposer",
+    "PromptMessageBuilder",
     "normalize_system_prompts",
 ]
