@@ -57,7 +57,7 @@ def test_jd_text_input_is_prepared_for_model_call() -> None:
         }
     )
 
-    content = result["messages"][1].content
+    content = result["messages"][0].content
     assert isinstance(content, list)
     assert "[jd_text]\n岗位职责：负责后端开发" in content[0]["text"]
 
@@ -75,7 +75,7 @@ def test_prepare_jd_source_uses_image_blocks_for_vision_model() -> None:
         }
     )
 
-    content = result["messages"][1].content
+    content = result["messages"][0].content
     assert isinstance(content, list)
     assert "https://example.com/jobs/123" in content[0]["text"]
     assert "任职要求：熟悉 Python。" in content[0]["text"]
@@ -107,7 +107,7 @@ def test_prepare_jd_source_ocr_images_for_text_model(
         }
     )
 
-    content = result["messages"][1].content
+    content = result["messages"][0].content
     assert isinstance(content, list)
     assert seen_images == [_IMAGE_DATA_URL]
     assert all(block["type"] == "text" for block in content)

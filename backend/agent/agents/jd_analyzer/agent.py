@@ -172,7 +172,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
             source_parts.append(f"[current_messages]\n{message_text}")
         if images:
             source_parts.append(
-                f"[images]\n{len(images)} image(s) were provided as data URLs."
+                f"[images]\n{len(images)} image(s) were provided."
             )
         if len(source_parts) == 2 and not images:
             source_parts.append("[empty]\nNo JD source was provided.")
@@ -188,7 +188,13 @@ class JdAnalyzerAgent(BaseAgent[State]):
         elif images:
             ocr_parts: list[str] = []
             for index, image in enumerate(images, start=1):
-                ocr_text = document_parser.extract_image_data_url_ocr(image)
+                # When images are provided and needs ocr, the process of ocr is probably already done by services.
+                # So here we support both raw image data url and ocr text as input, and if it's image data url, we will do ocr to extract text and include in the prompt.
+                ocr_text = (
+                    document_parser.extract_image_data_url_ocr(image)
+                    if document_parser.is_image_data_url(image)
+                    else image
+                )
                 ocr_parts.append(
                     f"[image_{index}_ocr]\n{ocr_text.strip() if ocr_text else ''}"
                 )
@@ -215,7 +221,6 @@ class JdAnalyzerAgent(BaseAgent[State]):
 
         return State(
             messages=[
-                RemoveMessage(id=REMOVE_ALL_MESSAGES),
                 HumanMessage(content=content_blocks), # type: ignore
             ],
             source_url=source_url,
