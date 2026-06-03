@@ -4,11 +4,11 @@ from typing import (
 )
 
 from schemas.config import Config
+from exceptions.job_description import JobDescriptionAnalysisValidationError
 from schemas.job_description import JobDescription
 from schemas.model_selection import ModelSelection
 from ...base import BaseWorkflow
 from ...annotations.types import MaybeCallable
-from ...nodes.wrappers import require_fields
 from ...agents.jd_analyzer import (
     State,
     JdAnalyzerAgent
@@ -36,10 +36,16 @@ class JdAnalysisWorkflow(BaseWorkflow[JobDescription, State]):
         )
     
     @override
-    @require_fields('job_description', index=1)
     def _get_result(self, state: State) -> JobDescription:
         job_description = state.get("job_description")
-        return cast(JobDescription, job_description)
+        if job_description is not None:
+            return cast(JobDescription, job_description)
+
+        jd_error = state.get("jd_error")
+        if jd_error:
+            raise JobDescriptionAnalysisValidationError(jd_error)
+
+        raise ValueError("Missing required fields: job_description")
     
 __all__ = [
     "JdAnalysisWorkflow"

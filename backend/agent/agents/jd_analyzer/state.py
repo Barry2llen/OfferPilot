@@ -20,6 +20,7 @@ class State(BaseAgentState, total=False):
     # Intermediate
     jd_extracted: Displace[JobDescriptionEx]
     blocks: Displace[list[JdRequirementBlockEx]]
+    jd_error: Displace[str | None]
 
     # Output
     job_description: Displace[JobDescription | None]

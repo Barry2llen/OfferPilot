@@ -37,6 +37,12 @@ async def delayed_echo_value(value: int, delay: float = 0.0) -> str:
     return f"delayed-value={value}"
 
 
+@tool(return_direct=True)
+def direct_value(value: int) -> str:
+    """Return the formatted value directly."""
+    return f"direct-value={value}"
+
+
 def run_tool_node(graph: ModelCallGraph, state: dict) -> dict:
     return asyncio.run(graph._tool_node(state))
 
@@ -299,6 +305,34 @@ def test_dicide_next_action_returns_tool_with_tool_calls() -> None:
     assert result == "tool"
 
 
+def test_dicide_after_tool_returns_end_for_return_direct_tool_message() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[direct_value])
+
+    result = graph._dicide_after_tool(
+        make_state(
+            [
+                ToolMessage(
+                    content="done",
+                    tool_call_id="call-direct",
+                    additional_kwargs={"return_direct": True},
+                )
+            ]
+        )
+    )
+
+    assert result == "end"
+
+
+def test_dicide_after_tool_returns_model_for_regular_tool_message() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[echo_value])
+
+    result = graph._dicide_after_tool(
+        make_state([ToolMessage(content="done", tool_call_id="call-regular")])
+    )
+
+    assert result == "model"
+
+
 @pytest.mark.parametrize(
     "state",
     [
@@ -311,6 +345,47 @@ def test_dicide_next_action_raises_for_invalid_state(state: dict) -> None:
 
     with pytest.raises(AgentStateError):
         graph._dicide_next_action(state)
+
+
+async def test_compiled_graph_ends_after_return_direct_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def bind_tools(self, tools: object) -> "FakeModel":
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            self.calls += 1
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "direct_value",
+                        "args": {"value": 42},
+                        "id": "call-direct",
+                    }
+                ],
+            )
+
+    fake_model = FakeModel()
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: fake_model,
+    )
+
+    graph = ModelCallGraph(config=Config(), tools=[direct_value]).get_compiled_graph()
+    result = await graph.ainvoke(make_state([HumanMessage(content="hello")]))
+    message = result["messages"][-1]
+
+    assert fake_model.calls == 1
+    assert isinstance(message, ToolMessage)
+    assert message.content == "direct-value=42"
+    assert message.name == "direct_value"
+    assert message.tool_call_id == "call-direct"
+    assert message.additional_kwargs["return_direct"] is True
 
 
 async def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -703,3 +778,36 @@ async def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
 
     with pytest.raises(ModelCallExecutionError, match="Model call failed after 2 retries"):
         await graph._model_call_node(make_state([HumanMessage(content="hello")]))
+
+
+async def test_model_call_node_preserves_tool_resolution_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_events: list[tuple[str, object]] = []
+    selected_model = object()
+
+    def build_tools(runtime) -> list:
+        raise RuntimeError("tool resolution failed")
+
+    async def record_custom_event(name: str, data: object) -> None:
+        custom_events.append((name, data))
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call._adispatch_custom_event_safely",
+        record_custom_event,
+    )
+    monkeypatch.setattr(
+        "agent.graphs.model_call.interrupt",
+        lambda payload: {"type": "abort", "prompt": "stop"},
+    )
+
+    graph = ModelCallGraph(config=Config(), tools=build_tools)
+
+    with pytest.raises(ModelCallExecutionError, match="tool resolution failed"):
+        await graph._model_call_node(
+            make_state([HumanMessage(content="hello")], model=selected_model)
+    )
+
+    assert custom_events[0][0] == "on_model_load_error"
+    assert "tool resolution failed" in custom_events[0][1]["error"]
+    assert custom_events[0][1]["model"] is selected_model

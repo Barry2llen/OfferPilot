@@ -1,6 +1,7 @@
 import pytest
 
 from agent.workflows.jd_analyzer.workflow import JdAnalysisWorkflow
+from exceptions.job_description import JobDescriptionAnalysisValidationError
 from schemas.config import Config
 from schemas.job_description import JobDescription
 from schemas.model_provider import ModelProvider
@@ -64,6 +65,15 @@ def test_get_result_requires_job_description(
 
     with pytest.raises(ValueError, match="Missing required fields: job_description"):
         workflow._get_result({"job_description": None})
+
+
+def test_get_result_raises_jd_error_for_terminal_extraction_failure(
+    temporary_app_config: Config,
+) -> None:
+    workflow = JdAnalysisWorkflow(config=temporary_app_config)
+
+    with pytest.raises(JobDescriptionAnalysisValidationError, match="not a JD"):
+        workflow._get_result({"jd_error": "not a JD"})
 
 
 async def test_ainvoke_builds_initial_state_and_uses_graph_config(

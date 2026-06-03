@@ -1,9 +1,14 @@
+import asyncio
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
 from langgraph.constants import END
 
 from agent.agents.jd_analyzer import agent as jd_agent_module
 from agent.agents.jd_analyzer import JdAnalyzerAgent
+from agent.tools import web_search as web_search_module
+from schemas.config import Config
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
 from schemas.job_description import (
@@ -15,6 +20,12 @@ from schemas.job_description import (
 
 
 _IMAGE_DATA_URL = "data:image/png;base64,ZmFrZS1pbWFnZQ=="
+
+
+@tool
+async def fake_get_content(url: str) -> str:
+    """Return fake fetched content."""
+    return f"content={url}"
 
 
 def _model_selection(*, supports_image_input: bool) -> ModelSelection:
@@ -130,6 +141,88 @@ async def test_get_jd_source_tools_includes_marker_tools_when_web_fetch_unavaila
     ]
 
 
+async def test_web_search_tools_can_be_awaited_repeatedly_with_cached_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_load_web_search_tools(config: Config):
+        nonlocal calls
+        calls += 1
+        return [fake_get_content]
+
+    web_search_module.get_web_search_tools.cache_clear()
+    monkeypatch.setattr(
+        web_search_module,
+        "_load_web_search_tools",
+        fake_load_web_search_tools,
+    )
+
+    config = Config(exa_api_key="test-key")
+    first = await web_search_module.get_web_search_tools(config)
+    second = await web_search_module.get_web_search_tools(config)
+
+    assert calls == 1
+    assert first == second == [fake_get_content]
+
+    web_search_module.get_web_search_tools.cache_clear()
+
+
+async def test_web_search_tools_concurrent_first_load_is_shared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_load_web_search_tools(config: Config):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0)
+        return [fake_get_content]
+
+    web_search_module.get_web_search_tools.cache_clear()
+    monkeypatch.setattr(
+        web_search_module,
+        "_load_web_search_tools",
+        fake_load_web_search_tools,
+    )
+
+    config = Config(exa_api_key="test-key")
+    results = await asyncio.gather(
+        web_search_module.get_web_search_tools(config),
+        web_search_module.get_web_search_tools(config),
+        web_search_module.get_web_search_tools(config),
+    )
+
+    assert calls == 1
+    assert results == [[fake_get_content], [fake_get_content], [fake_get_content]]
+
+    web_search_module.get_web_search_tools.cache_clear()
+
+
+async def test_get_jd_source_tools_can_be_called_repeatedly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_get_tools(*names, config):
+        nonlocal calls
+        calls += 1
+        return [fake_get_content]
+
+    monkeypatch.setattr(jd_agent_module, "get_tools", fake_get_tools)
+
+    first = await jd_agent_module._get_jd_source_tools(None)
+    second = await jd_agent_module._get_jd_source_tools(None)
+
+    assert calls == 2
+    assert [tool.name for tool in first] == [
+        "fake_get_content",
+        "mark_jd_extraction_success",
+        "mark_jd_extraction_failure",
+    ]
+    assert [tool.name for tool in second] == [tool.name for tool in first]
+
+
 def test_parse_jd_text_extracts_success_tool_result_and_source_url() -> None:
     agent = JdAnalyzerAgent()
     state = {
@@ -194,6 +287,7 @@ def test_parse_jd_text_marks_failure_tool_result_as_terminal() -> None:
     )
 
     assert result["jd_text"] is None
+    assert result["jd_error"] == "not a JD"
     assert agent._should_continue(result) == "end"
 
 
@@ -204,6 +298,7 @@ def test_parse_jd_text_rejects_plain_ai_response_without_marker_tool() -> None:
     )
 
     assert result["jd_text"] is None
+    assert result["jd_error"] == "JD extraction failed: missing marker tool call."
     assert agent._should_continue(result) == "end"
 
 
@@ -211,9 +306,10 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls_by_title: dict[str, int] = {}
+    repair_attempts_by_title: dict[str, int] = {}
 
     class FakeExtractor:
-        async def ainvoke(self, messages):
+        async def ainvoke(self, messages, *, max_repair_attempts=0):
             block_text = messages[-1].content
             title = next(
                 candidate
@@ -221,6 +317,7 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
                 if candidate in block_text
             )
             calls_by_title[title] = calls_by_title.get(title, 0) + 1
+            repair_attempts_by_title[title] = max_repair_attempts
             if title == "第二" and calls_by_title[title] == 1:
                 raise RuntimeError("temporary model failure")
             return JdFactsEx(
@@ -295,3 +392,4 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     assert job_description.education_raw == "本科及以上"
     assert job_description.major_requirement == "计算机相关专业"
     assert calls_by_title["第二"] == 2
+    assert repair_attempts_by_title == {"第一": 2, "第二": 2, "第三": 2}

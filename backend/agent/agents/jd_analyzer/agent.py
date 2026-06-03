@@ -12,7 +12,6 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from exceptions.agent import ModelCallExecutionError
-from exceptions.validation import ValidationError
 from utils import document_parser
 from utils.logger import logger
 from schemas.config import Config
@@ -243,26 +242,28 @@ class JdAnalyzerAgent(BaseAgent[State]):
 
         if not tool_name:
             logger.warning("No JD extraction marker tool call found.")
+            error_message = "JD extraction failed: missing marker tool call."
             _dispatch_custom_event_safely(
                 "on_progress_update",
                 ProgressUpdateEvent(
                     progress=1.0,
-                    message="JD extraction failed: missing marker tool call.",
+                    message=error_message,
                 ),
             )
-            return State(jd_text=None, source_url=source_url)
+            return State(jd_text=None, source_url=source_url, jd_error=error_message)
 
         if tool_name == mark_jd_extraction_failure.name:
-            logger.warning(f"JD extraction failed: {tool_content[:200]}")
+            error_message = tool_content or "JD extraction failed."
+            logger.info(f"JD extraction failed: {error_message[:200]}")
             _dispatch_custom_event_safely(
                 "on_progress_update",
                 ProgressUpdateEvent(
                     progress=1.0,
                     message="JD extraction failed.",
-                    additional_data={"reason": tool_content[:500]},
+                    additional_data={"reason": error_message[:500]},
                 ),
             )
-            return State(jd_text=None, source_url=source_url)
+            return State(jd_text=None, source_url=source_url, jd_error=error_message)
 
         if tool_name == mark_jd_extraction_success.name and tool_content:
             _dispatch_custom_event_safely(
@@ -276,18 +277,19 @@ class JdAnalyzerAgent(BaseAgent[State]):
             return State(jd_text=tool_content, source_url=source_url)
 
         logger.warning(f"Unexpected or empty JD extraction tool result: {tool_name}")
+        error_message = "JD extraction failed: invalid marker tool result."
         _dispatch_custom_event_safely(
             "on_progress_update",
             ProgressUpdateEvent(
                 progress=1.0,
-                message="JD extraction failed: invalid marker tool result.",
+                message=error_message,
                 additional_data={
                     "tool_name": tool_name,
                     "text_length": len(tool_content),
                 },
             ),
         )
-        return State(jd_text=None, source_url=source_url)
+        return State(jd_text=None, source_url=source_url, jd_error=error_message)
 
     def _should_continue(self, state: State) -> str:
         """Route: if jd_text was extracted, continue to structure extraction; otherwise end."""
@@ -310,36 +312,29 @@ class JdAnalyzerAgent(BaseAgent[State]):
         jd_text: str = state.get("jd_text")  # type: ignore
 
         while True:
-            result: JobDescriptionEx | None = None
             max_retries = self.config.model_call_retry_attempts
-            for attempt in range(max_retries):
-                try:
-                    extractor = load_structured_model(model_selection, JobDescriptionEx)
-                    logger.debug("Invoking model for JD structure extraction.")
-                    candidate = await extractor.ainvoke([
+            repair_attempts = max(0, max_retries - 1)
+            try:
+                extractor = load_structured_model(model_selection, JobDescriptionEx)
+                logger.debug("Invoking model for JD structure extraction.")
+                result = await extractor.ainvoke(
+                    [
                         SystemMessage(content=jd_extraction_system_prompt),
                         HumanMessage(content=jd_text),
-                    ])
-
-                    if not isinstance(candidate, JobDescriptionEx):
-                        logger.debug(f"JD extraction result is not in expected format: {candidate}")
-                        raise ValidationError("JD extraction result is not in the expected format.")
-
-                    result = candidate
-                    break
-                except Exception as e:
-                    logger.error(
-                        f"Error calling model for JD extraction, attempt {attempt + 1}/{max_retries}:\n{e}"
-                    )
-                    await _adispatch_custom_event_safely(
-                        "on_model_call_error",
-                        ModelCallErrorEvent(
-                            error=str(e), attempt=attempt + 1, max_attempts=max_retries
-                        ),
-                    )
-
-            if result is not None:
+                    ],
+                    max_repair_attempts=repair_attempts,
+                )
                 break
+            except Exception as e:
+                logger.error(
+                    f"Error calling model for JD extraction after {max_retries} attempts:\n{e}"
+                )
+                await _adispatch_custom_event_safely(
+                    "on_model_call_error",
+                    ModelCallErrorEvent(
+                        error=str(e), attempt=max_retries, max_attempts=max_retries
+                    ),
+                )
 
             logger.error(f"Model call failed after {max_retries} retries for JD extraction.")
             resp: BaseCommand = interrupt(
@@ -418,11 +413,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     facts_result: JdFactsEx = await extractor.ainvoke([
                         SystemMessage(content=jd_facts_extraction_system_prompt),
                         HumanMessage(content=block_text),
-                    ])
-
-                if not isinstance(facts_result, JdFactsEx):
-                    logger.debug(f"Facts result not in expected format: {facts_result}")
-                    raise ValidationError("Facts result is not in the expected format.")
+                    ], max_repair_attempts=max(0, self.config.model_call_retry_attempts - 1))
 
                 return (
                     index,

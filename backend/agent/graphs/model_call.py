@@ -32,6 +32,7 @@ from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 from schemas.command import BaseCommand
 from utils.logger import logger
+from utils.json import jsonify
 
 
 def _is_missing_parent_run_error(error: RuntimeError) -> bool:
@@ -190,11 +191,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         """
         
         while True:
+            model_selection = state.get('model')
             try:
                 tools = await resolve_tools(self.tools, self.get_runtime(state))
                 system_prompts = self.system_prompts(self.get_runtime(state))
                 
-                model_selection = state.get('model')
                 if callable(model_selection):
                     model_selection = model_selection(state=state)
                 model = load_chat_model(model_selection).bind_tools(tools)
@@ -224,9 +225,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 try:
                     started_at = perf_counter()
 
-                    #logger.debug(f"Invoking model with system prompts '{system_prompts}' and messages:\n{state.get('messages')}")
+                    input = system_prompts + state.get('messages', [])
 
-                    response = await model.ainvoke(system_prompts + state.get('messages', []))
+                    #logger.debug(f"Calling model with input messages:\n{jsonify(input)}")
+
+                    response = await model.ainvoke(input)
 
                     duration_ms = max(0, round((perf_counter() - started_at) * 1000))
                     if _record_reasoning_duration(response, duration_ms):
@@ -275,16 +278,36 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             raise AgentStateError(
                 "Last message in state is not an AI or tool message, this should not happen."
             )
-
-        return_direct = msg.additional_kwargs.get('return_direct')
-
-        if return_direct:
-            logger.debug("Message has return_direct flag, ending the graph.")
-            return 'end'
         
-        tool_calls = getattr(msg, 'tool_calls', None) or []
+        tool_calls = getattr(msg, 'tool_calls', None)
 
         return 'tool' if tool_calls else 'end'
+
+    def _dicide_after_tool(self, state: State) -> str:
+        """
+        Decide whether to end after tool execution or return to the model.
+        """
+
+        messages = state.get("messages")
+
+        if not messages:
+            logger.error("No messages in state, this should not happen.")
+            raise AgentStateError("No messages in state, this should not happen.")
+
+        msg = messages[-1]
+        if msg.type == "tool":
+            return_direct = msg.additional_kwargs.get('return_direct')
+            if return_direct:
+                logger.debug("Tool message has return_direct flag, ending the graph.")
+                return 'end'
+            return 'model'
+        else:
+            logger.error(
+                "Last message in state is not a tool message, this should not happen."
+            )
+            raise AgentStateError(
+                "Last message in state is not a tool message, this should not happen."
+            )
             
     @override
     def get_graph(self) -> StateGraph[BaseAgentState]:
@@ -293,7 +316,14 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         graph.add_node('model', self._model_call_node)
         graph.add_node('tool', self._tool_node)
         graph.add_edge(START, 'model')
-        graph.add_edge('tool', 'model')
+        graph.add_conditional_edges(
+            'tool',
+            self._dicide_after_tool,
+            {
+                'model': 'model',
+                'end': END
+            }
+        )
         graph.add_conditional_edges(
             'model',
             self._dicide_next_action,

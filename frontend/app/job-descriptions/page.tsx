@@ -6,6 +6,7 @@ import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import Card from "@/app/components/ui/card";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
+import ChatAttachmentCard from "@/app/components/chat/chat-attachment-card";
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import { useAsyncData } from "@/app/hooks/use-async-data";
@@ -32,6 +33,12 @@ interface JdTask {
   modelError: string | null;
   error: string | null;
   analysisId: number | null;
+}
+
+interface LocalJdImage {
+  key: string;
+  file: File;
+  previewUrl: string;
 }
 
 function formatTime(value: string | null): string {
@@ -79,13 +86,16 @@ export default function JobDescriptionsPage() {
   const [libraryFiles, setLibraryFiles] = useState<ChatFileListItem[]>([]);
   const [jdText, setJdText] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
+  const [localImages, setLocalImages] = useState<LocalJdImage[]>([]);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [imagePickerQuery, setImagePickerQuery] = useState("");
   const [task, setTask] = useState<JdTask | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] =
     useState<JobDescriptionAnalysisListItem | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadKeyRef = useRef(0);
   const runningRef = useRef(false);
   const { state } = useAppContext();
   const { setModelSelection } = useAppActions();
@@ -121,24 +131,55 @@ export default function JobDescriptionsPage() {
     return libraryFiles.filter((file) => selected.has(file.id));
   }, [libraryFiles, selectedFileIds]);
 
+  const filteredLibraryFiles = useMemo(() => {
+    const query = imagePickerQuery.trim().toLowerCase();
+    if (!query) return libraryFiles;
+    return libraryFiles.filter(
+      (file) =>
+        file.id.toLowerCase().includes(query) ||
+        file.original_filename.toLowerCase().includes(query)
+    );
+  }, [imagePickerQuery, libraryFiles]);
+
+  const selectedFileIdSet = useMemo(
+    () => new Set(selectedFileIds),
+    [selectedFileIds]
+  );
+
   const hasInput =
-    jdText.trim() || sourceUrl.trim() || files.length > 0 || selectedFileIds.length > 0;
+    jdText.trim() ||
+    sourceUrl.trim() ||
+    localImages.length > 0 ||
+    selectedFileIds.length > 0;
   const hasNoModel = !modelsLoading && models.length === 0;
   const running = task?.status === "running";
   const disabled = running || hasNoModel || !state.currentModelSelection;
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(event.target.files ?? []);
-    const accepted: File[] = [];
+    const accepted: LocalJdImage[] = [];
     for (const file of picked) {
       if (!isSupportedJdImage(file)) {
         addToast("JD 图片仅支持 PNG、JPG、JPEG", "error");
         continue;
       }
-      accepted.push(file);
+      uploadKeyRef.current += 1;
+      accepted.push({
+        key: `jd-image-${uploadKeyRef.current}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
     }
-    setFiles((current) => [...current, ...accepted]);
+    setLocalImages((current) => [...current, ...accepted]);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeLocalImage = (key: string) => {
+    setLocalImages((current) => {
+      const target = current.find((item) => item.key === key);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((item) => item.key !== key);
+    });
   };
 
   const toggleLibraryFile = (fileId: string) => {
@@ -251,8 +292,10 @@ export default function JobDescriptionsPage() {
           runningRef.current = false;
           setJdText("");
           setSourceUrl("");
-          setFiles([]);
+          localImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+          setLocalImages([]);
           setSelectedFileIds([]);
+          setImagePickerOpen(false);
           addToast("JD 分析完成", "success");
           refetch();
           break;
@@ -293,7 +336,7 @@ export default function JobDescriptionsPage() {
           selectionId: state.currentModelSelection,
           jdText,
           sourceUrl,
-          files,
+          files: localImages.map((item) => item.file),
           fileIds: selectedFileIds,
         },
         handleEvent,
@@ -402,92 +445,80 @@ export default function JobDescriptionsPage() {
             className="min-h-40 resize-y rounded-2xl border border-border-light bg-white px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           />
           <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={JD_IMAGE_ACCEPT}
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
+          <div className="rounded-2xl border border-dashed border-border-default bg-surface-primary p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-text-primary">选择图片</p>
+                <p className="mt-1 text-xs text-text-muted">
+                  支持上传本地 PNG、JPG、JPEG，也可复用文件库图片
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={running}
+                onClick={() => setImagePickerOpen(true)}
+              >
+                选择图片
+              </Button>
+            </div>
+
+            {localImages.length === 0 && selectedLibraryFiles.length === 0 ? (
+              <p className="mt-4 rounded-xl bg-white px-3 py-4 text-center text-xs text-text-muted">
+                尚未选择图片
+              </p>
+            ) : (
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {localImages.map((item) => (
+                  <ChatAttachmentCard
+                    key={item.key}
+                    attachment={{
+                      fileId: null,
+                      originalFilename: item.file.name,
+                      mediaType: item.file.type || null,
+                      pending: true,
+                      previewUrl: item.previewUrl,
+                      sizeBytes: item.file.size,
+                    }}
+                    variant="composer"
+                    onRemove={running ? undefined : () => removeLocalImage(item.key)}
+                  />
+                ))}
+                {selectedLibraryFiles.map((file) => (
+                  <ChatAttachmentCard
+                    key={file.id}
+                    attachment={{
+                      fileId: file.id,
+                      originalFilename: file.original_filename,
+                      mediaType: file.media_type,
+                      rawUrl: chatFilesApi.rawUrl(file.id),
+                      sizeBytes: file.size_bytes,
+                    }}
+                    variant="composer"
+                    onRemove={
+                      running ? undefined : () => toggleLibraryFile(file.id)
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <input
             value={sourceUrl}
             disabled={running}
             onChange={(event) => setSourceUrl(event.target.value)}
             placeholder="来源 URL"
             className="h-11 rounded-2xl border border-border-light bg-white px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           />
-
-          <div className="rounded-2xl border border-dashed border-border-default bg-surface-primary p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={JD_IMAGE_ACCEPT}
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={running}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                选择图片
-              </Button>
-              <span className="text-xs text-text-muted">支持 PNG、JPG、JPEG</span>
-            </div>
-            {files.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {files.map((file) => (
-                  <button
-                    key={`${file.name}-${file.size}`}
-                    type="button"
-                    disabled={running}
-                    onClick={() =>
-                      setFiles((current) => current.filter((item) => item !== file))
-                    }
-                    className="rounded-lg bg-info-bg px-2.5 py-1 text-xs font-medium text-info-text"
-                  >
-                    {file.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {libraryFiles.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-medium text-text-secondary">
-                文件库图片
-              </p>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {libraryFiles.map((file) => {
-                  const checked = selectedFileIds.includes(file.id);
-                  return (
-                    <label
-                      key={file.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition ${
-                        checked
-                          ? "border-primary-500 bg-primary-200/20"
-                          : "border-border-light bg-white hover:border-text-muted"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={running}
-                        onChange={() => toggleLibraryFile(file.id)}
-                        className="h-4 w-4"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-text-primary">
-                        {file.original_filename}
-                      </span>
-                      <span className="text-xs text-text-muted">{file.id}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {selectedLibraryFiles.length > 0 && (
-            <p className="text-xs text-text-muted">
-              已选择 {selectedLibraryFiles.length} 张历史图片
-            </p>
-          )}
 
           {task && (
             <div className="rounded-2xl bg-surface-secondary p-4">
@@ -598,6 +629,112 @@ export default function JobDescriptionsPage() {
         onCancel={() => setConfirmDelete(null)}
         loading={!!deleting}
       />
+
+      {imagePickerOpen && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+            onClick={() => setImagePickerOpen(false)}
+          />
+          <div className="relative flex max-h-[82vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
+            <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
+              <div>
+                <h3 className="font-display text-lg font-semibold text-text-primary">
+                  选择图片
+                </h3>
+                <p className="text-xs text-text-muted">
+                  上传新图片或从文件库选择已有图片
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImagePickerOpen(false)}
+                className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
+                aria-label="关闭选择图片"
+                title="关闭"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="border-b border-border-light px-5 py-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={running}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  上传本地图片
+                </Button>
+                <input
+                  value={imagePickerQuery}
+                  onChange={(event) => setImagePickerQuery(event.target.value)}
+                  placeholder="搜索文件库图片"
+                  className="h-10 min-w-0 flex-1 rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
+                />
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {libraryFiles.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border-default px-4 py-10 text-center">
+                  <p className="text-sm font-medium text-text-primary">
+                    文件库暂无图片
+                  </p>
+                  <p className="mt-1 text-xs text-text-muted">
+                    可以直接上传本地图片，提交后会保存进文件库
+                  </p>
+                </div>
+              ) : filteredLibraryFiles.length === 0 ? (
+                <p className="py-8 text-center text-sm text-text-muted">
+                  没有匹配的文件库图片
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {filteredLibraryFiles.map((file) => {
+                    const selected = selectedFileIdSet.has(file.id);
+                    return (
+                      <ChatAttachmentCard
+                        key={file.id}
+                        onClick={() => {
+                          if (!running) toggleLibraryFile(file.id);
+                        }}
+                        selected={selected}
+                        variant="picker"
+                        attachment={{
+                          fileId: file.id,
+                          originalFilename: file.original_filename,
+                          mediaType: file.media_type,
+                          rawUrl: chatFilesApi.rawUrl(file.id),
+                          sizeBytes: file.size_bytes,
+                          referenceCount: file.reference_count,
+                          createdAt: file.created_at,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border-light px-5 py-4">
+              <span className="text-xs text-text-muted">
+                已选 {localImages.length + selectedFileIds.length} 张图片
+              </span>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setImagePickerOpen(false)}
+              >
+                完成
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
