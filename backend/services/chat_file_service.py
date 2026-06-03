@@ -149,7 +149,7 @@ class ChatFileService:
                 )
 
             attachments: list[ChatAttachmentRef] = []
-            content_blocks: list[dict[str, str]] = []
+            content_blocks: list[dict[str, object]] = []
             reference_lines: list[str] = []
 
             for record in stored_records:
@@ -311,7 +311,7 @@ class ChatFileService:
             f"Unsupported chat file type: {file_path.suffix.lower() or '<missing>'}"
         )
 
-    def _build_image_blocks(self, record: ChatFileORM) -> list[dict[str, str]]:
+    def _build_image_blocks(self, record: ChatFileORM) -> list[dict[str, object]]:
         file_path = self._resolve_storage_path(record.storage_path)
         images = render_file_to_images(file_path)
         return [image.to_content_block() for image in images]

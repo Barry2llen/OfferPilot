@@ -785,6 +785,67 @@ def test_ai_chat_stream_endpoint_accepts_attachment_without_prompt(
     assert "alpha" in human_message.content[1]["text"]
 
 
+def test_ai_chat_stream_endpoint_sends_image_attachment_as_image_url_block(
+    temporary_app_config: Config,
+    workspace_tmp_dir: Path,
+) -> None:
+    app = create_app(temporary_app_config)
+    seen_states: list[dict] = []
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(
+            client,
+            provider_name="vision-openai",
+            model_name="gpt-4o-vision",
+            supports_image_input=True,
+        )
+        file_path = workspace_tmp_dir / "flash.png"
+        file_path.write_bytes(b"fake-png")
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                seen_states.append(state)
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        with file_path.open("rb") as uploaded:
+            response = client.post(
+                "/ai/chat/stream",
+                data={
+                    "selection_id": str(selection_id),
+                    "prompt": "解析图片",
+                    "thread_id": "thread-image-file",
+                },
+                files={"files": ("flash.png", uploaded, "image/png")},
+            )
+
+    assert response.status_code == 200
+    assert '"requires_image_input": true' in response.text
+    assert '"original_filename": "flash.png"' in response.text
+    assert '"injection_mode": "image"' in response.text
+
+    human_message = seen_states[0]["messages"][0]
+    assert human_message.additional_kwargs["display_content"] == "解析图片"
+    assert human_message.additional_kwargs["attachments"][0]["original_filename"] == "flash.png"
+    assert isinstance(human_message.content, list)
+    assert human_message.content[0]["type"] == "text"
+    assert "flash.png" in human_message.content[0]["text"]
+    assert human_message.content[1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,ZmFrZS1wbmc="},
+    }
+
+
 def test_ai_chat_history_prefers_display_content_and_returns_attachments(
     temporary_app_config: Config,
 ) -> None:

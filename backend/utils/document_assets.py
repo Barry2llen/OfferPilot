@@ -62,11 +62,10 @@ class RenderedDocumentImage:
     def to_data_url(self) -> str:
         return f"data:{self.mime_type};base64,{self.base64_data}"
 
-    def to_content_block(self) -> dict[str, str]:
+    def to_content_block(self) -> dict[str, object]:
         return {
-            "type": "image",
-            "base64": self.base64_data,
-            "mime_type": self.mime_type,
+            "type": "image_url",
+            "image_url": {"url": self.to_data_url()},
         }
 
 

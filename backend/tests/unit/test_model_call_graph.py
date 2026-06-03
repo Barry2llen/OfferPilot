@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
 from agent.graphs.model_call import ModelCallGraph
+from agent.prompts import PromptComposer, PromptFragment
 from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 
@@ -379,6 +380,89 @@ async def test_model_call_node_binds_dynamic_tools(monkeypatch: pytest.MonkeyPat
         ("ainvoke", state["messages"]),
     ]
     assert result["messages"] == [response]
+
+
+async def test_model_call_node_resolves_prompt_composer_to_system_messages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_messages: list[object] = []
+    response = AIMessage(content="composed-system-prompt")
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            seen_messages.append(messages)
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+
+    graph = ModelCallGraph(
+        config=Config(),
+        system_prompts=PromptComposer(
+            [
+                PromptFragment(name="Instructions", content="Use attachments."),
+                PromptFragment(
+                    name="Metadata",
+                    content=lambda runtime: f"messages={len(runtime.state['messages'])}",
+                ),
+            ]
+        ),
+    )
+    state = make_state([HumanMessage(content="hello")])
+
+    result = await graph._model_call_node(state)
+
+    assert result["messages"] == [response]
+    messages = seen_messages[0]
+    assert isinstance(messages, list)
+    assert len(messages) == 2
+    assert messages[0].type == "system"
+    assert "Instructions:\nUse attachments." in messages[0].content
+    assert "Metadata:\nmessages=1" in messages[0].content
+    assert messages[1] == state["messages"][0]
+
+
+async def test_model_call_node_resolves_dynamic_system_prompt_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_messages: list[object] = []
+    response = AIMessage(content="dynamic-system-prompt")
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            seen_messages.append(messages)
+            return response
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+
+    def build_system_prompts(runtime) -> list[str]:
+        return ["dynamic one", f"message-count={len(runtime.state['messages'])}"]
+
+    graph = ModelCallGraph(config=Config(), system_prompts=build_system_prompts)
+    state = make_state([HumanMessage(content="hello")])
+
+    result = await graph._model_call_node(state)
+
+    assert result["messages"] == [response]
+    messages = seen_messages[0]
+    assert isinstance(messages, list)
+    assert [message.type for message in messages] == ["system", "system", "human"]
+    assert [message.content for message in messages[:2]] == [
+        "dynamic one",
+        "message-count=1",
+    ]
+    assert messages[2] == state["messages"][0]
 
 
 async def test_model_call_node_accepts_awaitable_tools_callable(monkeypatch: pytest.MonkeyPatch) -> None:
