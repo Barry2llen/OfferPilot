@@ -8,6 +8,7 @@ from .graph_checkpoint import (
     GraphCheckpointORM,
     GraphCheckpointWriteORM,
 )
+from .job_description_analysis import JobDescriptionAnalysisORM
 from .model_selection import ModelSelectionORM
 from .model_provider import ModelProviderORM
 from .resume_document import ResumeDocumentORM
@@ -21,6 +22,7 @@ __all__ = [
     "GraphCheckpointBlobORM",
     "GraphCheckpointORM",
     "GraphCheckpointWriteORM",
+    "JobDescriptionAnalysisORM",
     "ModelProviderORM",
     "ModelSelectionORM",
     "ResumeDocumentORM",

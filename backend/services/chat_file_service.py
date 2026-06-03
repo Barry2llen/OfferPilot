@@ -48,6 +48,12 @@ class PreparedChatPrompt:
     created_file_paths: list[Path]
 
 
+@dataclass(slots=True)
+class StoredChatFiles:
+    records: list[ChatFileORM]
+    created_file_paths: list[Path]
+
+
 class ChatFileService:
     """Service for chat attachment storage, prompt injection, and cleanup."""
 
@@ -84,6 +90,23 @@ class ChatFileService:
             media_type=record.media_type,
             filename=record.original_filename,
         )
+
+    def store_files(self, uploaded_files: list[UploadedChatFile]) -> StoredChatFiles:
+        created_file_paths: list[Path] = []
+        records: list[ChatFileORM] = []
+        try:
+            for uploaded_file in uploaded_files:
+                stored = self._create_file_record(uploaded_file)
+                records.append(stored)
+                created_file_paths.append(
+                    self._resolve_storage_path(stored.storage_path, require_exists=False)
+                )
+        except Exception:
+            for path in created_file_paths:
+                self._delete_file_quietly(path)
+            raise
+
+        return StoredChatFiles(records=records, created_file_paths=created_file_paths)
 
     def prepare_prompt(
         self,

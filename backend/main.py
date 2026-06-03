@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from agent.agents.supervisor import SupervisorAgent, get_supervisor_tools
 from agent.checkpointers import DatabaseCheckpointer
-from api import ai_router, model_config_router, resume_router
+from api import ai_router, job_description_router, model_config_router, resume_router
 from db.engine import (
     configure_async_database_manager,
     configure_database_manager,
@@ -16,6 +16,7 @@ from db.engine import (
 )
 from schemas.config import Config, load_config
 from services.resume_extraction_jobs import ResumeExtractionJobManager
+from services.jd_analysis_jobs import JdAnalysisJobManager
 from utils.asyncio_windows import install_windows_connection_reset_filter
 
 
@@ -39,6 +40,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             config=target_config,
             database=app.state.database,
         )
+        app.state.jd_analysis_jobs = JdAnalysisJobManager(
+            config=target_config,
+            database=app.state.database,
+        )
         app.state.checkpointer = DatabaseCheckpointer(
             app.state.database,
             app.state.async_database,
@@ -50,6 +55,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         ).get_agent()
         yield
         await app.state.resume_extraction_jobs.shutdown()
+        await app.state.jd_analysis_jobs.shutdown()
         await dispose_async_database_manager()
         dispose_database_manager()
 
@@ -64,6 +70,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             {
                 "name": "resumes",
                 "description": "简历文件管理接口，包含上传解析、替换解析、查询、预览和删除。",
+            },
+            {
+                "name": "job-descriptions",
+                "description": "JD 分析接口，包含文本、URL、图片输入和历史结果管理。",
             },
             {
                 "name": "model-config",
@@ -84,6 +94,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         allow_headers=target_config.cors.allow_headers,
     )
     app.include_router(resume_router)
+    app.include_router(job_description_router)
     app.include_router(model_config_router)
     app.include_router(ai_router)
 

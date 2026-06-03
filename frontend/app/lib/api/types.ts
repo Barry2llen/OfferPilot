@@ -56,6 +56,82 @@ export interface ResumeSection {
   facts: ResumeFact[];
 }
 
+// ─── Job Descriptions ───
+export type JobDescriptionAnalysisStatus = "processing" | "parsed" | "failed";
+
+export interface JobDescriptionAnalysisListItem {
+  id: number;
+  status: JobDescriptionAnalysisStatus;
+  source_url: string | null;
+  source_image_file_ids: string[];
+  summary: string | null;
+  error_message: string | null;
+  model_selection_id: number | null;
+  job_title: string | null;
+  company_name: string | null;
+  primary_location: string | null;
+  block_count: number;
+  fact_count: number;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface JobDescriptionAnalysisDetail
+  extends JobDescriptionAnalysisListItem {
+  raw_text: string;
+  result: JobDescriptionResult | null;
+}
+
+export interface JobDescriptionResult {
+  raw_text: string;
+  source_url: string | null;
+  company_name: string | null;
+  company_industry: string | null;
+  company_size: string | null;
+  job_title: string;
+  job_level: string | null;
+  job_family: string | null;
+  primary_location: string | null;
+  locations: string[];
+  remote_policy: string;
+  employment_type: string;
+  experience_raw: string | null;
+  years_experience_min: number | null;
+  years_experience_max: number | null;
+  experience_level: string;
+  education_raw: string | null;
+  education_min: string;
+  major_requirement: string | null;
+  salary: JobDescriptionSalary | null;
+  benefits: string[];
+  blocks: JobDescriptionBlock[];
+}
+
+export interface JobDescriptionSalary {
+  raw: string;
+  min_monthly: number | null;
+  max_monthly: number | null;
+  months_per_year: number | null;
+  currency: string | null;
+}
+
+export interface JobDescriptionBlock {
+  block_type: string;
+  title: string;
+  content: string;
+  facts: JobDescriptionFact[];
+}
+
+export interface JobDescriptionFact {
+  fact_type: string;
+  custom_fact_type: string | null;
+  importance: string;
+  text: string;
+  evidence: string;
+  keywords: string[];
+}
+
 // ─── Model Providers ───
 export interface ModelProviderResponse {
   provider: Provider | string;
@@ -229,6 +305,20 @@ export type ResumeStreamEventType =
 export interface ResumeStreamEvent {
   event?: ResumeStreamEventType;
   type?: ResumeStreamEventType;
+  data: Record<string, unknown>;
+}
+
+// ─── JD Analysis Events ───
+export type JobDescriptionStreamEventType =
+  | "job_description"
+  | "progress"
+  | "model_error"
+  | "final"
+  | "error";
+
+export interface JobDescriptionStreamEvent {
+  event?: JobDescriptionStreamEventType;
+  type?: JobDescriptionStreamEventType;
   data: Record<string, unknown>;
 }
 

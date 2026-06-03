@@ -10,6 +10,11 @@ from .chat_file import (
     UnsupportedChatFileError,
 )
 from .database import DatabaseConfigurationError, DatabaseError
+from .job_description import (
+    JobDescriptionAnalysisError,
+    JobDescriptionAnalysisNotFoundError,
+    JobDescriptionAnalysisValidationError,
+)
 from .model import (
     ChatModelLoadError,
     ModelError,
@@ -51,6 +56,9 @@ __all__ = [
     "DatabaseError",
     "EmptyChatFileContentError",
     "EmptyResumeContentError",
+    "JobDescriptionAnalysisError",
+    "JobDescriptionAnalysisNotFoundError",
+    "JobDescriptionAnalysisValidationError",
     "ModelCallExecutionError",
     "ModelError",
     "ModelProviderAlreadyExistsError",
