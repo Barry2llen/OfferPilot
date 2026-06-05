@@ -5,7 +5,6 @@ from typing import Sequence, override
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
-from langgraph.graph.message import REMOVE_ALL_MESSAGES, RemoveMessage
 from langchain_core.runnables import Runnable
 from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.language_models import LanguageModelInput
@@ -24,6 +23,7 @@ from schemas.job_description import (
     JdFactsEx,
     JdRequirementBlock,
     JdRequirementBlockEx,
+    JdSalary,
 )
 from .state import State
 from .prompt import (
@@ -561,7 +561,11 @@ class JdAnalyzerAgent(BaseAgent[State]):
             education_raw=extracted.education_raw,
             education_min=extracted.education_min,
             major_requirement=extracted.major_requirement,
-            salary=extracted.salary,
+            salary=(
+                JdSalary.model_validate(extracted.salary.model_dump())
+                if extracted.salary is not None
+                else None
+            ),
             benefits=extracted.benefits,
             blocks=blocks_with_facts,
         )

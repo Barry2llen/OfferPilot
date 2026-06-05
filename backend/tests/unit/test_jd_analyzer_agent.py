@@ -4,8 +4,10 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.constants import END
+from pydantic import ValidationError
 
 from agent.agents.jd_analyzer import agent as jd_agent_module
+from agent.agents.jd_analyzer import prompt as jd_prompt_module
 from agent.agents.jd_analyzer import JdAnalyzerAgent
 from agent.tools import web_search as web_search_module
 from schemas.config import Config
@@ -15,6 +17,7 @@ from schemas.job_description import (
     JdFactEx,
     JdFactsEx,
     JdRequirementBlockEx,
+    JobDescription,
     JobDescriptionEx,
 )
 
@@ -34,6 +37,97 @@ def _model_selection(*, supports_image_input: bool) -> ModelSelection:
         model_name="gpt-4o-mini",
         supports_image_input=supports_image_input,
     )
+
+
+def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields() -> None:
+    result = JobDescriptionEx.model_validate(
+        {
+            "company": "示例科技",
+            "title": "后端开发工程师",
+            "location": "上海",
+            "experience": "3年以上后端经验",
+            "education": "本科及以上",
+            "remote_policy": None,
+            "employment_type": "",
+            "experience_level": None,
+            "education_min": "",
+            "keywords": ["Python"],
+            "other_info": "ignored",
+            "blocks": [
+                {
+                    "type": "must_have",
+                    "title": "任职要求",
+                    "content": "熟悉 Python。",
+                    "other_info": "ignored",
+                }
+            ],
+        }
+    )
+
+    assert result.company_name == "示例科技"
+    assert result.job_title == "后端开发工程师"
+    assert result.primary_location == "上海"
+    assert result.experience_raw == "3年以上后端经验"
+    assert result.education_raw == "本科及以上"
+    assert result.remote_policy == "unknown"
+    assert result.employment_type == "unknown"
+    assert result.experience_level == "unknown"
+    assert result.education_min == "unknown"
+    assert result.blocks[0].block_type == "must_have"
+    assert not hasattr(result, "keywords")
+    assert not hasattr(result, "other_info")
+
+
+def test_job_description_final_model_remains_strict() -> None:
+    with pytest.raises(ValidationError):
+        JobDescription.model_validate(
+            {
+                "raw_text": "岗位职责：负责后端开发。",
+                "job_title": "后端开发工程师",
+                "title": "后端开发工程师",
+            }
+        )
+
+
+def test_jd_ex_models_normalize_empty_enum_fields() -> None:
+    block = JdRequirementBlockEx.model_validate(
+        {
+            "block_type": "",
+            "title": "其他",
+            "content": "其他说明。",
+        }
+    )
+    fact = JdFactEx.model_validate(
+        {
+            "fact_type": None,
+            "importance": "",
+            "text": "熟悉 Python。",
+            "evidence": "熟悉 Python。",
+        }
+    )
+
+    assert block.block_type == "other"
+    assert fact.fact_type == "other"
+    assert fact.importance == "unknown"
+
+
+def test_jd_extraction_prompt_constrains_field_names_and_missing_values() -> None:
+    prompt = jd_prompt_module.jd_extraction_system_prompt
+
+    assert (
+        "company_name, company_industry, company_size, job_title, job_level, "
+        "job_family, primary_location, locations, remote_policy, employment_type, "
+        "experience_raw, years_experience_min, years_experience_max, experience_level, "
+        "education_raw, education_min, major_requirement, salary, benefits, blocks"
+    ) in prompt
+    assert "title, location, experience, education, company, keywords, other_info" in prompt
+    assert "block_type" in prompt
+    assert "Do NOT output type" in prompt
+    assert "For nullable string fields, use null" in prompt
+    assert "For enum fields, NEVER use null" in prompt
+    assert "Use \"unknown\"" in prompt
+    assert "For list fields, use []" in prompt
+    assert "use null or the default value" not in prompt
 
 
 def test_jd_analyzer_graph_has_expected_nodes_and_edges() -> None:
