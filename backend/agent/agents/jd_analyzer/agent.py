@@ -41,6 +41,7 @@ from ...models import load_structured_model
 
 
 _FACT_EXTRACTION_CONCURRENCY = 5
+JD_STRUCTURED_OUTPUT_METHOD = "function_calling"
 
 
 async def _get_jd_source_tools(config: Config | None = None):
@@ -315,7 +316,11 @@ class JdAnalyzerAgent(BaseAgent[State]):
             max_retries = self.config.model_call_retry_attempts
             repair_attempts = max(0, max_retries - 1)
             try:
-                extractor = load_structured_model(model_selection, JobDescriptionEx)
+                extractor = load_structured_model(
+                    model_selection,
+                    JobDescriptionEx,
+                    method=JD_STRUCTURED_OUTPUT_METHOD,
+                )
                 logger.debug("Invoking model for JD structure extraction.")
                 result = await extractor.ainvoke(
                     [
@@ -410,10 +415,13 @@ class JdAnalyzerAgent(BaseAgent[State]):
             try:
                 logger.debug(f"Extracting facts from JD block: {block.title}")
                 async with semaphore:
-                    facts_result: JdFactsEx = await extractor.ainvoke([
-                        SystemMessage(content=jd_facts_extraction_system_prompt),
-                        HumanMessage(content=block_text),
-                    ], max_repair_attempts=max(0, self.config.model_call_retry_attempts - 1))
+                    facts_result: JdFactsEx = await extractor.ainvoke(
+                        [
+                            SystemMessage(content=jd_facts_extraction_system_prompt),
+                            HumanMessage(content=block_text),
+                        ],
+                        max_repair_attempts=max(0, self.config.model_call_retry_attempts - 1),
+                    )
 
                 return (
                     index,
@@ -443,7 +451,11 @@ class JdAnalyzerAgent(BaseAgent[State]):
             max_retries = self.config.model_call_retry_attempts
             for attempt in range(max_retries):
                 try:
-                    extractor = load_structured_model(model_selection, JdFactsEx)
+                    extractor = load_structured_model(
+                        model_selection,
+                        JdFactsEx,
+                        method=JD_STRUCTURED_OUTPUT_METHOD,
+                    )
                 except Exception as e:
                     logger.error(
                         f"Error loading model for JD fact extraction, attempt {attempt + 1}/{max_retries}:\n{e}"

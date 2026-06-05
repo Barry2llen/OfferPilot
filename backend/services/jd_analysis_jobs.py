@@ -12,16 +12,6 @@ from services.job_description_analysis_service import JobDescriptionAnalysisServ
 from utils.stream import render_sse_event
 
 
-_JD_ANALYSIS_EVENT_STREAM_OPTIONS = {
-    "exclude_types": ["chat_model", "llm", "parser"],
-}
-
-
-def _keep_jd_analysis_workflow_event(event: dict[str, Any]) -> bool:
-    event_name = event.get("event")
-    return event_name in {"on_custom_event", "on_chain_end"}
-
-
 @dataclass(slots=True)
 class _JdAnalysisJob:
     job_id: str
@@ -170,8 +160,6 @@ class JdAnalysisJobManager:
                 source_url=source_url,
                 images=images,
                 handlers={"on_custom_event": handle_custom_event},
-                event_filter=_keep_jd_analysis_workflow_event,
-                event_stream_options=_JD_ANALYSIS_EVENT_STREAM_OPTIONS,
             )
             if not await self._is_current(analysis_id, job_id):
                 return

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, overload, override
+from typing import Any, Callable, Literal, overload, override
 from pydantic import BaseModel, ValidationError
 
 from langchain_core.exceptions import OutputParserException
@@ -12,6 +12,9 @@ from schemas.model_selection import ModelSelection
 from utils.logger import logger
 from utils.json import jsonify
 from .chat import load_chat_model
+
+type StructuredOutputMethod = Literal["function_calling", "json_mode", "json_schema"]
+
 
 class StructuredModel[Struct: dict[str, Any] |  BaseModel](
     Runnable[LanguageModelInput, Struct]
@@ -134,6 +137,8 @@ class StructuredModel[Struct: dict[str, Any] |  BaseModel](
 def load_structured_model[T: BaseModel](
     model_selection: ModelSelection,
     schema: type[T],
+    *,
+    method: StructuredOutputMethod | None = None,
 ) -> StructuredModel[T]:
     ...
 
@@ -141,17 +146,28 @@ def load_structured_model[T: BaseModel](
 def load_structured_model(
     model_selection: ModelSelection,
     schema: dict[str, Any],
+    *,
+    method: StructuredOutputMethod | None = None,
 ) -> StructuredModel[dict[str, Any]]:
     ...
 
 def load_structured_model[T: BaseModel](
     model_selection: ModelSelection,
     schema: type[T] | dict[str, Any],
+    *,
+    method: StructuredOutputMethod | None = None,
 ) -> StructuredModel[T] | StructuredModel[dict[str, Any]]:
-    structured_model = load_chat_model(model_selection).with_structured_output(schema)
+    structured_kwargs: dict[str, Any] = {}
+    if method is not None:
+        structured_kwargs["method"] = method
+    structured_model = load_chat_model(model_selection).with_structured_output(
+        schema,
+        **structured_kwargs,
+    )
     return StructuredModel(structured_model, schema=schema)
 
 __all__ = [
     "StructuredModel",
+    "StructuredOutputMethod",
     "load_structured_model",
 ]

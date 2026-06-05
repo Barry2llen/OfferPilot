@@ -452,11 +452,58 @@ def test_parse_jd_text_rejects_plain_ai_response_without_marker_tool() -> None:
     assert agent._should_continue(result) == "end"
 
 
+async def test_extract_structure_uses_jd_structured_output_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    block = JdRequirementBlockEx(
+        block_type="must_have",
+        title="任职要求",
+        content="熟悉 Python。",
+    )
+
+    class FakeExtractor:
+        async def ainvoke(self, messages, *, max_repair_attempts=0):
+            captured["max_repair_attempts"] = max_repair_attempts
+            captured["message_count"] = len(messages)
+            return JobDescriptionEx(
+                job_title="后端开发工程师",
+                blocks=[block],
+            )
+
+    monkeypatch.setattr(
+        jd_agent_module,
+        "load_structured_model",
+        lambda model_selection, schema, *, method=None: captured.update(
+            schema=schema,
+            method=method,
+        )
+        or FakeExtractor(),
+    )
+
+    result = await JdAnalyzerAgent(
+        config=Config(model_call_retry_attempts=3)
+    )._extract_structure_node(
+        {
+            "jd_text": "岗位职责：负责后端服务开发。",
+            "model": _model_selection(supports_image_input=False),
+        }
+    )
+
+    assert result["jd_extracted"].job_title == "后端开发工程师"
+    assert result["blocks"] == [block]
+    assert captured["schema"] is JobDescriptionEx
+    assert captured["method"] == jd_agent_module.JD_STRUCTURED_OUTPUT_METHOD
+    assert captured["max_repair_attempts"] == 2
+    assert captured["message_count"] == 2
+
+
 async def test_extract_facts_retries_and_preserves_original_block_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls_by_title: dict[str, int] = {}
     repair_attempts_by_title: dict[str, int] = {}
+    load_calls: list[tuple[object, object]] = []
 
     class FakeExtractor:
         async def ainvoke(self, messages, *, max_repair_attempts=0):
@@ -484,7 +531,10 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     monkeypatch.setattr(
         jd_agent_module,
         "load_structured_model",
-        lambda model_selection, schema: FakeExtractor(),
+        lambda model_selection, schema, *, method=None: load_calls.append(
+            (schema, method)
+        )
+        or FakeExtractor(),
     )
 
     blocks = [
@@ -548,4 +598,8 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     assert job_description.education_min_rank == 2
     assert job_description.major_requirement == "计算机相关专业"
     assert calls_by_title["第二"] == 2
+    assert load_calls == [
+        (JdFactsEx, jd_agent_module.JD_STRUCTURED_OUTPUT_METHOD),
+        (JdFactsEx, jd_agent_module.JD_STRUCTURED_OUTPUT_METHOD),
+    ]
     assert repair_attempts_by_title == {"第一": 2, "第二": 2, "第三": 2}

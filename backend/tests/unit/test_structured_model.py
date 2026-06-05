@@ -4,6 +4,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
 from pydantic import BaseModel
 
+from agent.models import structured as structured_module
 from agent.models.structured import StructuredModel
 
 
@@ -19,6 +20,61 @@ async def test_structured_model_delegates_ainvoke_to_wrapped_runnable() -> None:
     model: StructuredModel[dict] = StructuredModel(wrapped)
 
     assert await model.ainvoke("resume") == {"value": "resume"}
+
+
+def test_load_structured_model_keeps_default_structured_output_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    wrapped = RunnableLambda(lambda input_: {"value": input_})
+
+    class FakeChatModel:
+        def with_structured_output(self, schema, **kwargs):
+            captured["schema"] = schema
+            captured["kwargs"] = kwargs
+            return wrapped
+
+    monkeypatch.setattr(
+        structured_module,
+        "load_chat_model",
+        lambda model_selection: FakeChatModel(),
+    )
+
+    model = structured_module.load_structured_model(None, {"name": "Result"})
+
+    assert model._model is wrapped
+    assert captured == {"schema": {"name": "Result"}, "kwargs": {}}
+
+
+def test_load_structured_model_forwards_explicit_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    wrapped = RunnableLambda(lambda input_: {"value": input_})
+
+    class FakeChatModel:
+        def with_structured_output(self, schema, **kwargs):
+            captured["schema"] = schema
+            captured["kwargs"] = kwargs
+            return wrapped
+
+    monkeypatch.setattr(
+        structured_module,
+        "load_chat_model",
+        lambda model_selection: FakeChatModel(),
+    )
+
+    model = structured_module.load_structured_model(
+        None,
+        {"name": "Result"},
+        method="function_calling",
+    )
+
+    assert model._model is wrapped
+    assert captured == {
+        "schema": {"name": "Result"},
+        "kwargs": {"method": "function_calling"},
+    }
 
 
 async def test_structured_model_preserves_wrapped_ainvoke_exception() -> None:

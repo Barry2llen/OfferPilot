@@ -93,16 +93,12 @@ def _install_fake_jd_workflow(monkeypatch: pytest.MonkeyPatch, captured: dict | 
             source_url=None,
             images=None,
             handlers=None,
-            event_filter=None,
-            event_stream_options=None,
         ):
             if captured is not None:
                 captured["selection"] = selection
                 captured["jd_text"] = jd_text
                 captured["source_url"] = source_url
                 captured["images"] = images
-                captured["event_filter"] = event_filter
-                captured["event_stream_options"] = event_stream_options
             if handlers and "on_custom_event" in handlers:
                 await handlers["on_custom_event"](
                     {
@@ -135,8 +131,6 @@ def _install_failing_jd_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
             source_url=None,
             images=None,
             handlers=None,
-            event_filter=None,
-            event_stream_options=None,
         ):
             raise RuntimeError("jd analysis failed")
 
@@ -204,10 +198,6 @@ def test_analyze_job_description_with_url_passes_source_url(
 
     assert response.status_code == 200
     assert captured["source_url"] == "https://example.com/jobs/123"
-    assert captured["event_filter"] is not None
-    assert captured["event_stream_options"] == {
-        "exclude_types": ["chat_model", "llm", "parser"]
-    }
 
 
 def test_analyze_job_description_with_uploaded_image(
