@@ -94,14 +94,13 @@ export interface JobDescriptionResult {
   job_family: string | null;
   primary_location: string | null;
   locations: string[];
-  remote_policy: string;
-  employment_type: string;
+  remote_policy_raw: string | null;
+  employment_type_raw: string | null;
   experience_raw: string | null;
   years_experience_min: number | null;
   years_experience_max: number | null;
-  experience_level: string;
   education_raw: string | null;
-  education_min: string;
+  education_min_rank: number | null;
   major_requirement: string | null;
   salary: JobDescriptionSalary | null;
   benefits: string[];

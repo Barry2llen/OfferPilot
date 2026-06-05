@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class JdSchemaModel(BaseModel):
@@ -21,6 +22,120 @@ def _fallback_if_empty(value: object, fallback: str) -> object:
     return value
 
 
+def _empty_to_none(value: object) -> object:
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+def _to_non_negative_int(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        if value.is_integer() and value >= 0:
+            return int(value)
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdecimal():
+            parsed = int(stripped)
+            return parsed if parsed >= 0 else None
+    return None
+
+
+_EDUCATION_RANK_BY_LEGACY_VALUE = {
+    "college": 1,
+    "bachelor": 2,
+    "master": 3,
+    "phd": 4,
+}
+
+
+def _normalize_education_min_rank(value: object, raw: str | None = None) -> int | None:
+    explicit_rank = _to_non_negative_int(value)
+    if explicit_rank is not None:
+        return explicit_rank if 1 <= explicit_rank <= 4 else None
+
+    for candidate in (value, raw):
+        if not isinstance(candidate, str):
+            continue
+        text = candidate.strip().lower()
+        if not text:
+            continue
+        if text in _EDUCATION_RANK_BY_LEGACY_VALUE:
+            return _EDUCATION_RANK_BY_LEGACY_VALUE[text]
+        if "不限" in text or "无要求" in text:
+            return None
+        if "大专" in text or "专科" in text or "college" in text:
+            return 1
+        if "本科" in text or "学士" in text or "bachelor" in text:
+            return 2
+        if "硕士" in text or "研究生" in text or "master" in text:
+            return 3
+        if "博士" in text or "phd" in text or "doctor" in text:
+            return 4
+    return None
+
+
+def _normalize_experience_bounds(
+    years_min: object,
+    years_max: object,
+    raw: str | None = None,
+) -> tuple[int | None, int | None]:
+    normalized_min = _to_non_negative_int(years_min)
+    normalized_max = _to_non_negative_int(years_max)
+
+    if raw:
+        text = raw.strip()
+        if "不限" in text or "经验不限" in text:
+            normalized_min = normalized_min if normalized_min is not None else None
+            normalized_max = normalized_max if normalized_max is not None else None
+        elif "应届" in text or "无经验" in text:
+            normalized_min = 0 if normalized_min is None else normalized_min
+        else:
+            range_match = re.search(r"(\d+)\s*(?:-|~|－|—|至|到)\s*(\d+)\s*年", text)
+            if range_match:
+                normalized_min = int(range_match.group(1))
+                normalized_max = int(range_match.group(2))
+            else:
+                min_match = re.search(
+                    r"(?:至少|不少于|不低于)?\s*(\d+)\s*(?:年\s*(?:以上|及以上)|\+\s*年?|\+)",
+                    text,
+                )
+                if min_match:
+                    normalized_min = int(min_match.group(1))
+                elif normalized_min is None:
+                    bare_match = re.search(r"(\d+)\s*年(?:经验|工作经验|开发经验)?", text)
+                    if bare_match:
+                        normalized_min = int(bare_match.group(1))
+
+    if normalized_min is not None and normalized_max is not None and normalized_max < normalized_min:
+        normalized_max = None
+    return normalized_min, normalized_max
+
+
+def _apply_legacy_jd_field_aliases(data: object) -> object:
+    if not isinstance(data, dict):
+        return data
+    data = dict(data)
+    if "remote_policy_raw" not in data and "remote_policy" in data:
+        data["remote_policy_raw"] = data.pop("remote_policy")
+    else:
+        data.pop("remote_policy", None)
+    if "employment_type_raw" not in data and "employment_type" in data:
+        data["employment_type_raw"] = data.pop("employment_type")
+    else:
+        data.pop("employment_type", None)
+    if "education_min_rank" not in data and "education_min" in data:
+        data["education_min_rank"] = data.pop("education_min")
+    else:
+        data.pop("education_min", None)
+    data.pop("experience_level", None)
+    return data
+
+
 # ---- 基础枚举 ----
 
 type JdBlockType = Literal[
@@ -36,24 +151,7 @@ type JdBlockType = Literal[
     "other",
 ]
 
-type JdFactType = Literal[
-    "skill",
-    "tool",
-    "framework",
-    "programming_language",
-    "experience",
-    "education",
-    "major",
-    "certificate",
-    "language",
-    "domain_knowledge",
-    "soft_skill",
-    "responsibility",
-    "benefit",
-    "work_condition",
-    "company_info",
-    "other",
-]
+type JdFactType = str
 
 type JdFactImportance = Literal[
     "must_have",
@@ -61,20 +159,6 @@ type JdFactImportance = Literal[
     "responsibility",
     "unknown",
 ]
-
-type RemotePolicy = Literal["onsite", "hybrid", "remote", "unknown"]
-type EmploymentType = Literal["full_time", "part_time", "intern", "contract", "unknown"]
-type EducationLevel = Literal["college", "bachelor", "master", "phd", "unknown"]
-type ExperienceLevel = Literal[
-    "intern",
-    "new_grad",
-    "junior",
-    "mid",
-    "senior",
-    "lead",
-    "unknown",
-]
-
 
 # ---- Ex 后缀：LLM 直接产出的结构 ----
 
@@ -258,15 +342,17 @@ class JobDescriptionFields(JdSchemaModel):
         description="All work locations mentioned in the JD.",
         examples=[["北京", "上海", "深圳"]],
     )
-    remote_policy: RemotePolicy = Field(
-        default="unknown",
-        description="Remote work policy.",
-        examples=["hybrid"],
+    remote_policy_raw: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("remote_policy_raw", "remote_policy"),
+        description="Original remote work policy text as written in the JD.",
+        examples=["不接受居家办公"],
     )
-    employment_type: EmploymentType = Field(
-        default="unknown",
-        description="Employment type.",
-        examples=["full_time"],
+    employment_type_raw: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("employment_type_raw", "employment_type"),
+        description="Original employment type text as written in the JD.",
+        examples=["全职"],
     )
 
     # Experience & education
@@ -285,20 +371,18 @@ class JobDescriptionFields(JdSchemaModel):
         description="Maximum years of experience when explicitly mentioned.",
         examples=[5],
     )
-    experience_level: ExperienceLevel = Field(
-        default="unknown",
-        description="Normalized experience level inferred from the JD.",
-        examples=["mid"],
-    )
     education_raw: str | None = Field(
         default=None,
         description="Original education requirement text, e.g. '本科及以上', '计算机相关专业优先'.",
         examples=["本科及以上，计算机相关专业优先"],
     )
-    education_min: EducationLevel = Field(
-        default="unknown",
-        description="Minimum education requirement when it can be safely normalized.",
-        examples=["bachelor"],
+    education_min_rank: int | None = Field(
+        default=None,
+        description=(
+            "Local normalized minimum education rank when safely known: "
+            "1=college, 2=bachelor, 3=master, 4=phd."
+        ),
+        examples=[2],
     )
     major_requirement: str | None = Field(
         default=None,
@@ -316,6 +400,43 @@ class JobDescriptionFields(JdSchemaModel):
         description="List of benefits mentioned.",
         examples=[["五险一金", "年终奖"]],
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_legacy_fields(cls, data: object) -> object:
+        return _apply_legacy_jd_field_aliases(data)
+
+    @field_validator(
+        "remote_policy_raw",
+        "employment_type_raw",
+        "experience_raw",
+        "education_raw",
+        "major_requirement",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_text(cls, value: object) -> object:
+        return _empty_to_none(value)
+
+    @field_validator("education_min_rank", mode="before")
+    @classmethod
+    def _normalize_education_rank_input(cls, value: object) -> object:
+        return _normalize_education_min_rank(value)
+
+    @model_validator(mode="after")
+    def _normalize_comparable_fields(self) -> JobDescriptionFields:
+        years_min, years_max = _normalize_experience_bounds(
+            self.years_experience_min,
+            self.years_experience_max,
+            self.experience_raw,
+        )
+        self.years_experience_min = years_min
+        self.years_experience_max = years_max
+        self.education_min_rank = _normalize_education_min_rank(
+            self.education_min_rank,
+            self.education_raw,
+        )
+        return self
 
 
 class JobDescriptionEx(JdLlmOutputModel):
@@ -367,15 +488,17 @@ class JobDescriptionEx(JdLlmOutputModel):
         description="All work locations mentioned in the JD.",
         examples=[["北京", "上海", "深圳"]],
     )
-    remote_policy: RemotePolicy = Field(
-        default="unknown",
-        description="Remote work policy.",
-        examples=["hybrid"],
+    remote_policy_raw: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("remote_policy_raw", "remote_policy"),
+        description="Original remote work policy text as written in the JD.",
+        examples=["不接受居家办公"],
     )
-    employment_type: EmploymentType = Field(
-        default="unknown",
-        description="Employment type.",
-        examples=["full_time"],
+    employment_type_raw: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("employment_type_raw", "employment_type"),
+        description="Original employment type text as written in the JD.",
+        examples=["全职"],
     )
 
     # Experience & education
@@ -395,21 +518,20 @@ class JobDescriptionEx(JdLlmOutputModel):
         description="Maximum years of experience when explicitly mentioned.",
         examples=[5],
     )
-    experience_level: ExperienceLevel = Field(
-        default="unknown",
-        description="Normalized experience level inferred from the JD.",
-        examples=["mid"],
-    )
     education_raw: str | None = Field(
         default=None,
         validation_alias=AliasChoices("education_raw", "education"),
         description="Original education requirement text, e.g. '本科及以上', '计算机相关专业优先'.",
         examples=["本科及以上，计算机相关专业优先"],
     )
-    education_min: EducationLevel = Field(
-        default="unknown",
-        description="Minimum education requirement when it can be safely normalized.",
-        examples=["bachelor"],
+    education_min_rank: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("education_min_rank", "education_min"),
+        description=(
+            "Local normalized minimum education rank when safely known: "
+            "1=college, 2=bachelor, 3=master, 4=phd."
+        ),
+        examples=[2],
     )
     major_requirement: str | None = Field(
         default=None,
@@ -433,15 +555,36 @@ class JobDescriptionEx(JdLlmOutputModel):
     )
 
     @field_validator(
-        "remote_policy",
-        "employment_type",
-        "experience_level",
-        "education_min",
+        "remote_policy_raw",
+        "employment_type_raw",
+        "experience_raw",
+        "education_raw",
+        "major_requirement",
         mode="before",
     )
     @classmethod
-    def _normalize_unknown_enum(cls, value: object) -> object:
-        return _fallback_if_empty(value, "unknown")
+    def _normalize_optional_text(cls, value: object) -> object:
+        return _empty_to_none(value)
+
+    @field_validator("education_min_rank", mode="before")
+    @classmethod
+    def _normalize_education_rank_input(cls, value: object) -> object:
+        return _normalize_education_min_rank(value)
+
+    @model_validator(mode="after")
+    def _normalize_comparable_fields(self) -> JobDescriptionEx:
+        years_min, years_max = _normalize_experience_bounds(
+            self.years_experience_min,
+            self.years_experience_max,
+            self.experience_raw,
+        )
+        self.years_experience_min = years_min
+        self.years_experience_max = years_max
+        self.education_min_rank = _normalize_education_min_rank(
+            self.education_min_rank,
+            self.education_raw,
+        )
+        return self
 
 
 class JdFactsEx(JdLlmOutputModel):
@@ -492,6 +635,11 @@ class JdFact(JdSchemaModel):
         description="Keywords including technologies, roles, tools, domains, certifications.",
         examples=[["Python", "FastAPI"]],
     )
+
+    @field_validator("fact_type", mode="before")
+    @classmethod
+    def _normalize_fact_type(cls, value: object) -> object:
+        return _fallback_if_empty(value, "other")
 
 
 class JdRequirementBlock(JdSchemaModel):
@@ -548,8 +696,4 @@ __all__ = [
     "JdFactType",
     "JdSalary",
     "JdSalaryEx",
-    "RemotePolicy",
-    "EmploymentType",
-    "EducationLevel",
-    "ExperienceLevel",
 ]

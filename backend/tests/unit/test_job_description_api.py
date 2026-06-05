@@ -57,6 +57,11 @@ def _fake_job_description(raw_text: str = "岗位职责：负责后端服务开�
         company_name="示例科技",
         job_title="后端开发工程师",
         primary_location="上海",
+        remote_policy_raw="不接受居家办公",
+        employment_type_raw="全职",
+        experience_raw="3年以上后端开发经验",
+        education_raw="本科及以上",
+        education_min_rank=2,
         blocks=[
             JdRequirementBlock(
                 block_type="responsibility",
@@ -158,6 +163,9 @@ def test_analyze_job_description_with_text_persists_result(
     assert final_payload["fact_count"] == 1
     assert detail.status_code == 200
     assert detail.json()["raw_text"] == "岗位职责：负责后端服务开发。"
+    assert detail.json()["result"]["remote_policy_raw"] == "不接受居家办公"
+    assert detail.json()["result"]["employment_type_raw"] == "全职"
+    assert detail.json()["result"]["education_min_rank"] == 2
     assert detail.json()["result"]["blocks"][0]["facts"][0]["keywords"] == ["后端"]
     assert listed.status_code == 200
     assert listed.json()[0]["id"] == final_payload["id"]

@@ -552,14 +552,13 @@ class JdAnalyzerAgent(BaseAgent[State]):
             job_family=extracted.job_family,
             primary_location=extracted.primary_location,
             locations=extracted.locations,
-            remote_policy=extracted.remote_policy,
-            employment_type=extracted.employment_type,
+            remote_policy_raw=extracted.remote_policy_raw,
+            employment_type_raw=extracted.employment_type_raw,
             experience_raw=extracted.experience_raw,
             years_experience_min=extracted.years_experience_min,
             years_experience_max=extracted.years_experience_max,
-            experience_level=extracted.experience_level,
             education_raw=extracted.education_raw,
-            education_min=extracted.education_min,
+            education_min_rank=extracted.education_min_rank,
             major_requirement=extracted.major_requirement,
             salary=(
                 JdSalary.model_validate(extracted.salary.model_dump())

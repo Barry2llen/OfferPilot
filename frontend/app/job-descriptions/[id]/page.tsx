@@ -131,8 +131,8 @@ export default function JobDescriptionDetailPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Info label="岗位族" value={result.job_family} />
             <Info label="级别" value={result.job_level} />
-            <Info label="工作方式" value={result.remote_policy} />
-            <Info label="雇佣类型" value={result.employment_type} />
+            <Info label="工作方式" value={result.remote_policy_raw} />
+            <Info label="雇佣类型" value={result.employment_type_raw} />
             <Info label="经验" value={result.experience_raw} />
             <Info label="学历" value={result.education_raw} />
             <Info label="专业要求" value={result.major_requirement} />

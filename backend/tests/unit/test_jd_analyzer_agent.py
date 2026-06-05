@@ -47,10 +47,10 @@ def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields(
             "location": "上海",
             "experience": "3年以上后端经验",
             "education": "本科及以上",
-            "remote_policy": None,
-            "employment_type": "",
+            "remote_policy": "不接受居家办公",
+            "employment_type": "全职",
             "experience_level": None,
-            "education_min": "",
+            "education_min": "本科",
             "keywords": ["Python"],
             "other_info": "ignored",
             "blocks": [
@@ -69,11 +69,16 @@ def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields(
     assert result.primary_location == "上海"
     assert result.experience_raw == "3年以上后端经验"
     assert result.education_raw == "本科及以上"
-    assert result.remote_policy == "unknown"
-    assert result.employment_type == "unknown"
-    assert result.experience_level == "unknown"
-    assert result.education_min == "unknown"
+    assert result.remote_policy_raw == "不接受居家办公"
+    assert result.employment_type_raw == "全职"
+    assert result.years_experience_min == 3
+    assert result.years_experience_max is None
+    assert result.education_min_rank == 2
     assert result.blocks[0].block_type == "must_have"
+    assert not hasattr(result, "remote_policy")
+    assert not hasattr(result, "employment_type")
+    assert not hasattr(result, "experience_level")
+    assert not hasattr(result, "education_min")
     assert not hasattr(result, "keywords")
     assert not hasattr(result, "other_info")
 
@@ -89,7 +94,7 @@ def test_job_description_final_model_remains_strict() -> None:
         )
 
 
-def test_jd_ex_models_normalize_empty_enum_fields() -> None:
+def test_jd_ex_models_normalize_empty_control_enum_fields() -> None:
     block = JdRequirementBlockEx.model_validate(
         {
             "block_type": "",
@@ -111,22 +116,73 @@ def test_jd_ex_models_normalize_empty_enum_fields() -> None:
     assert fact.importance == "unknown"
 
 
+def test_job_description_models_preserve_raw_text_and_normalize_comparable_fields() -> None:
+    result = JobDescriptionEx.model_validate(
+        {
+            "job_title": "后端开发工程师",
+            "remote_policy_raw": "不接受居家办公",
+            "employment_type_raw": "全职",
+            "experience_raw": "3年以上软件开发经验",
+            "years_experience_min": -1,
+            "years_experience_max": 1,
+            "education_raw": "本科及以上",
+            "education_min_rank": None,
+        }
+    )
+
+    assert result.remote_policy_raw == "不接受居家办公"
+    assert result.employment_type_raw == "全职"
+    assert result.experience_raw == "3年以上软件开发经验"
+    assert result.years_experience_min == 3
+    assert result.years_experience_max is None
+    assert result.education_raw == "本科及以上"
+    assert result.education_min_rank == 2
+
+
+def test_job_description_final_model_accepts_legacy_persisted_fields() -> None:
+    result = JobDescription.model_validate(
+        {
+            "raw_text": "岗位职责：负责后端开发。",
+            "job_title": "后端开发工程师",
+            "remote_policy": "onsite",
+            "employment_type": "full_time",
+            "experience_raw": "1-3年后端经验",
+            "experience_level": "mid",
+            "education_raw": "本科及以上",
+            "education_min": "bachelor",
+        }
+    )
+
+    assert result.remote_policy_raw == "onsite"
+    assert result.employment_type_raw == "full_time"
+    assert result.years_experience_min == 1
+    assert result.years_experience_max == 3
+    assert result.education_min_rank == 2
+    assert not hasattr(result, "experience_level")
+
+
 def test_jd_extraction_prompt_constrains_field_names_and_missing_values() -> None:
     prompt = jd_prompt_module.jd_extraction_system_prompt
 
     assert (
         "company_name, company_industry, company_size, job_title, job_level, "
-        "job_family, primary_location, locations, remote_policy, employment_type, "
-        "experience_raw, years_experience_min, years_experience_max, experience_level, "
-        "education_raw, education_min, major_requirement, salary, benefits, blocks"
+        "job_family, primary_location, locations, remote_policy_raw, employment_type_raw, "
+        "experience_raw, years_experience_min, years_experience_max, education_raw, "
+        "education_min_rank, major_requirement, salary, benefits, blocks"
     ) in prompt
-    assert "title, location, experience, education, company, keywords, other_info" in prompt
+    assert (
+        "title, location, experience, education, company, keywords, other_info, "
+        "remote_policy, employment_type, experience_level, education_min"
+    ) in prompt
     assert "block_type" in prompt
     assert "Do NOT output type" in prompt
     assert "For nullable string fields, use null" in prompt
-    assert "For enum fields, NEVER use null" in prompt
-    assert "Use \"unknown\"" in prompt
     assert "For list fields, use []" in prompt
+    assert "For enum fields, NEVER use null" not in prompt
+    assert "Use \"unknown\"" not in prompt
+    assert "remote_policy_raw" in prompt
+    assert "education_min_rank means" in prompt
+    assert "fixed English enum values" in prompt
     assert "use null or the default value" not in prompt
 
 
@@ -452,6 +508,8 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
         job_title="后端开发工程师",
         primary_location="上海",
         locations=["上海", "杭州"],
+        remote_policy_raw="不接受居家办公",
+        employment_type_raw="全职",
         experience_raw="3年以上后端开发经验",
         years_experience_min=3,
         years_experience_max=5,
@@ -480,10 +538,14 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     ]
     assert job_description.primary_location == "上海"
     assert job_description.locations == ["上海", "杭州"]
+    assert job_description.raw_text == "raw jd"
+    assert job_description.remote_policy_raw == "不接受居家办公"
+    assert job_description.employment_type_raw == "全职"
     assert job_description.experience_raw == "3年以上后端开发经验"
     assert job_description.years_experience_min == 3
     assert job_description.years_experience_max == 5
     assert job_description.education_raw == "本科及以上"
+    assert job_description.education_min_rank == 2
     assert job_description.major_requirement == "计算机相关专业"
     assert calls_by_title["第二"] == 2
     assert repair_attempts_by_title == {"第一": 2, "第二": 2, "第三": 2}
