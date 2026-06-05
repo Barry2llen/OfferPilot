@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import (
     Any,
     Awaitable,
+    AsyncIterator,
+    Callable,
     TypedDict,
     Annotated,
     Literal,
@@ -189,6 +191,8 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         self,
         *args,
         handlers: dict[str, StreamEventHandler] | None = None,
+        event_filter: Callable[[StreamEvent], bool] | None = None,
+        event_stream_options: dict[str, Any] | None = None,
         **kwargs
     ) -> Result:
         """
@@ -222,12 +226,24 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
             state,
             self._graph_config(),
             version="v2",
+            **(event_stream_options or {}),
         )
+        if event_filter is not None:
+            event_stream = _filter_stream_events(event_stream, event_filter)
         await render_stream_events(event_stream, handlers=merged_handlers)
         return self._get_result(final_state or state)
     
     
 type InteruptType = Literal['error', 'question', 'warning', 'other']
+
+
+async def _filter_stream_events(
+    events: AsyncIterator[StreamEvent],
+    event_filter: Callable[[StreamEvent], bool],
+) -> AsyncIterator[StreamEvent]:
+    async for event in events:
+        if event_filter(event):
+            yield event
 
 class BaseInterupt(TypedDict):
     type: NotRequired[InteruptType]
