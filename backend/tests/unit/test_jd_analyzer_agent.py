@@ -51,10 +51,18 @@ def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields(
             "employment_type": "全职",
             "experience_level": None,
             "education_min": "本科",
+            "salary": {
+                "raw": "25-40K·15薪",
+                "min_monthly": 25,
+                "max_monthly": 40,
+                "months_per_year": 15,
+                "currency": "CNY",
+            },
             "keywords": ["Python"],
             "other_info": "ignored",
             "blocks": [
                 {
+                    "block_id": "block_1",
                     "type": "must_have",
                     "title": "任职要求",
                     "content": "熟悉 Python。",
@@ -74,7 +82,14 @@ def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields(
     assert result.years_experience_min == 3
     assert result.years_experience_max is None
     assert result.education_min_rank == 2
+    assert result.salary_raw == "25-40K·15薪"
+    assert result.salary_min_monthly == 25
+    assert result.salary_max_monthly == 40
+    assert result.salary_months_per_year == 15
+    assert result.salary_currency == "CNY"
+    assert result.blocks[0].block_id == "block_1"
     assert result.blocks[0].block_type == "must_have"
+    assert not hasattr(result, "salary")
     assert not hasattr(result, "remote_policy")
     assert not hasattr(result, "employment_type")
     assert not hasattr(result, "experience_level")
@@ -97,6 +112,7 @@ def test_job_description_final_model_remains_strict() -> None:
 def test_jd_ex_models_normalize_empty_control_enum_fields() -> None:
     block = JdRequirementBlockEx.model_validate(
         {
+            "block_id": "block_1",
             "block_type": "",
             "title": "其他",
             "content": "其他说明。",
@@ -104,6 +120,7 @@ def test_jd_ex_models_normalize_empty_control_enum_fields() -> None:
     )
     fact = JdFactEx.model_validate(
         {
+            "block_id": "block_1",
             "fact_type": None,
             "importance": "",
             "text": "熟悉 Python。",
@@ -168,12 +185,14 @@ def test_jd_extraction_prompt_constrains_field_names_and_missing_values() -> Non
         "company_name, company_industry, company_size, job_title, job_level, "
         "job_family, primary_location, locations, remote_policy_raw, employment_type_raw, "
         "experience_raw, years_experience_min, years_experience_max, education_raw, "
-        "education_min_rank, major_requirement, salary, benefits, blocks"
+        "education_min_rank, major_requirement, salary_raw, salary_min_monthly, "
+        "salary_max_monthly, salary_months_per_year, salary_currency, benefits, blocks"
     ) in prompt
     assert (
         "title, location, experience, education, company, keywords, other_info, "
-        "remote_policy, employment_type, experience_level, education_min"
+        "remote_policy, employment_type, experience_level, education_min, salary"
     ) in prompt
+    assert "block_id, block_type, title, content" in prompt
     assert "block_type" in prompt
     assert "Do NOT output type" in prompt
     assert "For nullable string fields, use null" in prompt
@@ -457,6 +476,7 @@ async def test_extract_structure_uses_jd_structured_output_method(
 ) -> None:
     captured: dict[str, object] = {}
     block = JdRequirementBlockEx(
+        block_id="block_1",
         block_type="must_have",
         title="任职要求",
         content="熟悉 Python。",
@@ -513,6 +533,11 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
                 for candidate in ("第一", "第二", "第三")
                 if candidate in block_text
             )
+            block_id = {
+                "第一": "block_1",
+                "第二": "block_2",
+                "第三": "block_3",
+            }[title]
             calls_by_title[title] = calls_by_title.get(title, 0) + 1
             repair_attempts_by_title[title] = max_repair_attempts
             if title == "第二" and calls_by_title[title] == 1:
@@ -520,6 +545,7 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
             return JdFactsEx(
                 facts=[
                     JdFactEx(
+                        block_id=block_id,
                         fact_type="skill",
                         text=f"{title} fact",
                         evidence=block_text,
@@ -539,16 +565,19 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
 
     blocks = [
         JdRequirementBlockEx(
+            block_id="block_1",
             block_type="must_have",
             title="第一",
             content="熟悉 Python。",
         ),
         JdRequirementBlockEx(
+            block_id="block_2",
             block_type="must_have",
             title="第二",
             content="熟悉 FastAPI。",
         ),
         JdRequirementBlockEx(
+            block_id="block_3",
             block_type="responsibility",
             title="第三",
             content="负责服务端开发。",

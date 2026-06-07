@@ -136,6 +136,21 @@ def _apply_legacy_jd_field_aliases(data: object) -> object:
     return data
 
 
+def _apply_llm_jd_field_aliases(data: object) -> object:
+    data = _apply_legacy_jd_field_aliases(data)
+    if not isinstance(data, dict):
+        return data
+    data = dict(data)
+    salary = data.pop("salary", None)
+    if isinstance(salary, dict):
+        data.setdefault("salary_raw", salary.get("raw"))
+        data.setdefault("salary_min_monthly", salary.get("min_monthly"))
+        data.setdefault("salary_max_monthly", salary.get("max_monthly"))
+        data.setdefault("salary_months_per_year", salary.get("months_per_year"))
+        data.setdefault("salary_currency", salary.get("currency"))
+    return data
+
+
 # ---- 基础枚举 ----
 
 type JdBlockType = Literal[
@@ -166,6 +181,10 @@ type JdFactImportance = Literal[
 class JdFactEx(JdLlmOutputModel):
     """A specific fact extracted from a JD block, symmetric to ResumeFactEx for matching."""
 
+    block_id: str = Field(
+        description="Stable ID of the flat JD block row this fact belongs to.",
+        examples=["block_1"],
+    )
     fact_type: JdFactType = Field(
         default="other",
         description="Normalized fact type for matching and downstream analysis.",
@@ -215,6 +234,10 @@ class JdFactEx(JdLlmOutputModel):
 class JdRequirementBlockEx(JdLlmOutputModel):
     """A semantically continuous block from a JD, preserving source text."""
 
+    block_id: str = Field(
+        description="Stable ID for this flat JD block row. Facts must refer to this value.",
+        examples=["block_1"],
+    )
     block_type: JdBlockType = Field(
         default="other",
         validation_alias=AliasChoices("block_type", "type"),
@@ -540,9 +563,30 @@ class JobDescriptionEx(JdLlmOutputModel):
     )
 
     # Compensation & benefits
-    salary: JdSalaryEx | None = Field(
+    salary_raw: str = Field(
+        default="",
+        description="Original salary string, e.g. '25-40K·15薪'.",
+        examples=["25-40K·15薪"],
+    )
+    salary_min_monthly: float | None = Field(
         default=None,
-        description="Salary information.",
+        description="Minimum monthly base in 千元 (k).",
+        examples=[25],
+    )
+    salary_max_monthly: float | None = Field(
+        default=None,
+        description="Maximum monthly base in 千元 (k).",
+        examples=[40],
+    )
+    salary_months_per_year: float | None = Field(
+        default=None,
+        description="Months paid per year, e.g. 13, 14, 15.",
+        examples=[15],
+    )
+    salary_currency: str | None = Field(
+        default=None,
+        description="Salary currency code when available.",
+        examples=["CNY"],
     )
     benefits: list[str] = Field(
         default_factory=list,
@@ -551,8 +595,13 @@ class JobDescriptionEx(JdLlmOutputModel):
     )
     blocks: list[JdRequirementBlockEx] = Field(
         default_factory=list,
-        description="Requirement/responsibility blocks from the JD.",
+        description="Flat requirement/responsibility block rows from the JD.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_legacy_fields(cls, data: object) -> object:
+        return _apply_llm_jd_field_aliases(data)
 
     @field_validator(
         "remote_policy_raw",
@@ -560,6 +609,7 @@ class JobDescriptionEx(JdLlmOutputModel):
         "experience_raw",
         "education_raw",
         "major_requirement",
+        "salary_currency",
         mode="before",
     )
     @classmethod

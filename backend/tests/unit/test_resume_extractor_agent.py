@@ -66,10 +66,12 @@ def test_resume_extractor_graph_can_compile() -> None:
 
 def test_resume_extractor_prompts_are_structured_and_grounded() -> None:
     assert "ResumeSections" in section_extraction_system_prompt
+    assert "section_id" in section_extraction_system_prompt
     assert "Do not" in section_extraction_system_prompt
     assert "Preserve the original" in section_extraction_system_prompt
 
     assert "ResumeFacts" in facts_extraction_system_prompt
+    assert "section_id" in facts_extraction_system_prompt
     assert "fact_type" in facts_extraction_system_prompt
     assert "evidence" in facts_extraction_system_prompt
     assert "Use only the input section" in facts_extraction_system_prompt
@@ -105,7 +107,13 @@ async def test_extract_section_node_uses_structured_ainvoke(
 ) -> None:
     extractor = RecordingExtractor(
         ResumeSections(
-            sections=[ResumeSectionEx(title="技能", content="Python")]
+            sections=[
+                ResumeSectionEx(
+                    section_id="section_1",
+                    title="技能",
+                    content="Python",
+                )
+            ]
         )
     )
 
@@ -135,6 +143,7 @@ async def test_extract_facts_node_uses_structured_ainvoke(
         ResumeFacts(
             facts=[
                 ResumeFactEx(
+                    section_id="section_1",
                     fact_type="skill",
                     text="Python",
                     evidence="Python",
@@ -154,7 +163,13 @@ async def test_extract_facts_node_uses_structured_ainvoke(
         config=Config(model_call_retry_attempts=5)
     )._extract_facts_node(
         {
-            "sections": [ResumeSectionEx(title="技能", content="Python")],
+            "sections": [
+                ResumeSectionEx(
+                    section_id="section_1",
+                    title="技能",
+                    content="Python",
+                )
+            ],
             "resume_text": "resume text",
             "resume_document": ResumeDocument(
                 id=1,
@@ -166,4 +181,5 @@ async def test_extract_facts_node_uses_structured_ainvoke(
     )
 
     assert result["resume"].sections[0].facts[0].text == "Python"
+    assert not hasattr(result["resume"].sections[0], "section_id")
     assert extractor.ainvoke_calls[0]["max_repair_attempts"] == 4

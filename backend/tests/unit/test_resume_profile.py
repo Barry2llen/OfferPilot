@@ -87,6 +87,7 @@ def test_resume_sections_schema_round_trips_llm_output_shape() -> None:
         {
             "sections": [
                 {
+                    "section_id": "section_1",
                     "title": "项目经历",
                     "content": "负责规则服务抽象设计与核心 API 开发",
                 }
@@ -96,6 +97,7 @@ def test_resume_sections_schema_round_trips_llm_output_shape() -> None:
 
     assert sections.sections == [
         ResumeSectionEx(
+            section_id="section_1",
             title="项目经历",
             content="负责规则服务抽象设计与核心 API 开发",
         )
@@ -107,6 +109,7 @@ def test_resume_facts_schema_round_trips_llm_output_shape() -> None:
         {
             "facts": [
                 {
+                    "section_id": "section_1",
                     "fact_type": "achievement",
                     "text": "接口平均延迟下降 35%",
                     "evidence": "接口平均延迟下降 35%",
@@ -118,6 +121,7 @@ def test_resume_facts_schema_round_trips_llm_output_shape() -> None:
 
     assert facts.facts == [
         ResumeFactEx(
+            section_id="section_1",
             fact_type="achievement",
             text="接口平均延迟下降 35%",
             evidence="接口平均延迟下降 35%",
@@ -126,7 +130,7 @@ def test_resume_facts_schema_round_trips_llm_output_shape() -> None:
     ]
 
 
-def test_resume_json_schema_contains_nested_sections_and_facts() -> None:
+def test_resume_json_schema_keeps_final_sections_and_facts_nested() -> None:
     schema = Resume.model_json_schema()
 
     assert schema["properties"]["sections"]["items"]["$ref"].endswith("ResumeSection")
@@ -136,3 +140,5 @@ def test_resume_json_schema_contains_nested_sections_and_facts() -> None:
 
     assert section_schema["properties"]["facts"]["items"]["$ref"].endswith("ResumeFact")
     assert "The type of fact" in fact_schema["properties"]["fact_type"]["description"]
+    assert "section_id" not in section_schema["properties"]
+    assert "section_id" not in fact_schema["properties"]

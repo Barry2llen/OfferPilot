@@ -411,7 +411,12 @@ class JdAnalyzerAgent(BaseAgent[State]):
             block: JdRequirementBlockEx,
             extractor: Runnable[LanguageModelInput, JdFactsEx],
         ) -> tuple[int, JdRequirementBlock | None]:
-            block_text = f"[{block.block_type}] {block.title}\n{block.content}"
+            block_text = (
+                f"[block_id]\n{block.block_id}\n\n"
+                f"[block_type]\n{block.block_type}\n\n"
+                f"[title]\n{block.title}\n\n"
+                f"[content]\n{block.content}"
+            )
             try:
                 logger.debug(f"Extracting facts from JD block: {block.title}")
                 async with semaphore:
@@ -429,7 +434,18 @@ class JdAnalyzerAgent(BaseAgent[State]):
                         block_type=block.block_type,
                         title=block.title,
                         content=block.content,
-                        facts=[JdFact(**fact.model_dump()) for fact in facts_result.facts],
+                        facts=[
+                            JdFact(
+                                fact_type=fact.fact_type,
+                                custom_fact_type=fact.custom_fact_type,
+                                importance=fact.importance,
+                                text=fact.text,
+                                evidence=fact.evidence,
+                                keywords=fact.keywords,
+                            )
+                            for fact in facts_result.facts
+                            if fact.block_id == block.block_id
+                        ],
                     ),
                 )
             except Exception as e:
@@ -572,11 +588,19 @@ class JdAnalyzerAgent(BaseAgent[State]):
             education_raw=extracted.education_raw,
             education_min_rank=extracted.education_min_rank,
             major_requirement=extracted.major_requirement,
-            salary=(
-                JdSalary.model_validate(extracted.salary.model_dump())
-                if extracted.salary is not None
-                else None
-            ),
+            salary=JdSalary(
+                raw=extracted.salary_raw,
+                min_monthly=extracted.salary_min_monthly,
+                max_monthly=extracted.salary_max_monthly,
+                months_per_year=extracted.salary_months_per_year,
+                currency=extracted.salary_currency,
+            ) if (
+                extracted.salary_raw
+                or extracted.salary_min_monthly is not None
+                or extracted.salary_max_monthly is not None
+                or extracted.salary_months_per_year is not None
+                or extracted.salary_currency is not None
+            ) else None,
             benefits=extracted.benefits,
             blocks=blocks_with_facts,
         )

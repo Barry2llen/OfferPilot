@@ -256,7 +256,11 @@ class ResumeExtractorAgent(BaseAgent[State]):
         ))
 
         async def _extract_facts_for_section(section: ResumeSectionEx) -> ResumeSection | None:
-            section_text = str(section)
+            section_text = (
+                f"[section_id]\n{section.section_id}\n\n"
+                f"[title]\n{section.title}\n\n"
+                f"[content]\n{section.content}"
+            )
             while True:
                 try:
                     logger.debug(f"Invoking model for extracting facts from section: {section.title}")
@@ -275,13 +279,28 @@ class ResumeExtractorAgent(BaseAgent[State]):
                         message=f"Extracted facts from section: {section.title}",
                         additional_data={
                             "section_title": section.title,
-                            "fact_count": len(facts.facts)
+                            "fact_count": len(
+                                [
+                                    fact
+                                    for fact in facts.facts
+                                    if fact.section_id == section.section_id
+                                ]
+                            )
                         }
                     ))
                     return ResumeSection(
                         title=section.title,
                         content=section.content,
-                        facts=[ResumeFact(**fact.model_dump()) for fact in facts.facts]
+                        facts=[
+                            ResumeFact(
+                                fact_type=fact.fact_type,
+                                text=fact.text,
+                                evidence=fact.evidence,
+                                keywords=fact.keywords,
+                            )
+                            for fact in facts.facts
+                            if fact.section_id == section.section_id
+                        ]
                     )
                 except Exception as e:
                     logger.error(f"Error calling model for section {section.title}:\n{e}")

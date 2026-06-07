@@ -160,7 +160,7 @@ def load_structured_model[T: BaseModel](
     structured_kwargs: dict[str, Any] = {}
     if method is not None:
         structured_kwargs["method"] = method
-    structured_model = load_chat_model(model_selection).with_structured_output(
+    structured_model = load_chat_model(model_selection, temperature=0).with_structured_output(
         schema,
         **structured_kwargs,
     )

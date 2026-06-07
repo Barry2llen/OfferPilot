@@ -37,13 +37,22 @@ def test_load_structured_model_keeps_default_structured_output_options(
     monkeypatch.setattr(
         structured_module,
         "load_chat_model",
-        lambda model_selection: FakeChatModel(),
+        lambda model_selection, **kwargs: captured.update(
+            model_selection=model_selection,
+            chat_kwargs=kwargs,
+        )
+        or FakeChatModel(),
     )
 
     model = structured_module.load_structured_model(None, {"name": "Result"})
 
     assert model._model is wrapped
-    assert captured == {"schema": {"name": "Result"}, "kwargs": {}}
+    assert captured == {
+        "model_selection": None,
+        "chat_kwargs": {"temperature": 0},
+        "schema": {"name": "Result"},
+        "kwargs": {},
+    }
 
 
 def test_load_structured_model_forwards_explicit_method(
@@ -61,7 +70,11 @@ def test_load_structured_model_forwards_explicit_method(
     monkeypatch.setattr(
         structured_module,
         "load_chat_model",
-        lambda model_selection: FakeChatModel(),
+        lambda model_selection, **kwargs: captured.update(
+            model_selection=model_selection,
+            chat_kwargs=kwargs,
+        )
+        or FakeChatModel(),
     )
 
     model = structured_module.load_structured_model(
@@ -72,6 +85,8 @@ def test_load_structured_model_forwards_explicit_method(
 
     assert model._model is wrapped
     assert captured == {
+        "model_selection": None,
+        "chat_kwargs": {"temperature": 0},
         "schema": {"name": "Result"},
         "kwargs": {"method": "function_calling"},
     }
