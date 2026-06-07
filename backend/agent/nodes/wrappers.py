@@ -1,4 +1,5 @@
 from functools import wraps
+from inspect import iscoroutinefunction
 from typing import Callable
 
 from langchain_core.tools import BaseTool, tool
@@ -17,8 +18,7 @@ def require_fields(
     Decorator to ensure that the specified fields are present in the state before executing the node function.
     """
     def decorator(func: Callable):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
+        def _validate_fields(*args, **kwargs) -> None:
             if isinstance(index, int):
                 state = args[index]
             elif isinstance(index, str):
@@ -32,6 +32,17 @@ def require_fields(
             if missing_fields:
                 logger.error(f"Missing required fields for node '{func.__name__}': {missing_fields}")
                 raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+
+        if iscoroutinefunction(func):
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                _validate_fields(*args, **kwargs)
+                return await func(*args, **kwargs)
+            return async_wrapper
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            _validate_fields(*args, **kwargs)
             return func(*args, **kwargs)
         return wrapper
     return decorator

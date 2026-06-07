@@ -36,6 +36,9 @@ from ...base import BaseAgent, BaseInterupt
 from ...nodes.wrappers import require_fields
 
 
+RESUME_STRUCTURED_OUTPUT_METHOD = "function_calling"
+
+
 def _is_missing_parent_run_error(error: RuntimeError) -> bool:
     return "parent run id" in str(error)
 
@@ -98,7 +101,11 @@ class ResumeExtractorAgent(BaseAgent[State]):
             raise ResumePreviewConversionError(f"Failed to convert resume to image: {e}")
         
         # Check text extraction result.
-        validator = load_structured_model(model_selection, TextValidation)
+        validator = load_structured_model(
+            model_selection,
+            TextValidation,
+            method=RESUME_STRUCTURED_OUTPUT_METHOD,
+        )
         
         while True:
             max_retries = self.config.model_call_retry_attempts
@@ -189,7 +196,11 @@ class ResumeExtractorAgent(BaseAgent[State]):
             message="Extracting resume sections.",
         ))  
 
-        extractor = load_structured_model(model_selection, ResumeSections)
+        extractor = load_structured_model(
+            model_selection,
+            ResumeSections,
+            method=RESUME_STRUCTURED_OUTPUT_METHOD,
+        )
 
         while True:
             max_retries = self.config.model_call_retry_attempts
@@ -248,7 +259,11 @@ class ResumeExtractorAgent(BaseAgent[State]):
         sections: list[ResumeSectionEx] = state.get('sections') # type: ignore
         total_sections = len(sections)
         sections_with_facts = []
-        extractor = load_structured_model(model_selection, ResumeFacts)
+        extractor = load_structured_model(
+            model_selection,
+            ResumeFacts,
+            method=RESUME_STRUCTURED_OUTPUT_METHOD,
+        )
         await _adispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
             progress=0.6,
             message="Extracting facts from resume sections.",
