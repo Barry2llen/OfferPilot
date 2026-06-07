@@ -11,20 +11,26 @@ export default function ResumeDetailError({
   unstable_retry: () => void;
 }) {
   return (
-    <div className="max-w-3xl mx-auto p-6">
-      <div className="text-center py-20">
-        <h1 className="font-display text-xl font-semibold text-text-primary mb-2">
-          加载失败
-        </h1>
-        <p className="text-sm text-text-secondary mb-6">{error.message}</p>
-        <div className="flex gap-3 justify-center">
-          <Button onClick={unstable_retry}>重试</Button>
-          <Link
-            href="/resumes"
-            className={buttonClassName({ variant: "ghost" })}
-          >
-            返回列表
-          </Link>
+    <div className="electron-titlebar-safe-top min-h-full bg-white">
+      <div className="mx-auto max-w-[1080px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6">
+        <div className="flex min-h-[520px] flex-col items-center justify-center text-center">
+          <h1 className="mb-2 font-display text-xl font-semibold text-text-primary">
+            简历详情加载失败
+          </h1>
+          <p className="mb-6 max-w-md text-sm text-text-secondary">
+            {error.message}
+          </p>
+          <div className="flex justify-center gap-3">
+            <Button size="sm" onClick={unstable_retry}>
+              重试
+            </Button>
+            <Link
+              href="/resumes"
+              className={buttonClassName({ variant: "ghost", size: "sm" })}
+            >
+              返回列表
+            </Link>
+          </div>
         </div>
       </div>
     </div>
