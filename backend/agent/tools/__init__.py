@@ -7,6 +7,7 @@ from .base import (
     resolve_tools,
 )
 from .web_search import get_web_search_tools
+from .query import query
 
 __all__ = [
     "Tools",
@@ -15,5 +16,6 @@ __all__ = [
     "get_all_tools",
     "normalize_tools",
     "resolve_tools",
-    "get_web_search_tools"
+    "get_web_search_tools",
+    "query",
 ]

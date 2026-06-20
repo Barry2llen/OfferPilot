@@ -13,6 +13,7 @@ SEARCH_RESULT_TOOL_NAMES = {
     "web_fetch_exa",
 }
 SEARCH_RESULTS_EMPTY_MESSAGE = "未提取到可展示的搜索链接"
+QUERY_TOOL_NAME = "query"
 
 _SEARCH_RESULT_FRONTEND_FIELDS = ("url", "title", "favicon")
 _SEARCH_RESULT_TEXT_FIELD_MAP = {
@@ -27,11 +28,73 @@ _REPR_FIELD_PATTERN = re.compile(
 
 
 def summarize_tool_output(tool_name: str, output: Any) -> Any:
+    if tool_name == QUERY_TOOL_NAME:
+        return summarize_query_tool_output(output)
+
     if tool_name not in SEARCH_RESULT_TOOL_NAMES:
         return output
 
     summaries = summarize_search_tool_output(output)
     return summaries if summaries else {"message": SEARCH_RESULTS_EMPTY_MESSAGE}
+
+
+def summarize_query_tool_output(output: Any) -> dict[str, Any]:
+    if isinstance(output, BaseMessage):
+        artifact = getattr(output, "artifact", None)
+        content = output.content
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except json.JSONDecodeError:
+                content = {"choice": "", "note": content}
+        if isinstance(content, dict) and isinstance(artifact, dict):
+            output = {**artifact, **content}
+        elif isinstance(artifact, dict):
+            output = artifact
+        else:
+            output = content
+
+    if isinstance(output, str):
+        try:
+            output = json.loads(output)
+        except json.JSONDecodeError:
+            return {"question": "", "choice": "", "note": output}
+
+    if not isinstance(output, dict):
+        return {"question": "", "choice": "", "note": None}
+
+    question = output.get("question")
+    choice = output.get("choice")
+    note = output.get("note")
+    first_choice = output.get("firstChoice")
+    first_choice_description = output.get("firstChoiceDescription")
+    second_choice = output.get("secondChoice")
+    second_choice_description = output.get("secondChoiceDescription")
+    third_choice = output.get("thirdChoice")
+    third_choice_description = output.get("thirdChoiceDescription")
+    return {
+        "question": question if isinstance(question, str) else "",
+        "choice": choice if isinstance(choice, str) else "",
+        "note": note if isinstance(note, str) else None,
+        "firstChoice": first_choice if isinstance(first_choice, str) else "",
+        "firstChoiceDescription": (
+            first_choice_description
+            if isinstance(first_choice_description, str)
+            else ""
+        ),
+        "secondChoice": second_choice if isinstance(second_choice, str) else "",
+        "secondChoiceDescription": (
+            second_choice_description
+            if isinstance(second_choice_description, str)
+            else ""
+        ),
+        "thirdChoice": third_choice if isinstance(third_choice, str) else "",
+        "thirdChoiceDescription": (
+            third_choice_description
+            if isinstance(third_choice_description, str)
+            else ""
+        ),
+    }
 
 
 def summarize_search_tool_output(output: Any) -> list[dict[str, Any]]:
@@ -171,8 +234,10 @@ def _parse_repr_search_result_text(output: str) -> list[dict[str, str]]:
 
 
 __all__ = [
+    "QUERY_TOOL_NAME",
     "SEARCH_RESULT_TOOL_NAMES",
     "SEARCH_RESULTS_EMPTY_MESSAGE",
+    "summarize_query_tool_output",
     "summarize_search_tool_output",
     "summarize_tool_output",
 ]

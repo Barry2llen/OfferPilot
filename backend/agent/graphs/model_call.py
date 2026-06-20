@@ -3,6 +3,7 @@ import asyncio
 from time import perf_counter
 from typing import override
 
+from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
@@ -153,6 +154,8 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             try:
                 tool = tools_dict[name]
                 result = await tool.ainvoke(tool_call)
+            except GraphInterrupt:
+                raise
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
                 await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(

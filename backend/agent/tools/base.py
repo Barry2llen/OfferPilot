@@ -10,6 +10,7 @@ from langchain_core.tools import BaseTool
 from schemas.config import Config
 
 from ..base import BaseAgentState, GraphRuntime
+from .query import query
 from .web_search import get_web_search_tools
 
 type Tools = Iterable[BaseTool] | Awaitable[Iterable[BaseTool]] | AsyncIterable[BaseTool]
@@ -63,9 +64,8 @@ async def resolve_tools[State: StateLike = BaseAgentState](
 async def get_all_tools(
     config: Config | None = None
 ) -> list[BaseTool]:
-    return await get_web_search_tools(
-        config
-    )
+    tools = await get_web_search_tools(config)
+    return [*tools, query]
 
 async def get_tools(*names: str, config: Config | None = None) -> list[BaseTool]:
     all_tools = await get_all_tools(config)

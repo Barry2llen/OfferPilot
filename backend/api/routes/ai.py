@@ -407,6 +407,12 @@ def _is_tool_error_output(output: Any) -> bool:
     return False
 
 
+def _is_query_interrupt_tool_error(tool_name: str, detail: str) -> bool:
+    if tool_name != "query":
+        return False
+    return "Interrupt(" in detail and "type" in detail and "query" in detail
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
 
@@ -688,15 +694,18 @@ async def chat(
     description=(
         "使用指定模型选择记录调用 SupervisorAgent，并以 SSE 返回会话线程、工具调用过程、"
         "失败中断和最终回复。首次请求传 prompt；收到 interrupt 后可使用同一 thread_id "
-        "和 command.type=retry 恢复失败节点。支持纯 JSON 请求，以及带 files[] / file_ids[] "
-        "的 multipart 请求。"
+        "和 command.type=retry 恢复失败节点，或用 command.type=query 回传 query 工具的 "
+        "choice/note 继续执行，note 可附加到任意用户选择。支持纯 JSON 请求，以及带 "
+        "files[] / file_ids[] 的 multipart 请求。"
     ),
     response_description="返回 text/event-stream 事件流。",
     responses={
         200: {
             "description": (
                 "返回 SSE 事件流。事件包括 thread、token、reasoning、reasoning_done、"
-                "tool_start、tool_end、tool_error、interrupt、final，失败时返回 error。搜索类工具的 tool_end.output "
+                "tool_start、tool_end、tool_error、interrupt、final，失败时返回 error。query 工具中断会在 "
+                "interrupt 事件中返回 question、firstChoice、firstChoiceDescription、"
+                "secondChoice、secondChoiceDescription、thirdChoice、thirdChoiceDescription。搜索类工具的 tool_end.output "
                 "仅包含前端安全摘要字段 url、title、favicon。thread 事件会额外返回 resolved_attachments、"
                 "attachment_count 和 requires_image_input。"
             ),
@@ -723,11 +732,19 @@ async def chat_stream(
     thread_id = payload.thread_id if command_type == "retry" else _make_thread_id(payload.thread_id)
     prepared_prompt = None
 
-    if command_type == "retry":
+    if command_type in {"retry", "query"}:
         assert payload.command is not None
         chat_file_service = _build_chat_file_service(request, session)
+        resume_payload: dict[str, Any]
+        if command_type == "query":
+            resume_payload = {
+                "choice": payload.command.choice,
+                "note": payload.command.note,
+            }
+        else:
+            resume_payload = payload.command.model_dump(exclude_none=True)
         agent_input: dict[str, Any] | Command = Command(
-            resume=payload.command.model_dump(exclude_none=True)
+            resume=resume_payload
         )
         requires_image_input = chat_file_service.thread_requires_image_input(thread_id or "")
         attachment_count = ChatThreadFileRepository(session).count_by_thread(thread_id or "")
@@ -838,12 +855,15 @@ async def chat_stream(
                     continue
 
                 if event_name == "on_tool_error":
+                    detail = str(data.get("error") or data.get("output") or "")
+                    if _is_query_interrupt_tool_error(tool_name, detail):
+                        continue
                     yield _sse(
                         "tool_error",
                         {
                             "thread_id": thread_id,
                             "tool_name": tool_name,
-                            "detail": str(data.get("error") or data.get("output") or ""),
+                            "detail": detail,
                         },
                     )
                     continue

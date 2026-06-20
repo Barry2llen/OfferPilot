@@ -13,7 +13,7 @@ from schemas.ai import (
     AIChatHistorySummary,
 )
 from schemas.chat_file import ChatAttachmentRef
-from utils.tool_outputs import summarize_tool_output
+from utils.tool_outputs import QUERY_TOOL_NAME, summarize_tool_output
 
 
 _ROLE_BY_MESSAGE_TYPE = {
@@ -148,7 +148,8 @@ def _to_history_message(message: Any) -> AIChatHistoryMessage:
         content = ""
 
     if message_type == "tool" and message_name is not None:
-        content = summarize_tool_output(str(message_name), content)
+        tool_output = message if str(message_name) == QUERY_TOOL_NAME else content
+        content = summarize_tool_output(str(message_name), tool_output)
 
     payload: dict[str, Any] = {
         "role": _ROLE_BY_MESSAGE_TYPE.get(message_type, message_type),

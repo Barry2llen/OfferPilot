@@ -1,12 +1,17 @@
 import asyncio
+import importlib
+import json
 import time
 
 import pytest
+from langgraph.errors import GraphInterrupt
+from langgraph.types import Interrupt
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
 from agent.graphs.model_call import ModelCallGraph
 from agent.prompts import PromptComposer, PromptFragment
+from agent.tools.query import query as query_tool
 from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 
@@ -21,6 +26,28 @@ def echo_value(value: int) -> str:
 def fail_value(value: int) -> str:
     """Raise an error for testing."""
     raise RuntimeError(f"boom: {value}")
+
+
+@tool
+def interrupt_value(value: int) -> str:
+    """Raise a graph interrupt for testing."""
+    raise GraphInterrupt(
+        (
+            Interrupt(
+                value={
+                    "type": "query",
+                    "question": "Choose next step.",
+                    "firstChoice": "first",
+                    "firstChoiceDescription": "Use the first option.",
+                    "secondChoice": "second",
+                    "secondChoiceDescription": "Use the second option.",
+                    "thirdChoice": "third",
+                    "thirdChoiceDescription": "Use the third option.",
+                },
+                id=f"interrupt-{value}",
+            ),
+        )
+    )
 
 
 @tool
@@ -146,6 +173,79 @@ def test_tool_node_returns_error_message_when_tool_raises() -> None:
     assert message.status == "error"
     assert message.tool_call_id == "call-fail"
     assert "boom: 5" in message.content
+
+
+def test_tool_node_reraises_graph_interrupt_from_tool() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[interrupt_value])
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "interrupt_value", "args": {"value": 7}, "id": "call-interrupt"}],
+            )
+        ]
+    )
+
+    with pytest.raises(GraphInterrupt) as exc_info:
+        run_tool_node(graph, state)
+
+    interrupts = exc_info.value.args[0]
+    assert len(interrupts) == 1
+    assert interrupts[0].id == "interrupt-7"
+    assert interrupts[0].value == {
+        "type": "query",
+        "question": "Choose next step.",
+        "firstChoice": "first",
+        "firstChoiceDescription": "Use the first option.",
+        "secondChoice": "second",
+        "secondChoiceDescription": "Use the second option.",
+        "thirdChoice": "third",
+        "thirdChoiceDescription": "Use the third option.",
+    }
+
+
+async def test_query_tool_keeps_display_context_out_of_llm_visible_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_interrupt(value: object) -> dict[str, str]:
+        return {"choice": "firstChoice", "note": "Use this."}
+
+    query_module = importlib.import_module("agent.tools.query")
+    monkeypatch.setattr(query_module, "interrupt", fake_interrupt)
+
+    result = await query_tool.ainvoke(
+        {
+            "name": "query",
+            "args": {
+                "question": "Choose next step.",
+                "firstChoice": "first",
+                "firstChoiceDescription": "Use the first option.",
+                "secondChoice": "second",
+                "secondChoiceDescription": "Use the second option.",
+                "thirdChoice": "third",
+                "thirdChoiceDescription": "Use the third option.",
+            },
+            "id": "call-query",
+            "type": "tool_call",
+        }
+    )
+
+    assert isinstance(result, ToolMessage)
+    assert json.loads(result.content) == {
+        "choice": "firstChoice",
+        "note": "Use this.",
+    }
+    assert "question" not in result.content
+    assert "Use the first option." not in result.content
+    assert result.artifact == {
+        "question": "Choose next step.",
+        "firstChoice": "first",
+        "firstChoiceDescription": "Use the first option.",
+        "secondChoice": "second",
+        "secondChoiceDescription": "Use the second option.",
+        "thirdChoice": "third",
+        "thirdChoiceDescription": "Use the third option.",
+    }
 
 
 def test_tool_node_executes_async_tool_calls_and_returns_tool_message() -> None:

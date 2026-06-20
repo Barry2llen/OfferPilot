@@ -6,14 +6,27 @@ from schemas.chat_file import ChatAttachmentRef
 
 
 class AIChatCommand(BaseModel):
-    type: Literal["prompt", "continue", "retry"] = Field(
-        description="流式会话命令类型。prompt 表示新输入，retry 表示恢复上一次失败中断并重试。",
-        examples=["retry"],
+    type: Literal["prompt", "continue", "retry", "query"] = Field(
+        description=(
+            "流式会话命令类型。prompt 表示新输入，retry 表示恢复上一次失败中断并重试，"
+            "query 表示回传 query 工具中断的用户选择。"
+        ),
+        examples=["query"],
     )
     prompt: str | None = Field(
         default=None,
-        description="命令附带的文本。prompt 命令未提供时使用请求体顶层 prompt；retry 可省略。",
+        description="命令附带的文本。prompt 命令未提供时使用请求体顶层 prompt；retry/query 可省略。",
         examples=["请继续处理。"],
+    )
+    choice: Literal["firstChoice", "secondChoice", "thirdChoice", "other"] | None = Field(
+        default=None,
+        description="query 命令回传的用户选择。仅 command.type=query 时必填。",
+        examples=["firstChoice"],
+    )
+    note: str | None = Field(
+        default=None,
+        description="query 命令回传的补充说明；可附加到任意用户选择。",
+        examples=["我更想先看成本最低的方案。"],
     )
 
 
@@ -273,6 +286,15 @@ class AIChatStreamRequest(BaseModel):
                     "thread_id": "conversation-001",
                     "command": {"type": "retry"},
                 },
+                {
+                    "selection_id": 1,
+                    "thread_id": "conversation-001",
+                    "command": {
+                        "type": "query",
+                        "choice": "firstChoice",
+                        "note": "按推荐方案继续。",
+                    },
+                },
             ]
         }
     )
@@ -288,7 +310,7 @@ class AIChatStreamRequest(BaseModel):
     )
     thread_id: str | None = Field(
         default=None,
-        description="会话线程 ID。retry 命令必须传入上一次中断返回的线程 ID。",
+        description="会话线程 ID。retry/query 命令必须传入上一次中断返回的线程 ID。",
         examples=["conversation-001"],
     )
     file_ids: list[str] = Field(
@@ -298,17 +320,19 @@ class AIChatStreamRequest(BaseModel):
     )
     command: AIChatCommand | None = Field(
         default=None,
-        description="流式会话命令。省略时按 prompt 命令处理；retry 用于恢复失败中断。",
-        examples=[{"type": "retry"}],
+        description="流式会话命令。省略时按 prompt 命令处理；retry 用于恢复失败中断；query 用于恢复用户选择中断。",
+        examples=[{"type": "query", "choice": "firstChoice", "note": "按推荐方案继续。"}],
     )
 
     @model_validator(mode="after")
     def validate_stream_command(self) -> "AIChatStreamRequest":
         command_type = self.command.type if self.command else "prompt"
 
-        if command_type == "retry":
+        if command_type in {"retry", "query"}:
             if not self.thread_id:
-                raise ValueError("thread_id is required when command.type is retry")
+                raise ValueError(f"thread_id is required when command.type is {command_type}")
+            if command_type == "query" and self.command and self.command.choice is None:
+                raise ValueError("choice is required when command.type is query")
             return self
 
         return self
