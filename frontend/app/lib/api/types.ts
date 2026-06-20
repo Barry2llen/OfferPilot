@@ -244,9 +244,14 @@ export interface AIChatResponse {
   content: string | unknown[];
 }
 
+export type AIChatCommandType = "prompt" | "continue" | "retry" | "query";
+export type QueryChoice = "firstChoice" | "secondChoice" | "thirdChoice" | "other";
+
 export interface AIChatCommand {
-  type: "prompt" | "continue" | "retry";
+  type: AIChatCommandType;
   prompt?: string | null;
+  choice?: QueryChoice | null;
+  note?: string | null;
 }
 
 export interface AIChatStreamRequest {
@@ -291,6 +296,13 @@ export interface SSEInterruptData {
   id?: string;
   type?: string;
   message: string;
+  question?: string;
+  firstChoice?: string;
+  firstChoiceDescription?: string;
+  secondChoice?: string;
+  secondChoiceDescription?: string;
+  thirdChoice?: string;
+  thirdChoiceDescription?: string;
 }
 
 // ─── Resume Upload / Extraction Events ───

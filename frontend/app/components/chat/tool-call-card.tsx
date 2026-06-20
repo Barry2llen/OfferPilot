@@ -17,9 +17,21 @@ interface SearchResult {
   favicon?: string;
 }
 
+interface QueryToolOutput {
+  question: string;
+  choice: string;
+  note: string | null;
+  firstChoice?: string;
+  firstChoiceDescription?: string;
+  secondChoice?: string;
+  secondChoiceDescription?: string;
+  thirdChoice?: string;
+  thirdChoiceDescription?: string;
+}
+
 const statusLabels: Record<ToolStatus, string> = {
   running: "执行中",
-  success: "已完成",
+  success: "",
   error: "失败",
 };
 
@@ -45,6 +57,7 @@ export default function ToolCallCard({
 }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const isWebTool = isWebResultTool(entry.name);
+  const isQuery = isQueryTool(entry.name);
   const canExpand = hasToolDetails(entry);
   const searchResults = useMemo(
     () => getSearchResults(entry.name, entry.output),
@@ -56,6 +69,8 @@ export default function ToolCallCard({
     entry.output !== undefined &&
     searchResults.length === 0;
   const summary = buildSummary(entry, searchResults, showSearchEmpty);
+  const statusLabel = getStatusLabel(entry);
+  const toolDisplayName = getToolDisplayName(entry);
 
   return (
     <div className="py-1">
@@ -80,15 +95,17 @@ export default function ToolCallCard({
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
               <span className="truncate text-sm font-medium text-text-secondary">
-                {getToolDisplayName(entry.name)}
+                {toolDisplayName}
               </span>
-              <span
-                className={`shrink-0 text-[11px] font-medium ${
-                  statusClassNames[entry.status]
-                }`}
-              >
-                {statusLabels[entry.status]}
-              </span>
+              {statusLabel && (
+                <span
+                  className={`shrink-0 text-[11px] font-medium ${
+                    statusClassNames[entry.status]
+                  }`}
+                >
+                  {statusLabel}
+                </span>
+              )}
             </span>
             {summary && (
               <span className="mt-0.5 block truncate text-xs text-text-muted">
@@ -119,7 +136,9 @@ export default function ToolCallCard({
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: "easeInOut" }}
             >
-              {isWebTool && searchResults.length > 0 ? (
+              {isQuery ? (
+                <QueryToolDetails entry={entry} />
+              ) : isWebTool && searchResults.length > 0 ? (
                 <SearchResultList results={searchResults} />
               ) : showSearchEmpty ? (
                 <SearchEmptyState output={entry.output} />
@@ -130,6 +149,23 @@ export default function ToolCallCard({
           )}
         </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+function QueryToolDetails({ entry }: { entry: ToolCallEntry }) {
+  const question = getQueryQuestion(entry);
+  const answer = getQueryAnswer(entry);
+
+  return (
+    <div className="space-y-2 text-xs leading-relaxed text-text-secondary">
+      <DetailBlock label="问题" value={question || "未提供问题"} />
+      {entry.status === "success" && (
+        <DetailBlock label="答案" value={answer || "未记录答案"} />
+      )}
+      {entry.status === "running" && (
+        <DetailBlock label="状态" value="等待用户决定" />
+      )}
     </div>
   );
 }
@@ -239,17 +275,36 @@ function DefaultSiteIcon() {
   );
 }
 
-function getToolDisplayName(name: string): string {
-  if (isSearchTool(name)) {
+function getToolDisplayName(entry: ToolCallEntry): string {
+  if (isQueryTool(entry.name) && entry.status === "success") {
+    return "Asked a question";
+  }
+  if (isSearchTool(entry.name)) {
     return "网页搜索";
   }
-  if (isFetchTool(name)) {
+  if (isFetchTool(entry.name)) {
     return "网页读取";
   }
-  return name || "未知工具";
+  return entry.name || "未知工具";
+}
+
+function getStatusLabel(entry: ToolCallEntry): string {
+  if (isQueryTool(entry.name) && entry.status === "running") {
+    return "等待决定";
+  }
+  return statusLabels[entry.status];
 }
 
 function ToolIcon({ name, className }: { name: string, className?: string }) {
+  if (isQueryTool(name)) {
+    return (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.09 9a3 3 0 115.82 1c-.7 1.2-1.91 1.63-2.47 2.25-.36.4-.44.82-.44 1.75" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    );
+  }
   if (isSearchTool(name)) {
     return (
       <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -277,6 +332,9 @@ function buildSummary(
   searchResults: SearchResult[],
   showSearchEmpty: boolean
 ): string {
+  if (isQueryTool(entry.name)) {
+    return getQueryQuestion(entry) || "等待用户决定";
+  }
   if (entry.status === "running") {
     const query = getInputText(entry.input);
     return query ? `参数：${query}` : "工具正在执行";
@@ -378,8 +436,89 @@ function isWebResultTool(name: string): boolean {
   return isSearchTool(name) || isFetchTool(name);
 }
 
+function isQueryTool(name: string): boolean {
+  return name === "query";
+}
+
 function hasToolDetails(entry: ToolCallEntry): boolean {
   return entry.input !== undefined || entry.output !== undefined || Boolean(entry.error);
+}
+
+function getQueryQuestion(entry: ToolCallEntry): string {
+  const output = parseQueryToolOutput(entry.output);
+  if (output?.question) {
+    return output.question;
+  }
+  const question = entry.input?.question;
+  return typeof question === "string" ? question : "";
+}
+
+function getQueryAnswer(entry: ToolCallEntry): string {
+  const output = parseQueryToolOutput(entry.output);
+  if (!output) {
+    return "";
+  }
+  if (output.choice === "other") {
+    return output.note || "其他";
+  }
+
+  const choiceText = getQueryChoiceText(entry.input, output.choice, output);
+  if (!output.note) {
+    return choiceText || output.choice;
+  }
+  return `${choiceText || output.choice}；备注：${output.note}`;
+}
+
+function getQueryChoiceText(
+  input: Record<string, unknown> | undefined,
+  choice: string,
+  output?: QueryToolOutput | null
+): string {
+  const outputValue = output?.[choice as keyof QueryToolOutput];
+  if (typeof outputValue === "string") {
+    return outputValue;
+  }
+  const value = input?.[choice];
+  return typeof value === "string" ? value : "";
+}
+
+function parseQueryToolOutput(output: unknown): QueryToolOutput | null {
+  const parsed = parseMaybeJson(output);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const item = parsed as Record<string, unknown>;
+  const choice = item.choice;
+  if (typeof choice !== "string") {
+    return null;
+  }
+
+  const question = item.question;
+  const note = item.note;
+  return {
+    question: typeof question === "string" ? question : "",
+    choice,
+    note: typeof note === "string" ? note : null,
+    firstChoice:
+      typeof item.firstChoice === "string" ? item.firstChoice : undefined,
+    firstChoiceDescription:
+      typeof item.firstChoiceDescription === "string"
+        ? item.firstChoiceDescription
+        : undefined,
+    secondChoice:
+      typeof item.secondChoice === "string" ? item.secondChoice : undefined,
+    secondChoiceDescription:
+      typeof item.secondChoiceDescription === "string"
+        ? item.secondChoiceDescription
+        : undefined,
+    thirdChoice:
+      typeof item.thirdChoice === "string" ? item.thirdChoice : undefined,
+    thirdChoiceDescription:
+      typeof item.thirdChoiceDescription === "string"
+        ? item.thirdChoiceDescription
+        : undefined,
+  };
 }
 
 function getSearchEmptyMessage(output: unknown): string {

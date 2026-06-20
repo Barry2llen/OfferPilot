@@ -3,13 +3,14 @@ import asyncio
 from time import perf_counter
 from typing import override
 
+from langgraph.runtime import Runtime
 from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-from langchain_core.tools import BaseTool
+from langchain.tools import BaseTool, ToolRuntime
+from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
-from langchain_core.callbacks.manager import adispatch_custom_event
 
 from ..models import load_chat_model
 from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
@@ -34,19 +35,7 @@ from schemas.config.base import Config
 from schemas.command import BaseCommand
 from utils.logger import logger
 from utils.json import jsonify
-
-
-def _is_missing_parent_run_error(error: RuntimeError) -> bool:
-    return "parent run id" in str(error)
-
-
-async def _adispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        await adispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
+from utils.custom_events import _adispatch_custom_event_safely
 
 
 def _message_reasoning_content(message: BaseMessage) -> str:
@@ -78,6 +67,41 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     system_prompts: PromptMessageBuilder[State]
     tools: ToolsBuilder[State]
 
+    @staticmethod
+    def _schema_has_field(schema: object, field_name: str) -> bool:
+        model_fields = getattr(schema, "model_fields", None)
+        if isinstance(model_fields, dict) and field_name in model_fields:
+            return True
+
+        annotations = getattr(schema, "__annotations__", None)
+        if isinstance(annotations, dict) and field_name in annotations:
+            return True
+
+        if isinstance(schema, dict):
+            properties = schema.get("properties")
+            if isinstance(properties, dict) and field_name in properties:
+                return True
+
+        return False
+
+    @staticmethod
+    def _inject_runtime_if_requested(
+        tool_call: ToolCall,
+        tool: BaseTool,
+        runtime: ToolRuntime[None, State],
+    ) -> ToolCall:
+        if not (
+            ModelCallGraph._schema_has_field(getattr(tool, "args_schema", None), "runtime")
+            or ModelCallGraph._schema_has_field(tool.tool_call_schema, "runtime")
+        ):
+            return tool_call
+
+        logger.debug(f"Injecting runtime into tool call for tool {tool.name}.")
+
+        args = dict(tool_call["args"])
+        args["runtime"] = runtime
+        return {**tool_call, "args": args}
+
     def __init__(
             self,
             *args,
@@ -93,7 +117,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         prompts = normalize_system_prompts(system_prompts)
         self.system_prompts = prompts if callable(prompts) else lambda runtime: prompts
 
-    async def _tool_node(self, state: State) -> State:
+    async def _tool_node(self, state: State, runtime: Runtime[None], config: RunnableConfig) -> State:
         """
         Tool node. This node is responsible for calling the tool and getting the response.
         It calls the tool with the state.messages and returns the response.
@@ -150,10 +174,25 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     name=name,
                     status="error",
                 )
+
+            tool = tools_dict[name]
+            injected_tool_call = self._inject_runtime_if_requested(
+                tool_call,
+                tool,
+                ToolRuntime[None, State](
+                    state=state,
+                    context=runtime.context,
+                    tool_call_id=tool_call_id,
+                    config=config,
+                    stream_writer=runtime.stream_writer,
+                    store=runtime.store,
+                    execution_info=runtime.execution_info,
+                    server_info=runtime.server_info,
+                ),
+            )
             
             try:
-                tool = tools_dict[name]
-                result = await tool.ainvoke(tool_call)
+                result = await tool.ainvoke(injected_tool_call, config)
             except GraphInterrupt:
                 raise
             except Exception as e:
@@ -317,7 +356,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         
         graph = StateGraph(BaseAgentState)
         graph.add_node('model', self._model_call_node)
-        graph.add_node('tool', self._tool_node)
+        graph.add_node('tool', self._tool_node) # type: ignore
         graph.add_edge(START, 'model')
         graph.add_conditional_edges(
             'tool',

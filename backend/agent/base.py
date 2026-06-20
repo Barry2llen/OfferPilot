@@ -227,8 +227,12 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         return self._get_result(final_state or state)
     
     
-type InteruptType = Literal['error', 'query', 'warning', 'other']
-
+type InteruptType = Literal[
+    'error',
+    'query',
+    'warning',
+    'other'
+]
 
 class BaseInterupt(TypedDict):
     type: NotRequired[InteruptType]

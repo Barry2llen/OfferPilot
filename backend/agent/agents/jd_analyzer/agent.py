@@ -8,11 +8,14 @@ from langgraph.graph.state import StateGraph
 from langchain_core.runnables import Runnable
 from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from exceptions.agent import ModelCallExecutionError
 from utils import document_parser
 from utils.logger import logger
+from utils.custom_events import (
+    _adispatch_custom_event_safely,
+    _dispatch_custom_event_safely,
+)
 from schemas.config import Config
 from schemas.command import BaseCommand
 from schemas.model_selection import ModelSelection
@@ -50,28 +53,6 @@ async def _get_jd_source_tools(config: Config | None = None):
         mark_jd_extraction_success,
         mark_jd_extraction_failure,
     )
-
-
-def _is_missing_parent_run_error(error: RuntimeError) -> bool:
-    return "parent run id" in str(error)
-
-
-def _dispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        dispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
-
-
-async def _adispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        await adispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
 
 
 def _message_content_to_text(content: object) -> str:

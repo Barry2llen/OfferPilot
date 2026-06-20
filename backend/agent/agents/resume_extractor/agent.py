@@ -6,11 +6,14 @@ from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
 from langchain.messages import HumanMessage, SystemMessage
-from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from schemas.resume_document import ResumeDocument
 from exceptions.agent import ModelCallExecutionError
 from utils.logger import logger
+from utils.custom_events import (
+    _adispatch_custom_event_safely,
+    _dispatch_custom_event_safely,
+)
 from schemas.command import BaseCommand
 from exceptions.resume import ResumePreviewConversionError
 from schemas.model_selection import ModelSelection
@@ -37,30 +40,6 @@ from ...nodes.wrappers import require_fields
 
 
 RESUME_STRUCTURED_OUTPUT_METHOD = "function_calling"
-
-
-def _is_missing_parent_run_error(error: RuntimeError) -> bool:
-    return "parent run id" in str(error)
-
-
-def _dispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        dispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
-
-
-async def _adispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        await adispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
-
-
 class ResumeExtractorAgent(BaseAgent[State]):
 
     @require_fields('resume_document', 'model', index=1)

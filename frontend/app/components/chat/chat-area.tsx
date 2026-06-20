@@ -5,7 +5,10 @@ import ChatMessage from "@/app/components/chat/chat-message";
 import ChatWelcome from "@/app/components/chat/chat-welcome";
 import Button from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
-import type { ChatMessage as ChatMessageType } from "@/app/hooks/use-chat-stream";
+import type {
+  ChatInterrupt,
+  ChatMessage as ChatMessageType,
+} from "@/app/hooks/use-chat-stream";
 
 const AUTO_SCROLL_THRESHOLD_PX = 48;
 const SHOW_SCROLL_BUTTON_THRESHOLD_PX = 240;
@@ -15,7 +18,7 @@ interface ChatAreaProps {
   liveMessages: ChatMessageType[];
   isStreaming: boolean;
   historyLoading: boolean;
-  interrupt: { interruptId: string; message: string } | null;
+  interrupt: ChatInterrupt | null;
   streamError: string | null;
   threadModelMismatchMessage: string | null;
   hasNoModel: boolean;
@@ -110,7 +113,7 @@ export default function ChatArea({
             )}
           </>
 
-          {interrupt && (
+          {interrupt && interrupt.type !== "query" && (
             <div className="flex justify-center py-3">
               <div className="flex items-center gap-2 rounded-full bg-warning-bg px-4 py-2 text-xs text-warning-text">
                 <span>Agent 已中断: {interrupt.message}</span>

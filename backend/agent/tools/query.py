@@ -7,10 +7,10 @@ from typing import (
 )
 from pydantic import Field
 from langgraph.types import interrupt
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 from ..base import (
-    BaseInterupt
+    BaseInterupt,
 )
 
 class QueryInterupt(BaseInterupt):
@@ -28,7 +28,7 @@ class Answer(TypedDict):
     choice: AnswerType
     note: NotRequired[str | None]
 
-@tool(response_format="content_and_artifact")
+@tool(response_format="content_and_artifact", extras={"interupt": True})
 async def query(
     question: str = Field(..., description="The specific question to ask the user before continuing."),
     firstChoice: str = Field(..., description="The first,as well as recommended,choice to present to the user."),

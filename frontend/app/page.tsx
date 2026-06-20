@@ -11,7 +11,7 @@ import ChatInput, {
   type ChatComposerPayload,
 } from "@/app/components/chat/chat-input";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
-import type { ModelSelectionResponse } from "@/app/lib/api/types";
+import type { ModelSelectionResponse, QueryChoice } from "@/app/lib/api/types";
 
 export default function Home() {
   const { state } = useAppContext();
@@ -31,6 +31,7 @@ export default function Home() {
     startChat,
     stopStream,
     retry,
+    answerQuery,
     loadHistory,
     clearMessages,
     resetStreamingState,
@@ -108,6 +109,18 @@ export default function Home() {
     state.currentModelSelection,
     state.currentThreadId,
   ]);
+
+  const handleAnswerQuery = useCallback(
+    (choice: QueryChoice, note?: string | null) => {
+      if (!state.currentModelSelection || !state.currentThreadId) return;
+      answerQuery(state.currentModelSelection, state.currentThreadId, choice, note);
+    },
+    [
+      answerQuery,
+      state.currentModelSelection,
+      state.currentThreadId,
+    ]
+  );
 
   const handleSelectThread = useCallback(
     async (threadId: string) => {
@@ -238,6 +251,8 @@ export default function Home() {
           isInterrupted={!!interrupt}
           disabled={hasNoModel}
           noticeMessage={threadModelMismatchMessage}
+          interrupt={interrupt}
+          onAnswerQuery={handleAnswerQuery}
         />
       </div>
     </div>

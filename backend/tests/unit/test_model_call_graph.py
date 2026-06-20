@@ -5,9 +5,10 @@ import time
 
 import pytest
 from langgraph.errors import GraphInterrupt
+from langgraph.runtime import Runtime
 from langgraph.types import Interrupt
+from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.tools import tool
 
 from agent.graphs.model_call import ModelCallGraph
 from agent.prompts import PromptComposer, PromptFragment
@@ -70,8 +71,41 @@ def direct_value(value: int) -> str:
     return f"direct-value={value}"
 
 
-def run_tool_node(graph: ModelCallGraph, state: dict) -> dict:
-    return asyncio.run(graph._tool_node(state))
+def make_tool_config() -> dict:
+    return {
+        "configurable": {"thread_id": "thread-tool-test"},
+        "metadata": {"source": "unit-test"},
+    }
+
+
+def make_runtime() -> Runtime[None]:
+    return Runtime(context=None)
+
+
+def make_tool_runtime(
+    state: dict | None = None,
+    *,
+    tool_call_id: str = "call-query",
+    config: dict | None = None,
+) -> ToolRuntime[None, dict]:
+    return ToolRuntime(
+        state=state or make_state([]),
+        context=None,
+        config=config or make_tool_config(),
+        stream_writer=lambda _: None,
+        tool_call_id=tool_call_id,
+        store=None,
+    )
+
+
+def run_tool_node(
+    graph: ModelCallGraph,
+    state: dict,
+    config: dict | None = None,
+) -> dict:
+    return asyncio.run(
+        graph._tool_node(state, make_runtime(), config or make_tool_config())
+    )
 
 
 def make_state(messages: list, model: object | None = None) -> dict:
@@ -224,6 +258,7 @@ async def test_query_tool_keeps_display_context_out_of_llm_visible_content(
                 "secondChoiceDescription": "Use the second option.",
                 "thirdChoice": "third",
                 "thirdChoiceDescription": "Use the third option.",
+                "runtime": make_tool_runtime(),
             },
             "id": "call-query",
             "type": "tool_call",
@@ -266,6 +301,122 @@ def test_tool_node_executes_async_tool_calls_and_returns_tool_message() -> None:
     assert message.tool_call_id == "call-async"
     assert message.name == "async_echo_value"
     assert message.content == "async-value=7"
+
+
+def test_tool_node_injects_runtime_without_mutating_original_tool_call() -> None:
+    seen: list[dict[str, object]] = []
+
+    @tool
+    async def runtime_echo(
+        value: int,
+        *,
+        runtime: ToolRuntime[None, dict],
+    ) -> str:
+        """Return runtime details for testing."""
+        seen.append(
+            {
+                "state": runtime.state,
+                "tool_call_id": runtime.tool_call_id,
+                "config": runtime.config,
+            }
+        )
+        return f"runtime-value={value}"
+
+    graph = ModelCallGraph(config=Config(), tools=[runtime_echo])
+    tool_call = {
+        "name": "runtime_echo",
+        "args": {"value": 3},
+        "id": "call-runtime",
+    }
+    state = make_state([AIMessage(content="", tool_calls=[tool_call])])
+    config = make_tool_config()
+
+    result = run_tool_node(graph, state, config)
+    message = result["messages"][0]
+
+    assert message.content == "runtime-value=3"
+    assert seen == [
+        {
+            "state": state,
+            "tool_call_id": "call-runtime",
+            "config": config,
+        }
+    ]
+    assert state["messages"][0].tool_calls[0]["args"] == {"value": 3}
+
+
+def test_tool_node_does_not_mutate_args_when_runtime_tool_raises() -> None:
+    @tool
+    async def runtime_fail(
+        value: int,
+        *,
+        runtime: ToolRuntime[None, dict],
+    ) -> str:
+        """Raise after receiving runtime for testing."""
+        assert runtime.tool_call_id == "call-runtime-fail"
+        raise RuntimeError(f"runtime boom: {value}")
+
+    graph = ModelCallGraph(config=Config(), tools=[runtime_fail])
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "runtime_fail",
+                        "args": {"value": 5},
+                        "id": "call-runtime-fail",
+                    }
+                ],
+            )
+        ]
+    )
+
+    result = run_tool_node(graph, state)
+    message = result["messages"][0]
+
+    assert message.status == "error"
+    assert "runtime boom: 5" in message.content
+    assert state["messages"][0].tool_calls[0]["args"] == {"value": 5}
+
+
+def test_tool_node_does_not_mutate_args_when_runtime_tool_interrupts() -> None:
+    @tool
+    async def runtime_interrupt(
+        value: int,
+        *,
+        runtime: ToolRuntime[None, dict],
+    ) -> str:
+        """Interrupt after receiving runtime for testing."""
+        raise GraphInterrupt(
+            (
+                Interrupt(
+                    value={"type": "query", "question": f"value={value}"},
+                    id=f"interrupt-{runtime.tool_call_id}",
+                ),
+            )
+        )
+
+    graph = ModelCallGraph(config=Config(), tools=[runtime_interrupt])
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "runtime_interrupt",
+                        "args": {"value": 7},
+                        "id": "call-runtime-interrupt",
+                    }
+                ],
+            )
+        ]
+    )
+
+    with pytest.raises(GraphInterrupt):
+        run_tool_node(graph, state)
+
+    assert state["messages"][0].tool_calls[0]["args"] == {"value": 7}
 
 
 def test_tool_node_executes_multiple_tools_concurrently_and_preserves_order() -> None:
@@ -486,6 +637,63 @@ async def test_compiled_graph_ends_after_return_direct_tool(
     assert message.name == "direct_value"
     assert message.tool_call_id == "call-direct"
     assert message.additional_kwargs["return_direct"] is True
+
+
+async def test_runtime_tool_start_event_does_not_expose_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    @tool
+    async def runtime_echo(
+        value: int,
+        *,
+        runtime: ToolRuntime[None, dict],
+    ) -> str:
+        """Return runtime-aware value."""
+        assert runtime.tool_call_id == "call-runtime-event"
+        return f"runtime-value={value}"
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def bind_tools(self, tools: object) -> "FakeModel":
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            self.calls += 1
+            if self.calls == 1:
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "runtime_echo",
+                            "args": {"value": 8},
+                            "id": "call-runtime-event",
+                        }
+                    ],
+                )
+            return AIMessage(content="done")
+
+    fake_model = FakeModel()
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: fake_model,
+    )
+
+    graph = ModelCallGraph(config=Config(), tools=[runtime_echo]).get_compiled_graph()
+    tool_start_inputs: list[object] = []
+
+    async for event in graph.astream_events(
+        make_state([HumanMessage(content="hello")]),
+        {"configurable": {"thread_id": "thread-runtime-event"}},
+        version="v2",
+    ):
+        if event.get("event") == "on_tool_start":
+            data = event.get("data")
+            if isinstance(data, dict):
+                tool_start_inputs.append(data.get("input"))
+
+    assert tool_start_inputs == [{"value": 8}]
 
 
 async def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.MonkeyPatch) -> None:
