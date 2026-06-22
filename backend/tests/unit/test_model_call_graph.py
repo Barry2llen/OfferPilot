@@ -71,6 +71,12 @@ def direct_value(value: int) -> str:
     return f"direct-value={value}"
 
 
+@tool(response_format="content_and_artifact")
+def structured_value(value: int) -> tuple[str, dict[str, int]]:
+    """Return content and artifact for testing."""
+    return json.dumps({"value": value}), {"raw_value": value}
+
+
 def make_tool_config() -> dict:
     return {
         "configurable": {"thread_id": "thread-tool-test"},
@@ -119,6 +125,20 @@ def test_model_call_graph_can_be_imported_and_initialized_without_tools() -> Non
     graph = ModelCallGraph(config=Config(), tools=None)
 
     assert callable(graph.tools)
+
+
+def test_interrupt_tool_queue_is_instance_scoped() -> None:
+    first_graph = ModelCallGraph(config=Config(), tools=[echo_value])
+    second_graph = ModelCallGraph(config=Config(), tools=[echo_value])
+
+    first_graph._add_interrupt_tool(
+        "message-first",
+        {"name": "echo_value", "args": {"value": 1}, "id": "call-first"},
+        echo_value,
+    )
+
+    assert len(first_graph._interrupt_tools) == 1
+    assert second_graph._interrupt_tools == []
 
 
 def test_tool_node_returns_original_state_when_tools_are_missing() -> None:
@@ -189,6 +209,50 @@ def test_tool_node_executes_tool_calls_and_returns_tool_message() -> None:
     assert message.content == "value=3"
 
 
+def test_tool_node_preserves_structured_tool_message() -> None:
+    graph = ModelCallGraph(config=Config(), tools=[structured_value])
+    state = make_state(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "structured_value", "args": {"value": 4}, "id": "call-structured"}],
+            )
+        ]
+    )
+
+    result = run_tool_node(graph, state)
+    message = result["messages"][0]
+
+    assert isinstance(message, ToolMessage)
+    assert message.tool_call_id == "call-structured"
+    assert json.loads(message.content) == {"value": 4}
+    assert message.artifact == {"raw_value": 4}
+
+
+def test_convert_tool_message_preserves_existing_tool_message_fields() -> None:
+    tool_message = ToolMessage(
+        content=json.dumps({"choice": "firstChoice"}),
+        artifact={"question": "Choose next step."},
+        tool_call_id="call-existing",
+        name="structured_value",
+        status="success",
+    )
+
+    result = ModelCallGraph._convert_tool_message(
+        tool_message,
+        {"name": "structured_value", "args": {}, "id": "call-existing"},
+        "message-existing",
+        direct_value,
+    )
+
+    assert result is tool_message
+    assert result.id == "message-existing"
+    assert result.content == json.dumps({"choice": "firstChoice"})
+    assert result.artifact == {"question": "Choose next step."}
+    assert result.status == "success"
+    assert result.additional_kwargs["return_direct"] is True
+
+
 def test_tool_node_returns_error_message_when_tool_raises() -> None:
     graph = ModelCallGraph(config=Config(), tools=[fail_value])
     state = make_state(
@@ -209,7 +273,7 @@ def test_tool_node_returns_error_message_when_tool_raises() -> None:
     assert "boom: 5" in message.content
 
 
-def test_tool_node_reraises_graph_interrupt_from_tool() -> None:
+def test_tool_node_queues_graph_interrupt_tool_for_interrupt_node() -> None:
     graph = ModelCallGraph(config=Config(), tools=[interrupt_value])
     state = make_state(
         [
@@ -220,22 +284,15 @@ def test_tool_node_reraises_graph_interrupt_from_tool() -> None:
         ]
     )
 
-    with pytest.raises(GraphInterrupt) as exc_info:
-        run_tool_node(graph, state)
+    result = run_tool_node(graph, state)
+    message = result["messages"][0]
 
-    interrupts = exc_info.value.args[0]
-    assert len(interrupts) == 1
-    assert interrupts[0].id == "interrupt-7"
-    assert interrupts[0].value == {
-        "type": "query",
-        "question": "Choose next step.",
-        "firstChoice": "first",
-        "firstChoiceDescription": "Use the first option.",
-        "secondChoice": "second",
-        "secondChoiceDescription": "Use the second option.",
-        "thirdChoice": "third",
-        "thirdChoiceDescription": "Use the third option.",
-    }
+    assert message.content == "[INTERRUPT_TOOL_CALLED]"
+    assert len(graph._interrupt_tools) == 1
+    queued_message_id, queued_tool_call, queued_tool = graph._interrupt_tools[0]
+    assert queued_message_id == message.id
+    assert queued_tool_call["id"] == "call-interrupt"
+    assert queued_tool.name == "interrupt_value"
 
 
 async def test_query_tool_keeps_display_context_out_of_llm_visible_content(
@@ -413,9 +470,11 @@ def test_tool_node_does_not_mutate_args_when_runtime_tool_interrupts() -> None:
         ]
     )
 
-    with pytest.raises(GraphInterrupt):
-        run_tool_node(graph, state)
+    result = run_tool_node(graph, state)
+    message = result["messages"][0]
 
+    assert message.content == "[INTERRUPT_TOOL_CALLED]"
+    assert len(graph._interrupt_tools) == 1
     assert state["messages"][0].tool_calls[0]["args"] == {"value": 7}
 
 

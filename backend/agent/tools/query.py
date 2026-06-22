@@ -28,7 +28,7 @@ class Answer(TypedDict):
     choice: AnswerType
     note: NotRequired[str | None]
 
-@tool(response_format="content_and_artifact", extras={"interupt": True})
+@tool(response_format="content_and_artifact", extras={"interrupt": True})
 async def query(
     question: str = Field(..., description="The specific question to ask the user before continuing."),
     firstChoice: str = Field(..., description="The first,as well as recommended,choice to present to the user."),
