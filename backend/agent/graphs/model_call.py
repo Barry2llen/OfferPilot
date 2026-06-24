@@ -346,7 +346,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
                     input = system_prompts + state.get('messages', [])
 
-                    logger.debug(f"Calling model with input messages:\n{jsonify(input)}")
+                    #logger.debug(f"Calling model with input messages:\n{jsonify(input)}")
 
                     response = await model.ainvoke(input)
 
