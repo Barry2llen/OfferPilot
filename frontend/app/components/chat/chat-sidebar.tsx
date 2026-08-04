@@ -1,5 +1,3 @@
-"use client";
-
 import { memo, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { aiChatApi } from "@/app/lib/api/ai";

@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
@@ -428,7 +426,7 @@ export default function JobDescriptionsPage() {
           />
           {hasNoModel && (
             <Link
-              href="/settings/providers"
+              to="/settings/providers"
               className={buttonClassName({ variant: "secondary", size: "sm" })}
             >
               模型配置
@@ -528,7 +526,7 @@ export default function JobDescriptionsPage() {
                 </p>
                 {task.analysisId && !running && (
                   <Link
-                    href={`/job-descriptions/${task.analysisId}`}
+                    to={`/job-descriptions/${task.analysisId}`}
                     className="text-xs font-medium text-primary-600"
                   >
                     查看详情
@@ -599,7 +597,7 @@ export default function JobDescriptionsPage() {
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <Link
-                    href={`/job-descriptions/${item.id}`}
+                    to={`/job-descriptions/${item.id}`}
                     className={buttonClassName({ variant: "secondary", size: "sm" })}
                   >
                     详情

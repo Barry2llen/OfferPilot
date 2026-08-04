@@ -13,7 +13,9 @@ def main() -> None:
     runtime_dir.mkdir(parents=True, exist_ok=True)
     os.chdir(runtime_dir)
 
-    from main import app as fastapi_app
+    from main import create_app
+
+    fastapi_app = create_app(frontend_dist=args.frontend_dist)
 
     uvicorn.run(
         fastapi_app,
@@ -32,6 +34,10 @@ def parse_args() -> argparse.Namespace:
         "--runtime-dir",
         default=".",
         help="Directory that contains config.yaml and runtime data.",
+    )
+    parser.add_argument(
+        "--frontend-dist",
+        help="Directory containing the built React frontend to serve.",
     )
     return parser.parse_args()
 

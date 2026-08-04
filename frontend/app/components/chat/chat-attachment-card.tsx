@@ -1,7 +1,3 @@
-"use client";
-
-/* eslint-disable @next/next/no-img-element -- Attachment previews use blob: URLs and runtime API URLs. */
-
 import { useState } from "react";
 
 export interface ChatAttachmentDisplayItem {

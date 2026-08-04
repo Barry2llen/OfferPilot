@@ -1,5 +1,6 @@
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,15 +19,19 @@ from schemas.config import Config, load_config
 from services.resume_extraction_jobs import ResumeExtractionJobManager
 from services.jd_analysis_jobs import JdAnalysisJobManager
 from utils.asyncio_windows import install_windows_connection_reset_filter
+from utils.frontend_static import mount_frontend
 
 
-class RootMessageResponse(BaseModel):
+class HealthResponse(BaseModel):
     message: str = Field(
         description="服务探活响应信息。",
         examples=["Hello World!"],
     )
 
-def create_app(config: Config | None = None) -> FastAPI:
+def create_app(
+    config: Config | None = None,
+    frontend_dist: Path | str | None = None,
+) -> FastAPI:
     target_config = config or load_config()
 
     @asynccontextmanager
@@ -99,14 +104,16 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(ai_router)
 
     @app.get(
-        "/",
-        response_model=RootMessageResponse,
+        "/health",
+        response_model=HealthResponse,
         summary="服务探活",
         description="返回一个简单的服务可用性响应，用于确认 API 服务已成功启动。",
         response_description="返回固定的探活消息。",
     )
-    async def root() -> RootMessageResponse:
-        return RootMessageResponse(message="Hello World!")
+    async def health() -> HealthResponse:
+        return HealthResponse(message="Hello World!")
+
+    mount_frontend(app, frontend_dist)
 
     return app
 

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import ChatMessage from "@/app/components/chat/chat-message";
 import ChatWelcome from "@/app/components/chat/chat-welcome";

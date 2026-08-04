@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { Navigate } from "react-router-dom";
 
 export default function SettingsPage() {
-  redirect("/settings/providers");
+  return <Navigate to="/settings/providers" replace />;
 }

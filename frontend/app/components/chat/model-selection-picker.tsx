@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "@/app/components/ui/button";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";

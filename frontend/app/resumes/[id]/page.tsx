@@ -1,9 +1,5 @@
-"use client";
-
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import Image from "next/image";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { useToast } from "@/app/components/ui/toast";
@@ -22,7 +18,7 @@ type DetailTab = "analysis" | "source";
 
 export default function ResumeDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
+  const navigate = useNavigate();
   const id = Number(params.id);
   const { addToast } = useToast();
 
@@ -63,7 +59,7 @@ export default function ResumeDetailPage() {
     try {
       await resumesApi.delete(id);
       addToast("简历已删除", "success");
-      router.push("/resumes");
+      navigate("/resumes");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "删除失败";
       addToast(msg, "error");
@@ -100,7 +96,7 @@ export default function ResumeDetailPage() {
               重试
             </Button>
             <Link
-              href="/resumes"
+              to="/resumes"
               className={buttonClassName({ variant: "ghost", size: "sm" })}
             >
               返回列表
@@ -117,7 +113,7 @@ export default function ResumeDetailPage() {
     <PageCanvas>
       <header className="mb-4 flex items-center justify-between gap-4">
         <Link
-          href="/resumes"
+          to="/resumes"
           className="inline-flex items-center gap-2 rounded-full px-2 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
         >
           <ArrowLeftIcon className="h-5 w-5" />
@@ -416,12 +412,9 @@ function ResumePreview({ resume }: { resume: ResumeDetail }) {
   if (resume.media_type?.startsWith("image/")) {
     return (
       <div className="mx-auto flex min-h-[620px] max-w-[820px] items-start justify-center overflow-auto bg-white py-4">
-        <Image
+        <img
           src={resumesApi.previewUrl(resume.id)}
           alt={resume.original_filename || ""}
-          width={1200}
-          height={1600}
-          unoptimized
           className="h-auto max-h-[580px] w-auto max-w-full"
         />
       </div>

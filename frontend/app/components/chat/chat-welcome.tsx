@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import QuickTasks from "@/app/components/chat/quick-tasks";
 import { buttonClassName } from "@/app/components/ui/button";
 
@@ -42,7 +40,7 @@ export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) 
             <p className="mb-4 text-sm text-text-secondary">
               开始前需要先配置一个 AI 模型
             </p>
-            <Link href="/settings/providers" className={buttonClassName()}>
+            <Link to="/settings/providers" className={buttonClassName()}>
               前往配置
             </Link>
           </div>

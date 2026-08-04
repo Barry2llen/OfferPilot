@@ -18,9 +18,7 @@ function getBaseUrl(): string {
     }
   }
 
-  return normalizeBaseUrl(
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
-  );
+  return normalizeBaseUrl(import.meta.env.VITE_API_URL || "");
 }
 
 export class ApiError extends Error {
@@ -47,8 +45,10 @@ export async function apiRequest<T>(
       ? { ...(options.headers as Record<string, string> | undefined) }
       : {
           "Content-Type": "application/json",
+          Accept: "application/json",
           ...(options.headers as Record<string, string> | undefined),
-        },
+      },
+    cache: "no-store",
     ...options,
   });
 

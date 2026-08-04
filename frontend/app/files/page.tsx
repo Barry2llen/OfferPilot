@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useMemo, useState } from "react";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import ChatAttachmentCard from "@/app/components/chat/chat-attachment-card";

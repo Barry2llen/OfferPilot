@@ -1,13 +1,13 @@
 # OfferPilot
 
-OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Next.js 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、聊天附件上传与文件库复用、LangGraph checkpoint 会话恢复，以及 Windows 桌面安装包构建。
+OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Vite + React SPA 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、聊天附件上传与文件库复用、LangGraph checkpoint 会话恢复，以及 Windows 桌面安装包构建。
 
 ## 项目结构
 
 ```text
 OfferPilot/
 ├── backend/   # FastAPI API、Agent、数据库、简历解析、pytest 测试
-├── frontend/  # Next.js 16 Web UI、SSE 聊天、简历和设置页面
+├── frontend/  # Vite + React Web UI、SSE 聊天、简历和设置页面
 ├── electron/  # Electron 桌面壳、托管进程、资源 staging、安装包构建
 ├── docs/      # 跨项目技术文档
 └── LICENSE
@@ -16,7 +16,7 @@ OfferPilot/
 三个子项目目前保持依赖和命令独立：
 
 - `backend/` 使用 Python `>=3.13` 和 `uv`。
-- `frontend/` 使用 Node.js、npm、Next.js 16、React 19。
+- `frontend/` 使用 Node.js、npm、Vite、React 19 和 React Router。
 - `electron/` 使用 Node.js、npm、Electron、Vite、Electron Builder。
 
 ## 核心功能
@@ -51,9 +51,11 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8080
 
 启动后可访问：
 
-- API 探活：`http://127.0.0.1:8080/`
+- API 探活：`http://127.0.0.1:8080/health`
 - Swagger 文档：`http://127.0.0.1:8080/docs`
 - OpenAPI JSON：`http://127.0.0.1:8080/openapi.json`
+
+如果已经构建 `frontend/dist`，FastAPI 也会在 `http://127.0.0.1:8080/` 提供 React 页面和深层路由回退。
 
 ### 2. 启动前端
 
@@ -63,7 +65,7 @@ npm install
 npm run dev
 ```
 
-前端默认访问 `NEXT_PUBLIC_API_URL`，未配置时使用 `http://localhost:8080`。本地访问地址通常是 `http://localhost:3000`。
+前端默认使用当前页面同源相对路径；未设置 `VITE_API_URL` 时，Vite 开发服务器会把 API 代理到 `VITE_API_PROXY_TARGET`，默认是 `http://127.0.0.1:8080`。本地访问地址通常是 `http://127.0.0.1:3000`。
 
 ### 3. 启动 Electron 桌面壳
 
@@ -119,7 +121,7 @@ npm run build:electron
 npm run build
 ```
 
-在 `electron/` 目录运行 `npm run build` 会依次构建前端 standalone bundle、用 PyInstaller 打包后端、构建 Electron/Vite 输出，并生成 Windows x64 NSIS 安装包。
+在 `electron/` 目录运行 `npm run build` 会依次构建并 staging `frontend/dist`、用 PyInstaller 打包后端、构建 Electron/Vite 输出，并生成 Windows x64 NSIS 安装包。生产版只启动 FastAPI，前端静态文件由 FastAPI 托管。
 
 ## 运行配置
 
@@ -132,10 +134,12 @@ npm run build
 - `exa_api_key`：存在时启用 Exa Web Search 工具；缺失时禁用相关工具。
 - `web_search`、`model_call_retry_attempts`、`graph_recursion_limit`、`debug`：用于 Agent 工具、重试、LangGraph 递归上限和调试行为。
 
-前端运行时配置：
+前端和静态托管运行时配置：
 
-- `NEXT_PUBLIC_API_URL`：后端 API 基础地址。
+- `VITE_API_URL`：构建期指定后端 API 基础地址；不设置时使用同源相对路径。
+- `VITE_API_PROXY_TARGET`：Vite 开发服务器的 API 代理目标，默认 `http://127.0.0.1:8080`。
 - `window.offerPilotRuntime.apiBaseUrl`：Electron preload 注入的运行时覆盖地址。
+- `OFFER_PILOT_FRONTEND_DIST`：FastAPI 前端目录覆盖路径，默认查找仓库中的 `frontend/dist`；Electron 生产版通过 `--frontend-dist` 传入 `resources/frontend`。
 
 Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置；首次启动时如果该文件不存在，会在 `~/.offerpilot` 下创建默认配置、SQLite 数据库目录、简历上传目录和后端运行时日志目录。托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
 

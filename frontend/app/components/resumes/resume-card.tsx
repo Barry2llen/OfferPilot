@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { resumesApi } from "@/app/lib/api/resumes";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
@@ -150,7 +148,7 @@ export default function ResumeCard({
               <span className="px-2.5 text-text-muted">预览</span>
             )}
             <Link
-              href={`/resumes/${resume.id}`}
+              to={`/resumes/${resume.id}`}
               className={buttonClassName({
                 variant: "ghost",
                 size: "sm",

@@ -10,12 +10,12 @@
 ## 仓库结构
 
 - `backend/`：Python FastAPI 后端，负责简历文件管理、模型配置、AI 对话、LangGraph Agent、数据库和 checkpoint。
-- `frontend/`：Next.js 16 前端，负责 Web UI、SSE 流式聊天、简历管理和模型配置页面。
+- `frontend/`：Vite + React SPA，负责 Web UI、SSE 流式聊天、简历管理和模型配置页面。
 - `electron/`：Electron 桌面壳，负责本地托管后端和前端进程、注入运行时 API 地址、构建桌面安装包。
 - `docs/`：跨项目技术说明和设计记录。
 - `.github/`、`.vscode/`：仓库级开发辅助配置。
 
-生成目录、依赖目录、本地数据、日志和打包产物不应作为业务代码依赖，也不应提交：`.venv/`、`node_modules/`、`.next/`、`dist/`、`dist-electron/`、`release/`、`resources/`、`logs/`、`data/` 等。
+生成目录、依赖目录、本地数据、日志和打包产物不应作为业务代码依赖，也不应提交：`.venv/`、`node_modules/`、`dist/`、`dist-electron/`、`release/`、`resources/`、`logs/`、`data/` 等。
 
 ## 后端约定
 
@@ -29,6 +29,7 @@
 - 对外 Pydantic schema 的公开字段应补充 `Field(..., description=..., examples=...)`。
 - `/ai/chat/stream` 的 SSE 事件名需要保持稳定：`thread`、`token`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。前端当前也处理 `reasoning` 事件，修改流式协议时必须同步前端类型和解析逻辑。
 - 修改接口、请求体、响应体、SSE 事件、配置结构、数据库结构或模型接入方式时，同步更新 OpenAPI 描述、测试和必要文档。
+- 生产环境由 FastAPI 在业务 API、`/docs`、`/openapi.json` 和 `/health` 注册后挂载 `frontend/dist`。深层页面导航返回 SPA 入口，缺失静态资源必须保持 404；构建产物缺失时 API 服务仍可启动。
 
 常用命令：
 
@@ -41,15 +42,16 @@ uv run pytest
 
 ## 前端约定
 
-前端位于 `frontend/`，技术栈是 Next.js `16.2.3` App Router、React 19、TypeScript strict、Tailwind CSS v4。
+前端位于 `frontend/`，技术栈是 Vite、React 19、React Router、TypeScript strict、Tailwind CSS v4。
 
-- 涉及 Next.js 行为时，先查 `node_modules/next/dist/docs/` 中对应文档；不要按旧版 Next.js 经验直接改。
-- 入口和路由在 `app/` 下，没有 `src/` 或 `pages/` 目录。
-- 默认保留服务端组件；只有使用 state、effect、事件处理、浏览器 API、React context 或客户端 hook 时才加 `"use client"`。
+- 静态 HTML 入口是 `index.html`，应用入口是 `main.tsx`，路由集中在 `app/router.tsx`；`app/**/page.tsx` 是普通 React 页面组件，不遵循 Next 文件约定。
+- 使用 `React.lazy` 和 `Suspense` 按路由加载页面；全局错误处理使用 `app/components/layout/app-error-boundary.tsx`。
+- 使用 React Router 的 `Link`、`useNavigate`、`useLocation` 和 `useParams`，不要引入 Next 路由或 Next 专用组件。
 - 共享 UI 优先复用 `app/components/ui/`，业务组件按 `chat/`、`resumes/`、`settings/` 分组。
 - 后端 API 封装位于 `app/lib/api/`；新增或修改后端字段时，同步更新 `app/lib/api/types.ts` 和对应 API 模块。
 - 全局应用状态通过 `AppProvider` 管理，不要为当前线程、模型选择、Agent 状态另建平行全局状态。
 - SSE 聊天由 `aiChatApi.streamChat()` 和 `useChatStream()` 处理，不要在页面中重复实现解析。
+- API 地址优先级为 `window.offerPilotRuntime.apiBaseUrl`、`VITE_API_URL`、当前页面同源相对路径。开发服务器通过 Vite proxy 转发 API，生产环境走 FastAPI 同源请求。
 - UI 文案以中文为主，保持后台工具风格：紧凑、清晰、可扫描。
 
 常用命令：
@@ -69,6 +71,7 @@ Electron 项目位于 `electron/`，技术栈是 Electron、Vite、React 18、Ty
 - `electron/main.ts` 负责单实例、托管后端/前端子进程、日志、窗口生命周期和打包运行时配置。
 - `electron/preload.ts` 只暴露最小运行时桥接：`window.offerPilotRuntime.apiBaseUrl`。
 - 开发模式默认查找相邻 `../backend` 和 `../frontend`；如目录不在默认位置，使用 `OFFER_PILOT_BACKEND_DIR` 和 `OFFER_PILOT_FRONTEND_DIR`。
+- 开发模式启动 FastAPI 与 Vite；生产模式只启动 FastAPI，并通过 `--frontend-dist resources/frontend` 托管 Vite 构建产物。
 - 生产模式期望资源位于 `resources/backend/offer-pilot-api` 和 `resources/frontend`，由 `scripts/prepare-backend.mjs` 与 `scripts/prepare-frontend.mjs` staging。
 - 必须保留 `contextIsolation: true` 和 `nodeIntegration: false`，不要通过 preload 暴露 Node 原语。
 - 修改打包、资源 staging、运行时配置或端口发现逻辑时，同步更新 Electron README 和根 README。
@@ -97,7 +100,8 @@ npm run build
 
 - 不要提交真实 API Key、`.env`、本地 `config.yaml`、数据库文件、日志或打包二进制。
 - 后端默认配置模板是 `backend/config.example.yaml`，默认 SQLite 路径为 `./data/offer_pilot.db`，简历上传目录为 `./data/resumes`。
-- 前端 API 地址来自 `NEXT_PUBLIC_API_URL`，浏览器运行时可由 `window.offerPilotRuntime?.apiBaseUrl` 覆盖。
+- `VITE_API_URL` 可在构建期指定后端基础地址；未设置时前端使用同源相对路径，浏览器运行时可由 `window.offerPilotRuntime?.apiBaseUrl` 覆盖。
+- `OFFER_PILOT_FRONTEND_DIST` 可覆盖后端默认查找的 `frontend/dist`；Electron 生产版通过 `--frontend-dist` 显式传入其资源目录。
 - Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置，并在 `~/.offerpilot` 下创建 SQLite 数据、简历上传目录和后端运行时日志；托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
 
 ## 提交与验证

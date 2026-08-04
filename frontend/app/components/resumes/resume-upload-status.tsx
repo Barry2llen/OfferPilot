@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useResumeUpload } from "@/app/lib/context/resume-upload-context";
 import Button from "@/app/components/ui/button";
 
@@ -67,7 +65,7 @@ export default function ResumeUploadStatus() {
 
       {task.resumeId && !running && (
         <div className="mt-3 flex justify-end">
-          <Link href={`/resumes/${task.resumeId}`}>
+          <Link to={`/resumes/${task.resumeId}`}>
             <Button variant="secondary" size="sm">
               查看简历
             </Button>

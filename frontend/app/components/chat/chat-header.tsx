@@ -1,5 +1,3 @@
-"use client";
-
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
 import type { ModelSelectionResponse, AgentStatus } from "@/app/lib/api/types";
 import { useAppContext } from "@/app/lib/context/app-context";
