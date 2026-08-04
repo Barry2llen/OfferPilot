@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --font-dm-sans: "DM Sans";
-  --font-outfit: "Outfit";
+  --font-dm-sans: "DM Sans Variable", "DM Sans";
+  --font-outfit: "Outfit Variable", "Outfit";
   --font-roboto: "Roboto";
   --electron-titlebar-height: env(titlebar-area-height, 0px);
   --electron-window-controls-width: calc(

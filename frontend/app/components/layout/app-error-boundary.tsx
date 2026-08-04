@@ -39,7 +39,7 @@ export default class AppErrorBoundary extends Component<
           <button
             type="button"
             className="mt-6 rounded-lg bg-text-charcoal px-4 py-2 text-sm font-medium text-white transition hover:bg-text-dark"
-            onClick={() => this.setState({ error: null })}
+            onClick={() => window.location.reload()}
           >
             重试
           </button>
