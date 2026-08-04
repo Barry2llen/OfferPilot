@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu } from 'electron'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,16 +20,6 @@ interface ManagedProcess {
 interface RuntimeServices {
   apiBaseUrl: string
   appUrl: string
-}
-
-interface ManagedProcessCommand {
-  command: string
-  args: string[]
-}
-
-interface NextDevLock {
-  pid?: number
-  port?: number
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -96,8 +86,6 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
   const frontendPort = await findAvailablePort(3000)
   const apiBaseUrl = `http://127.0.0.1:${backendPort}`
   const appUrl = `http://127.0.0.1:${frontendPort}`
-  const frontendCommand = frontendDevCommand(frontendDir, frontendPort)
-
   const backendProcess = startManagedProcess('backend-dev', 'uv', [
     'run',
     'uvicorn',
@@ -112,25 +100,29 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
 
   trackBackendServerPid(backendProcess)
 
-  const frontendProcess = startManagedProcess('frontend-dev', frontendCommand.command, frontendCommand.args, frontendDir, {
-    NEXT_PUBLIC_API_URL: apiBaseUrl,
+  startManagedProcess('frontend-dev', resolveNpmCommand(), [
+    'run',
+    'dev',
+    '--',
+    '--port',
+    String(frontendPort),
+  ], frontendDir, {
+    VITE_API_URL: apiBaseUrl,
   })
 
-  await waitForUrl(`${apiBaseUrl}/`, 'backend')
+  await waitForUrl(`${apiBaseUrl}/health`, 'backend')
   await waitForUrl(appUrl, 'frontend')
-  trackNextDevServerPid(frontendProcess, frontendDir, frontendPort)
 
   return { apiBaseUrl, appUrl }
 }
 
 async function startProductionServices(): Promise<RuntimeServices> {
   const backendPort = await findAvailablePort(8080)
-  const frontendPort = await findAvailablePort(3000)
   const apiBaseUrl = `http://127.0.0.1:${backendPort}`
-  const appUrl = `http://127.0.0.1:${frontendPort}`
+  const appUrl = apiBaseUrl
   const runtimeDir = ensureBackendRuntimeConfig()
   const backendExe = resolvePackagedBackendExecutable()
-  const frontendServer = resolvePackagedFrontendServer()
+  const frontendDist = resolvePackagedFrontendDist()
 
   startManagedProcess('backend', backendExe, [
     '--host',
@@ -139,18 +131,13 @@ async function startProductionServices(): Promise<RuntimeServices> {
     String(backendPort),
     '--runtime-dir',
     runtimeDir,
+    '--frontend-dist',
+    frontendDist,
   ], runtimeDir, {
     PYTHONUNBUFFERED: '1',
   })
 
-  startManagedProcess('frontend', process.execPath, [frontendServer], path.dirname(frontendServer), {
-    ELECTRON_RUN_AS_NODE: '1',
-    HOSTNAME: '127.0.0.1',
-    PORT: String(frontendPort),
-    NEXT_PUBLIC_API_URL: apiBaseUrl,
-  })
-
-  await waitForUrl(`${apiBaseUrl}/`, 'backend')
+  await waitForUrl(`${apiBaseUrl}/health`, 'backend')
   await waitForUrl(appUrl, 'frontend')
 
   return { apiBaseUrl, appUrl }
@@ -341,22 +328,6 @@ function trackBackendServerPid(processInfo: ManagedProcess) {
   })
 }
 
-function trackNextDevServerPid(processInfo: ManagedProcess, frontendDir: string, expectedPort: number) {
-  const lockPath = path.join(frontendDir, '.next', 'dev', 'lock')
-  if (!existsSync(lockPath)) {
-    return
-  }
-
-  try {
-    const lock = JSON.parse(readFileSync(lockPath, 'utf-8')) as NextDevLock
-    if (lock.pid && lock.port === expectedPort) {
-      processInfo.trackedPids.add(lock.pid)
-    }
-  } catch {
-    // Next may briefly hold the lock while writing it; direct child cleanup still applies.
-  }
-}
-
 function resolveProjectDir(envName: string, folderName: string, markerFile: string): string {
   const envValue = process.env[envName]
   const candidates = [
@@ -384,12 +355,12 @@ function resolvePackagedBackendExecutable(): string {
   return executable
 }
 
-function resolvePackagedFrontendServer(): string {
-  const serverPath = path.join(process.resourcesPath, 'frontend', 'server.js')
-  if (!existsSync(serverPath)) {
-    throw new Error(`Packaged Next.js server not found: ${serverPath}`)
+function resolvePackagedFrontendDist(): string {
+  const frontendDist = path.join(process.resourcesPath, 'frontend')
+  if (!existsSync(path.join(frontendDist, 'index.html'))) {
+    throw new Error(`Packaged frontend build not found: ${frontendDist}`)
   }
-  return serverPath
+  return frontendDist
 }
 
 function ensureBackendRuntimeConfig(): string {
@@ -478,35 +449,8 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function frontendDevCommand(frontendDir: string, port: number): ManagedProcessCommand {
-  const nextCli = path.join(frontendDir, 'node_modules', 'next', 'dist', 'bin', 'next')
-  const nodeCommand = resolveNodeCommand()
-
-  if (!existsSync(nextCli)) {
-    throw new Error(`Next.js CLI not found: ${nextCli}`)
-  }
-
-  return {
-    command: nodeCommand,
-    args: [
-      nextCli,
-      'dev',
-      '--hostname',
-      '127.0.0.1',
-      '--port',
-      String(port),
-    ],
-  }
-}
-
-function resolveNodeCommand() {
-  const npmNode = process.env.npm_node_execpath
-  if (!npmNode) {
-    return 'node'
-  }
-
-  const executableName = path.basename(npmNode).toLowerCase()
-  return executableName.startsWith('bun') ? 'node' : npmNode
+function resolveNpmCommand() {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
 }
 
 function formatCommand(command: string, args: string[]) {

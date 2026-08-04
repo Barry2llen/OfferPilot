@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, rm } from 'node:fs/promises'
+import { cp, mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 
@@ -8,31 +8,18 @@ const frontendRoot = resolveProjectDir(
   'frontend',
   'package.json',
 )
-const standaloneDir = path.join(frontendRoot, '.next', 'standalone')
-const staticDir = path.join(frontendRoot, '.next', 'static')
-const publicDir = path.join(frontendRoot, 'public')
+const distDir = path.join(frontendRoot, 'dist')
 const outputDir = path.join(electronRoot, 'resources', 'frontend')
 
-if (!existsSync(path.join(standaloneDir, 'server.js'))) {
-  throw new Error(`Next standalone output not found: ${standaloneDir}`)
+if (!existsSync(path.join(distDir, 'index.html'))) {
+  throw new Error(`Vite frontend build not found: ${distDir}`)
 }
 
 await rm(outputDir, { recursive: true, force: true })
 await mkdir(outputDir, { recursive: true })
-await cp(standaloneDir, outputDir, { recursive: true })
-await cp(staticDir, path.join(outputDir, '.next', 'static'), { recursive: true })
+await cp(distDir, outputDir, { recursive: true })
 
-if (existsSync(publicDir)) {
-  await cp(publicDir, path.join(outputDir, 'public'), { recursive: true })
-}
-
-for (const fileName of await readdir(outputDir)) {
-  if (fileName === '.env' || fileName.startsWith('.env.')) {
-    await rm(path.join(outputDir, fileName), { force: true })
-  }
-}
-
-console.log(`Prepared Next.js standalone bundle at ${outputDir}`)
+console.log(`Prepared Vite frontend bundle at ${outputDir}`)
 
 function resolveProjectDir(envValue, folderName, markerFile) {
   const candidates = [

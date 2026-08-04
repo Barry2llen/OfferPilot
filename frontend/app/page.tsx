@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useCallback, useEffect } from "react";
 import { aiChatApi } from "@/app/lib/api/ai";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";

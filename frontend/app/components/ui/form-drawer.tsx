@@ -1,5 +1,3 @@
-"use client";
-
 import type { ReactNode } from "react";
 
 interface FormDrawerProps {
@@ -51,7 +49,7 @@ export default function FormDrawer({
         <div className="p-6">{children}</div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes slideIn {
           from {
             transform: translateX(100%);

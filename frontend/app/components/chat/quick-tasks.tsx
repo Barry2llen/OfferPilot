@@ -1,5 +1,3 @@
-"use client";
-
 interface QuickTasksProps {
   onPrompt: (prompt: string) => void;
   disabled: boolean;

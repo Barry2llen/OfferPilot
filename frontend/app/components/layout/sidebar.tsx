@@ -1,7 +1,4 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link, useLocation } from "react-router-dom";
 
 const navItems = [
   {
@@ -42,7 +39,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const pathname = usePathname();
+  const { pathname } = useLocation();
 
   return (
     <>
@@ -77,7 +74,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             return (
               <Link
                 key={item.href}
-                href={item.active ? item.href : "#"}
+                to={item.active ? item.href : "#"}
                 className={`flex items-center gap-3 px-3 py-2 rounded-full text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-black/5 text-text-dark"

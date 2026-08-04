@@ -1,5 +1,3 @@
-"use client";
-
 import { FileText, Image } from "lucide-react";
 import { useMemo, useState, useCallback } from "react";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";

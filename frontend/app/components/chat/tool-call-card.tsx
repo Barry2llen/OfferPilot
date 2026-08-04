@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { ToolCallEntry } from "@/app/hooks/use-chat-stream";

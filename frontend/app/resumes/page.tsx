@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";

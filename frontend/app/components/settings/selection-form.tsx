@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import Button from "@/app/components/ui/button";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";

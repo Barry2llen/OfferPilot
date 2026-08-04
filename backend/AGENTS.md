@@ -17,13 +17,15 @@
 - `schemas/`：Pydantic 与 TypedDict 数据结构。`schemas/config/` 负责配置解析；`schemas/ai.py`、`schemas/command.py`、`schemas/model_provider.py`、`schemas/model_selection.py`、`schemas/resume_document.py` 等分别服务 API、Agent 和业务层。
 - `services/`：业务服务层，当前包含简历文件处理、模型供应商服务和模型选择服务。API 层应通过 service/repository 访问业务与数据库，不直接写 ORM 逻辑。
 - `exceptions/`：领域异常，按 agent、database、model、resume 等模块拆分。
-- `utils/`：通用工具，包括日志、文档解析、流事件处理和乱码检测。
+- `utils/`：通用工具，包括日志、文档解析、流事件处理、乱码检测和 React SPA 静态托管。
 - `sql/`：数据库结构快照或初始化 SQL。修改表结构时需保持 SQLite/PostgreSQL 兼容。
 - `tests/unit/`：单元测试；共享夹具放在 `tests/conftest.py`。
 - `docs/`、`tasks/`：设计说明、技术文档和任务记录。
 - `data/`、`logs/`、`dev/test-tmp/`：本地运行数据、日志和临时开发文件，不应放入业务逻辑依赖。
 
 新增代码时保持层次清晰：配置解析不要混入服务逻辑，数据库访问不要泄漏到 API 或 Agent 节点，Agent 节点不要直接处理 HTTP 细节。
+
+`create_app(config=None, frontend_dist=None)` 在 API、`/docs`、`/openapi.json` 和 `/health` 路由注册后挂载 `frontend/dist`。`utils/frontend_static.py` 负责静态资源、HTML 深层路由回退和 API 路径的 Accept 头分流；构建目录缺失时不能阻止 API 服务启动。前端目录可通过 `OFFER_PILOT_FRONTEND_DIST` 或 Electron 的 `--frontend-dist` 覆盖。
 
 ## 构建、测试与开发命令
 统一使用 `uv` 管理依赖和执行命令，并始终在仓库根目录运行：
@@ -37,6 +39,7 @@
 - `uv run pytest tests/unit/test_model_call_graph.py`：聚焦 Agent 模型调用、工具调用、重试和异常分支。
 - `uv run pytest tests/unit/test_database_engine.py tests/unit/test_database_checkpointer.py`：聚焦数据库引擎、建表和 LangGraph checkpoint。
 - `uv run pytest tests/unit/test_chat_model.py`：聚焦模型装载错误封装。
+- `uv run pytest tests/unit/test_frontend_static.py`：聚焦 React 构建产物、SPA 深层路由和 API 路由优先级。
 
 如果修改了配置加载、数据库兼容性、模型装载逻辑、Agent 图、SSE 事件协议、接口文档或 SQL 文件，提交前至少运行对应定向测试。修改 `sql/*.sql` 时还应做跨数据库兼容校验。
 
@@ -59,6 +62,7 @@
 ## API 与 Agent 行为约定
 - `/resumes` 相关接口只处理文件型简历；旧文本简历接口已移除，不要恢复除非任务明确要求。
 - `/model-providers` 与 `/model-selections` 是 AI 服务的模型配置来源。API Key 不应在响应中明文回显。
+- `/` 由 React 构建产物占用；服务探活固定使用 `/health`，返回原有 `{"message":"Hello World!"}` 结构。FastAPI 的业务 API、Swagger 和 OpenAPI 路由必须优先于静态挂载。
 - `/ai/chat` 返回最终文本响应，并使用 `DatabaseCheckpointer` 按 `thread_id` 保存会话状态。
 - `/ai/chat/stream` 返回 `text/event-stream`，应保持事件名稳定：`thread`、`token`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。
 - 流式失败重试依赖 LangGraph checkpoint：客户端收到 `interrupt` 后，必须用同一个 `thread_id` 发送 `command.type="retry"` 恢复执行。

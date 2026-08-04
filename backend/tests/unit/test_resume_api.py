@@ -563,9 +563,9 @@ def test_openapi_json_contains_complete_resume_docs(
     assert payload["tags"][0]["name"] == "resumes"
     assert "简历文件管理接口" in payload["tags"][0]["description"]
 
-    root_get = payload["paths"]["/"]["get"]
-    assert root_get["summary"] == "服务探活"
-    assert "服务已成功启动" in root_get["description"]
+    health_get = payload["paths"]["/health"]["get"]
+    assert health_get["summary"] == "服务探活"
+    assert "服务已成功启动" in health_get["description"]
 
     list_resumes = payload["paths"]["/resumes"]["get"]
     assert list_resumes["summary"] == "列出已上传简历"

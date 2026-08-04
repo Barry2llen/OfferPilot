@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   resumesApi,
@@ -136,8 +134,8 @@ export default function ResumeUploader({
         onChange={setModelSelection}
       />
       {hasNoModel && (
-      <Link
-          href="/settings/providers"
+        <Link
+          to="/settings/providers"
           className={buttonClassName({
             variant: "secondary",
             size: "sm",

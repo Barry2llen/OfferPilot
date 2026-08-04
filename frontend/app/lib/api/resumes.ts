@@ -53,7 +53,10 @@ export const resumesApi = {
   previewUrl: (id: number) => apiUrl(`/resumes/${id}/file`),
 
   previewBlob: async (id: number) => {
-    const res = await fetch(apiUrl(`/resumes/${id}/file`));
+    const res = await fetch(apiUrl(`/resumes/${id}/file`), {
+      cache: "no-store",
+      headers: { Accept: "application/octet-stream" },
+    });
     if (!res.ok) throw new ApiError(res.status, "Failed to load preview");
     return res.blob();
   },

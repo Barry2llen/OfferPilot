@@ -1,7 +1,4 @@
-"use client";
-
-import Link from "next/link";
-import { useParams } from "next/navigation";
+import { Link, useParams } from "react-router-dom";
 import { useCallback } from "react";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
@@ -94,7 +91,7 @@ export default function JobDescriptionDetailPage() {
           </p>
         </div>
         <Link
-          href="/job-descriptions"
+          to="/job-descriptions"
           className={buttonClassName({ variant: "secondary", size: "sm" })}
         >
           返回列表
