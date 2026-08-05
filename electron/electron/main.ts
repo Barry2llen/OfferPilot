@@ -86,6 +86,7 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
   const frontendPort = await findAvailablePort(3000)
   const apiBaseUrl = `http://127.0.0.1:${backendPort}`
   const appUrl = `http://127.0.0.1:${frontendPort}`
+  const frontendCommand = resolveFrontendDevCommand(frontendPort)
   const backendProcess = startManagedProcess('backend-dev', 'uv', [
     'run',
     'uvicorn',
@@ -100,13 +101,7 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
 
   trackBackendServerPid(backendProcess)
 
-  startManagedProcess('frontend-dev', resolveNpmCommand(), [
-    'run',
-    'dev',
-    '--',
-    '--port',
-    String(frontendPort),
-  ], frontendDir, {
+  startManagedProcess('frontend-dev', frontendCommand.command, frontendCommand.args, frontendDir, {
     VITE_API_URL: apiBaseUrl,
   })
 
@@ -449,8 +444,20 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function resolveNpmCommand() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+function resolveFrontendDevCommand(port: number) {
+  const npmArgs = ['run', 'dev', '--', '--port', String(port)]
+
+  if (process.platform === 'win32') {
+    return {
+      command: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', 'npm.cmd', ...npmArgs],
+    }
+  }
+
+  return {
+    command: 'npm',
+    args: npmArgs,
+  }
 }
 
 function formatCommand(command: string, args: string[]) {
