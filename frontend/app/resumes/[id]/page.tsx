@@ -157,15 +157,8 @@ export default function ResumeDetailPage() {
               resume={resume}
               replaceOpen={replaceOpen}
               onUploaded={handleReplace}
-              uploadFile={(file, selectionId, onEvent, onError, signal) =>
-                resumesApi.replace(
-                  id,
-                  file,
-                  selectionId,
-                  onEvent,
-                  onError,
-                  signal
-                )
+              uploadFile={(file, selectionId, options) =>
+                resumesApi.replace(id, file, selectionId, options)
               }
             />
           )}

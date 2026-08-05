@@ -7,7 +7,7 @@ import Spinner from "@/app/components/ui/spinner";
 import type {
   ChatInterrupt,
   ChatMessage as ChatMessageType,
-} from "@/app/hooks/use-chat-stream";
+} from "@/app/lib/chat/types";
 
 const AUTO_SCROLL_THRESHOLD_PX = 48;
 const SHOW_SCROLL_BUTTON_THRESHOLD_PX = 240;

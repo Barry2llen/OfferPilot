@@ -5,26 +5,24 @@ import {
   useMemo,
   useRef,
   useState,
+  useEffect,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useToast } from "@/app/components/ui/toast";
-import type { ResumeDetail, ResumeStreamEvent } from "@/app/lib/api/types";
-
-type ResumeUploadStatus = "idle" | "running" | "success" | "error";
-
-interface ResumeUploadTask {
-  id: string;
-  fileName: string;
-  status: ResumeUploadStatus;
-  progress: number;
-  message: string;
-  modelError: string | null;
-  error: string | null;
-  resumeId: number | null;
-  detail: ResumeDetail | null;
-}
+import {
+  createResumeUploadState,
+  reduceResumeEof,
+  reduceResumeEvent,
+  reduceResumeTransportError,
+} from "@/app/lib/resumes/adapter";
+import type {
+  ResumeStreamEffect,
+  ResumeStreamLabels,
+  ResumeUploadTask,
+} from "@/app/lib/resumes/types";
+import type { ResumeDetail } from "@/app/lib/api/types";
 
 interface StartResumeUploadOptions {
   file: File;
@@ -42,14 +40,6 @@ interface ResumeUploadContextValue {
 
 const ResumeUploadContext = createContext<ResumeUploadContextValue | null>(null);
 
-function extractResume(data: Record<string, unknown>): ResumeDetail | undefined {
-  const resume = data.resume;
-  if (resume && typeof resume === "object") {
-    return resume as ResumeDetail;
-  }
-  return undefined;
-}
-
 function getTaskId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -62,8 +52,16 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
   const runningRef = useRef(false);
   const { addToast } = useToast();
   const { t } = useTranslation();
+  const abortRef = useRef<AbortController | null>(null);
 
   const running = task?.status === "running";
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
   const updateTask = useCallback(
     (taskId: string, updater: (current: ResumeUploadTask) => ResumeUploadTask) => {
@@ -89,7 +87,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
 
       const taskId = getTaskId();
       runningRef.current = true;
-      setTask({
+      const initialTask: ResumeUploadTask = {
         id: taskId,
         fileName: file.name,
         status: "running",
@@ -99,104 +97,70 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
         error: null,
         resumeId: null,
         detail: null,
-      });
+      };
+      setTask(initialTask);
 
-      const handleStreamEvent = (event: ResumeStreamEvent) => {
-        const kind = event.event || event.type;
+      const labels: ResumeStreamLabels = {
+        initialMessage: t("upload.uploading", { name: file.name }),
+        savedMessage: t("upload.saved"),
+        parsingMessage: t("upload.parsing"),
+        modelRetryMessage: t("upload.modelRetry"),
+        modelFailedMessage: t("upload.modelFailed"),
+        completeMessage: t("upload.complete"),
+        successMessage: t("upload.success"),
+        failedMessage: t("upload.failed"),
+        parseFailedMessage: t("upload.parseFailed"),
+        uploadFailedMessage: t("upload.uploadFailed"),
+      };
+      let streamState = createResumeUploadState(initialTask);
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-        switch (kind) {
-          case "resume": {
-            const detail = extractResume(event.data);
-            updateTask(taskId, (current) => ({
-              ...current,
-              progress: 0.05,
-              message: t("upload.saved"),
-              resumeId: detail?.id ?? current.resumeId,
-              detail: detail ?? current.detail,
-            }));
-            break;
-          }
-          case "progress": {
-            const progress =
-              typeof event.data.progress === "number"
-                ? event.data.progress
-                : 0;
-            updateTask(taskId, (current) => ({
-              ...current,
-              progress: Math.max(0, Math.min(progress, 1)),
-              message:
-                typeof event.data.message === "string"
-                  ? event.data.message
-                  : t("upload.parsing"),
-            }));
-            break;
-          }
-          case "model_error": {
-            const attempt = event.data.attempt;
-            const maxAttempts = event.data.max_attempts;
-            const detail =
-              typeof event.data.detail === "string"
-                ? event.data.detail
-                : t("upload.modelRetry");
-            updateTask(taskId, (current) => ({
-              ...current,
-              modelError: `${t("upload.modelFailed")}${
-                attempt && maxAttempts ? ` (${attempt}/${maxAttempts})` : ""
-              }: ${detail}`,
-            }));
-            break;
-          }
-          case "final": {
-            const detail = extractResume(event.data);
-            updateTask(taskId, (current) => ({
-              ...current,
-              status: "success",
-              progress: 1,
-              message: t("upload.complete"),
-              detail: detail ?? current.detail,
-              resumeId: detail?.id ?? current.resumeId,
-            }));
-            runningRef.current = false;
-            addToast(t("upload.success"), "success");
-            onCompleted?.(detail);
-            break;
-          }
-          case "error": {
-            const detail =
-              typeof event.data.detail === "string"
-                ? event.data.detail
-                : t("upload.parseFailed");
-            updateTask(taskId, (current) => ({
-              ...current,
-              status: "error",
-              message: t("upload.failed"),
-              error: detail,
-              resumeId:
-                typeof event.data.resume_id === "number"
-                  ? event.data.resume_id
-                  : current.resumeId,
-            }));
-            runningRef.current = false;
-            addToast(detail, "error");
-            onCompleted?.();
-            break;
+      const applyResult = (result: {
+        state: typeof streamState;
+        effects: ResumeStreamEffect[];
+      }) => {
+        streamState = result.state;
+        updateTask(taskId, () => streamState.task);
+        for (const effect of result.effects) {
+          switch (effect.type) {
+            case "notify":
+              addToast(effect.message, effect.level);
+              break;
+            case "completed":
+              runningRef.current = false;
+              onCompleted?.(effect.detail);
+              break;
+            case "accepted":
+              break;
           }
         }
       };
 
       try {
-        await uploadFile(file, selectionId, handleStreamEvent, (error) => {
-          updateTask(taskId, (current) => ({
-            ...current,
-            status: "error",
-            message: t("upload.uploadFailed"),
-            error: error.message,
-          }));
-          runningRef.current = false;
-          addToast(error.message, "error");
-          onCompleted?.();
-        });
+        for await (const event of uploadFile(file, selectionId, {
+          signal: controller.signal,
+        })) {
+          if (controller.signal.aborted) break;
+          applyResult(
+            reduceResumeEvent(streamState, event, labels),
+          );
+        }
+        if (!controller.signal.aborted) {
+          applyResult(reduceResumeEof(streamState, labels));
+        }
+      } catch (error: unknown) {
+        if (!controller.signal.aborted) {
+          applyResult(
+            reduceResumeTransportError(
+              streamState,
+              error instanceof Error ? error.message : String(error),
+              labels,
+            ),
+          );
+        }
       } finally {
+        if (abortRef.current === controller) abortRef.current = null;
         runningRef.current = false;
       }
     },

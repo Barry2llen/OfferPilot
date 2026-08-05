@@ -15,6 +15,12 @@ import {
   isSupportedJdImage,
   jobDescriptionsApi,
 } from "@/app/lib/api/job-descriptions";
+import {
+  createJobDescriptionState,
+  reduceJobDescriptionEof,
+  reduceJobDescriptionEvent,
+  reduceJobDescriptionTransportError,
+} from "@/app/lib/job-descriptions/adapter";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppActions, useAppContext } from "@/app/lib/context/app-context";
 import { useToast } from "@/app/components/ui/toast";
@@ -22,18 +28,13 @@ import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 import type {
   ChatFileListItem,
   JobDescriptionAnalysisListItem,
-  JobDescriptionStreamEvent,
   ModelSelectionResponse,
 } from "@/app/lib/api/types";
-
-interface JdTask {
-  status: "idle" | "running" | "success" | "error";
-  progress: number;
-  message: string;
-  modelError: string | null;
-  error: string | null;
-  analysisId: number | null;
-}
+import type {
+  JobDescriptionStreamEffect,
+  JobDescriptionStreamLabels,
+  JobDescriptionTask,
+} from "@/app/lib/job-descriptions/types";
 
 interface LocalJdImage {
   key: string;
@@ -63,14 +64,6 @@ function statusVariant(status: JobDescriptionAnalysisListItem["status"]) {
   return "warning";
 }
 
-function extractAnalysis(data: Record<string, unknown>) {
-  const value = data.job_description;
-  if (value && typeof value === "object") {
-    return value as JobDescriptionAnalysisListItem;
-  }
-  return undefined;
-}
-
 function isImageFile(file: ChatFileListItem): boolean {
   const mediaType = file.media_type?.toLowerCase() || "";
   return mediaType === "image/png" || mediaType === "image/jpeg";
@@ -91,16 +84,24 @@ export default function JobDescriptionsPage() {
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [imagePickerQuery, setImagePickerQuery] = useState("");
-  const [task, setTask] = useState<JdTask | null>(null);
+  const [task, setTask] = useState<JobDescriptionTask | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] =
     useState<JobDescriptionAnalysisListItem | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadKeyRef = useRef(0);
   const runningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const { state } = useAppContext();
   const { setModelSelection } = useAppActions();
   const { addToast } = useToast();
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -206,133 +207,58 @@ export default function JobDescriptionsPage() {
     }
 
     runningRef.current = true;
-    setTask({
+    const initialTask: JobDescriptionTask = {
       status: "running",
       progress: 0,
       message: t("jobDescription.submitting"),
       modelError: null,
       error: null,
       analysisId: null,
-    });
+    };
+    setTask(initialTask);
 
-    const handleEvent = (event: JobDescriptionStreamEvent) => {
-      const kind = event.event || event.type;
-      switch (kind) {
-        case "job_description": {
-          const detail = extractAnalysis(event.data);
-          setTask((current) => ({
-            ...(current ?? {
-              status: "running",
-              progress: 0,
-              message: "",
-              modelError: null,
-              error: null,
-              analysisId: null,
-            }),
-            progress: 0.05,
-            message: t("jobDescription.created"),
-            analysisId: detail?.id ?? current?.analysisId ?? null,
-          }));
-          break;
-        }
-        case "progress": {
-          setTask((current) => ({
-            ...(current ?? {
-              status: "running",
-              progress: 0,
-              message: "",
-              modelError: null,
-              error: null,
-              analysisId: null,
-            }),
-            progress:
-              typeof event.data.progress === "number"
-                ? Math.max(0, Math.min(event.data.progress, 1))
-                : current?.progress ?? 0,
-            message:
-              typeof event.data.message === "string"
-                ? event.data.message
-                : t("jobDescription.analysisProgress"),
-          }));
-          break;
-        }
-        case "model_error": {
-          const detail =
-            typeof event.data.detail === "string"
-              ? event.data.detail
-              : t("jobDescription.modelRetrying");
-          setTask((current) => ({
-            ...(current ?? {
-              status: "running",
-              progress: 0,
-              message: "",
-              modelError: null,
-              error: null,
-              analysisId: null,
-            }),
-            modelError: detail,
-          }));
-          break;
-        }
-        case "final": {
-          const detail = extractAnalysis(event.data);
-          setTask((current) => ({
-            ...(current ?? {
-              status: "running",
-              progress: 0,
-              message: "",
-              modelError: null,
-              error: null,
-              analysisId: null,
-            }),
-            status: "success",
-            progress: 1,
-            message: t("jobDescription.analysisComplete"),
-            analysisId: detail?.id ?? current?.analysisId ?? null,
-          }));
-          runningRef.current = false;
-          setJdText("");
-          setSourceUrl("");
-          localImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-          setLocalImages([]);
-          setSelectedFileIds([]);
-          setImagePickerOpen(false);
-          addToast(t("jobDescription.analysisComplete"), "success");
-          refetch();
-          break;
-        }
-        case "error": {
-          const detail =
-            typeof event.data.detail === "string"
-              ? event.data.detail
-              : t("jobDescription.analysisFailed");
-          setTask((current) => ({
-            ...(current ?? {
-              status: "running",
-              progress: 0,
-              message: "",
-              modelError: null,
-              error: null,
-              analysisId: null,
-            }),
-            status: "error",
-            message: t("jobDescription.analysisFailed"),
-            error: detail,
-            analysisId:
-              typeof event.data.analysis_id === "number"
-                ? event.data.analysis_id
-                : current?.analysisId ?? null,
-          }));
-          runningRef.current = false;
-          addToast(detail, "error");
-          refetch();
-          break;
+    const labels: JobDescriptionStreamLabels = {
+      createdMessage: t("jobDescription.created"),
+      progressMessage: t("jobDescription.analysisProgress"),
+      modelRetryMessage: t("jobDescription.modelRetrying"),
+      completeMessage: t("jobDescription.analysisComplete"),
+      failedMessage: t("jobDescription.analysisFailed"),
+      submitFailedMessage: t("jobDescription.submitFailed"),
+    };
+    let streamState = createJobDescriptionState(initialTask);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const applyResult = (result: {
+      state: typeof streamState;
+      effects: JobDescriptionStreamEffect[];
+    }) => {
+      streamState = result.state;
+      setTask(streamState.task);
+      for (const effect of result.effects) {
+        switch (effect.type) {
+          case "notify":
+            addToast(effect.message, effect.level);
+            break;
+          case "refetch":
+            refetch();
+            break;
+          case "reset_input":
+            setJdText("");
+            setSourceUrl("");
+            localImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+            setLocalImages([]);
+            setSelectedFileIds([]);
+            setImagePickerOpen(false);
+            break;
+          case "accepted":
+            break;
         }
       }
     };
 
     try {
-      await jobDescriptionsApi.analyze(
+      for await (const event of jobDescriptionsApi.analyze(
         {
           selectionId: state.currentModelSelection,
           jdText,
@@ -340,26 +266,26 @@ export default function JobDescriptionsPage() {
           files: localImages.map((item) => item.file),
           fileIds: selectedFileIds,
         },
-        handleEvent,
-        (error) => {
-          setTask((current) => ({
-            ...(current ?? {
-              status: "running",
-              progress: 0,
-              message: "",
-              modelError: null,
-              error: null,
-              analysisId: null,
-            }),
-            status: "error",
-            message: t("jobDescription.submitFailed"),
-            error: error.message,
-          }));
-          runningRef.current = false;
-          addToast(error.message, "error");
-        }
-      );
+        { signal: controller.signal },
+      )) {
+        if (controller.signal.aborted) break;
+        applyResult(reduceJobDescriptionEvent(streamState, event, labels));
+      }
+      if (!controller.signal.aborted) {
+        applyResult(reduceJobDescriptionEof(streamState, labels));
+      }
+    } catch (error: unknown) {
+      if (!controller.signal.aborted) {
+        applyResult(
+          reduceJobDescriptionTransportError(
+            streamState,
+            error instanceof Error ? error.message : String(error),
+            labels,
+          ),
+        );
+      }
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       runningRef.current = false;
     }
   };

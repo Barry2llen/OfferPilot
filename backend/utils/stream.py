@@ -6,6 +6,7 @@ from typing import (
     Any
 )
 import json
+from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 from langchain_core.runnables.schema import StreamEvent
 
@@ -55,13 +56,23 @@ async def render_stream_events(
                 result = res
     return result
 
-def _to_jsonable(value: Any) -> Any:
+def to_jsonable(value: Any) -> Any:
+    if isinstance(value, BaseMessage):
+        payload: dict[str, Any] = {
+            "type": value.type,
+            "content": value.content,
+        }
+        for attr in ("name", "tool_call_id", "status"):
+            attr_value = getattr(value, attr, None)
+            if attr_value is not None:
+                payload[attr] = attr_value
+        return payload
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if isinstance(value, dict):
-        return {str(key): _to_jsonable(item) for key, item in value.items()}
+        return {str(key): to_jsonable(item) for key, item in value.items()}
     if isinstance(value, list | tuple):
-        return [_to_jsonable(item) for item in value]
+        return [to_jsonable(item) for item in value]
 
     try:
         json.dumps(value)
@@ -70,10 +81,11 @@ def _to_jsonable(value: Any) -> Any:
     return value
 
 def render_sse_event(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(to_jsonable(data), ensure_ascii=False)}\n\n"
 
 __all__ = [
     "render_sse_event",
+    "to_jsonable",
     "render_stream_events",
     "StreamEventHandler",
     "StreamEventName"
