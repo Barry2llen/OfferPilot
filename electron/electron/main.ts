@@ -89,8 +89,8 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
   const frontendCommand = resolveFrontendDevCommand(frontendPort)
   const backendProcess = startManagedProcess('backend-dev', 'uv', [
     'run',
-    'uvicorn',
-    'main:app',
+    'python',
+    'run_server.py',
     '--host',
     '127.0.0.1',
     '--port',

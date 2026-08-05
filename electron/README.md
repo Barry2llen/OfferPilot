@@ -38,7 +38,7 @@ Start the Electron development shell:
 npm run dev
 ```
 
-The development shell starts the backend with `uv run uvicorn main:app` and the frontend with Vite's `npm run dev`. Both services bind to `127.0.0.1` on available ports. The frontend uses the runtime API URL exposed by preload; an independently started Vite server falls back to its API proxy.
+The development shell starts the backend with `uv run python run_server.py` and the frontend with Vite's `npm run dev`. The backend entry point selects a Windows-compatible event loop for Psycopg's async PostgreSQL connections. Both services bind to `127.0.0.1` on available ports. The frontend uses the runtime API URL exposed by preload; an independently started Vite server falls back to its API proxy.
 
 ## Build
 

@@ -62,7 +62,7 @@ PostgreSQL configuration is available in `backend/config.yaml`.
 ```sh
 cd backend
 uv sync
-uv run uvicorn main:app --reload --host 127.0.0.1 --port 8080
+uv run python run_server.py --reload --host 127.0.0.1 --port 8080
 ```
 
 The backend reads `backend/config.yaml` by default. Use

@@ -44,7 +44,7 @@ OfferPilot/
 ```sh
 cd backend
 uv sync
-uv run uvicorn main:app --reload --host 127.0.0.1 --port 8080
+uv run python run_server.py --reload --host 127.0.0.1 --port 8080
 ```
 
 后端默认读取 `backend/config.yaml`。如果需要新建本地配置，可参考 `backend/config.example.yaml`。默认 SQLite 数据库位于 `backend/data/offer_pilot.db`，简历文件位于 `backend/data/resumes`，聊天附件文件位于 `backend/data/chat_files`。
