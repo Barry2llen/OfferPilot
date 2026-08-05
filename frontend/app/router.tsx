@@ -4,7 +4,7 @@ import {
   Navigate,
   Route,
   Routes,
-} from "react-router-dom";
+} from "react-router";
 import AppErrorBoundary from "@/app/components/layout/app-error-boundary";
 import AppShell from "@/app/components/layout/app-shell";
 import { ToastProvider } from "@/app/components/ui/toast";

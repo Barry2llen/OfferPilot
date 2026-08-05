@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { getCurrentLocale, setLocale, type Locale } from "@/app/lib/i18n";
 
 const navItems = [

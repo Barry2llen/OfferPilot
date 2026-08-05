@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 import { resumesApi } from "@/app/lib/api/resumes";
