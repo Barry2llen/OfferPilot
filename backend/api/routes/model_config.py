@@ -33,7 +33,7 @@ _ERROR_DETAIL_SCHEMA = {
     "properties": {
         "detail": {
             "type": "string",
-            "description": "错误详情描述。",
+            "description": "Description of the error.",
         }
     },
     "required": ["detail"],
@@ -98,9 +98,9 @@ def _commit_or_rollback(session: Session) -> None:
 @router.get(
     "/model-providers",
     response_model=list[ModelProviderResponse],
-    summary="列出模型供应商配置",
-    description="返回系统中已配置的模型供应商摘要，不回显 API Key 明文。",
-    response_description="按名称升序返回模型供应商配置列表。",
+    summary="List model providers",
+    description="Return configured model provider summaries without exposing API keys.",
+    response_description="Returns model providers ordered by name.",
 )
 async def list_model_providers(
     session: Session = Depends(_get_request_db_session),
@@ -112,17 +112,17 @@ async def list_model_providers(
 @router.get(
     "/model-providers/{provider_name}",
     response_model=ModelProviderResponse,
-    summary="获取模型供应商配置",
-    description="根据供应商配置名称返回模型供应商摘要，不回显 API Key 明文。",
-    response_description="返回指定模型供应商配置。",
+    summary="Get model provider details",
+    description="Return a model provider summary by name without exposing its API key.",
+    response_description="Returns the requested model provider.",
     responses={
-        404: _error_response("未找到指定模型供应商配置。", example="Model provider not found: default-openai"),
+        404: _error_response("The requested model provider was not found.", example="Model provider not found: default-openai"),
     },
 )
 async def get_model_provider(
     provider_name: str = Path(
         ...,
-        description="模型供应商配置名称。",
+        description="Model provider configuration name.",
         examples=["default-openai"],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -140,12 +140,12 @@ async def get_model_provider(
 @router.post(
     "/model-providers",
     response_model=ModelProviderResponse,
-    summary="创建模型供应商配置",
-    description="创建一条模型供应商配置，用于后续模型选择记录引用。",
-    response_description="返回新建模型供应商配置摘要。",
+    summary="Create a model provider",
+    description="Create a model provider configuration for later model selection references.",
+    response_description="Returns the new model provider summary.",
     responses={
-        409: _error_response("模型供应商配置名称已存在。", example="Model provider already exists: default-openai"),
-        422: _error_response("供应商类型不受支持。", example="Unsupported provider value: Unknown"),
+        409: _error_response("A model provider with this name already exists.", example="Model provider already exists: default-openai"),
+        422: _error_response("The provider type is not supported.", example="Unsupported provider value: Unknown"),
     },
 )
 async def create_model_provider(
@@ -175,19 +175,19 @@ async def create_model_provider(
 @router.put(
     "/model-providers/{provider_name}",
     response_model=ModelProviderResponse,
-    summary="更新模型供应商配置",
-    description="更新指定模型供应商配置。api_key 省略时保留原值，传 null 时清空。",
-    response_description="返回更新后的模型供应商配置摘要。",
+    summary="Update a model provider",
+    description="Update a model provider. Omit api_key to keep it, or pass null to clear it.",
+    response_description="Returns the updated model provider summary.",
     responses={
-        404: _error_response("未找到指定模型供应商配置。", example="Model provider not found: default-openai"),
-        422: _error_response("供应商类型不受支持。", example="Unsupported provider value: Unknown"),
+        404: _error_response("The requested model provider was not found.", example="Model provider not found: default-openai"),
+        422: _error_response("The provider type is not supported.", example="Unsupported provider value: Unknown"),
     },
 )
 async def update_model_provider(
     payload: ModelProviderUpdate,
     provider_name: str = Path(
         ...,
-        description="待更新的模型供应商配置名称。",
+        description="Model provider configuration name to update.",
         examples=["default-openai"],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -227,18 +227,18 @@ async def update_model_provider(
 @router.delete(
     "/model-providers/{provider_name}",
     status_code=204,
-    summary="删除模型供应商配置",
-    description="删除指定模型供应商配置。若仍被模型选择引用，将返回冲突错误。",
-    response_description="删除成功，无响应体。",
+    summary="Delete a model provider",
+    description="Delete a model provider. Deletion conflicts while model selections still reference it.",
+    response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("未找到指定模型供应商配置。", example="Model provider not found: default-openai"),
-        409: _error_response("供应商仍被模型选择引用。", example="Model provider is still referenced by model selections."),
+        404: _error_response("The requested model provider was not found.", example="Model provider not found: default-openai"),
+        409: _error_response("The provider is still referenced by model selections.", example="Model provider is still referenced by model selections."),
     },
 )
 async def delete_model_provider(
     provider_name: str = Path(
         ...,
-        description="待删除的模型供应商配置名称。",
+        description="Model provider configuration name to delete.",
         examples=["default-openai"],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -264,9 +264,9 @@ async def delete_model_provider(
 @router.get(
     "/model-selections",
     response_model=list[ModelSelectionResponse],
-    summary="列出模型选择配置",
-    description="返回系统中已配置的模型选择列表，并展开其供应商摘要。",
-    response_description="按供应商名称、模型名称和 ID 升序返回模型选择列表。",
+    summary="List model selections",
+    description="Return configured model selections with expanded provider summaries.",
+    response_description="Returns model selections ordered by provider name, model name, and ID.",
 )
 async def list_model_selections(
     session: Session = Depends(_get_request_db_session),
@@ -278,17 +278,17 @@ async def list_model_selections(
 @router.get(
     "/model-selections/{selection_id}",
     response_model=ModelSelectionResponse,
-    summary="获取模型选择配置",
-    description="根据模型选择 ID 返回模型选择配置及其供应商摘要。",
-    response_description="返回指定模型选择配置。",
+    summary="Get model selection details",
+    description="Return a model selection and its provider summary by ID.",
+    response_description="Returns the requested model selection.",
     responses={
-        404: _error_response("未找到指定模型选择配置。", example="Model selection not found: 1"),
+        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
     },
 )
 async def get_model_selection(
     selection_id: int = Path(
         ...,
-        description="模型选择记录 ID。",
+        description="Model selection record ID.",
         examples=[1],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -306,12 +306,12 @@ async def get_model_selection(
 @router.post(
     "/model-selections",
     response_model=ModelSelectionResponse,
-    summary="创建模型选择配置",
-    description="创建一条可被 AI 服务引用的模型选择配置。",
-    response_description="返回新建模型选择配置。",
+    summary="Create a model selection",
+    description="Create a model selection that can be referenced by AI services.",
+    response_description="Returns the new model selection.",
     responses={
-        404: _error_response("未找到请求中引用的模型供应商。", example="Model provider not found: missing-provider"),
-        409: _error_response("同一供应商下模型名称已存在。", example="Model selection already exists: default-openai/gpt-4o-mini"),
+        404: _error_response("The referenced model provider was not found.", example="Model provider not found: missing-provider"),
+        409: _error_response("The model name already exists for this provider.", example="Model selection already exists: default-openai/gpt-4o-mini"),
     },
 )
 async def create_model_selection(
@@ -348,19 +348,19 @@ async def create_model_selection(
 @router.put(
     "/model-selections/{selection_id}",
     response_model=ModelSelectionResponse,
-    summary="更新模型选择配置",
-    description="更新指定模型选择配置。未传字段保持原值。",
-    response_description="返回更新后的模型选择配置。",
+    summary="Update a model selection",
+    description="Update a model selection. Omitted fields keep their current values.",
+    response_description="Returns the updated model selection.",
     responses={
-        404: _error_response("未找到模型选择或引用的模型供应商。", example="Model selection not found: 1"),
-        409: _error_response("同一供应商下模型名称已存在。", example="Model selection already exists: default-openai/gpt-4o-mini"),
+        404: _error_response("The model selection or referenced provider was not found.", example="Model selection not found: 1"),
+        409: _error_response("The model name already exists for this provider.", example="Model selection already exists: default-openai/gpt-4o-mini"),
     },
 )
 async def update_model_selection(
     payload: ModelSelectionUpdate,
     selection_id: int = Path(
         ...,
-        description="待更新的模型选择记录 ID。",
+        description="Model selection record ID to update.",
         examples=[1],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -408,17 +408,17 @@ async def update_model_selection(
 @router.delete(
     "/model-selections/{selection_id}",
     status_code=204,
-    summary="删除模型选择配置",
-    description="删除指定模型选择配置。",
-    response_description="删除成功，无响应体。",
+    summary="Delete a model selection",
+    description="Delete a model selection.",
+    response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("未找到指定模型选择配置。", example="Model selection not found: 1"),
+        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
     },
 )
 async def delete_model_selection(
     selection_id: int = Path(
         ...,
-        description="待删除的模型选择记录 ID。",
+        description="Model selection record ID to delete.",
         examples=[1],
     ),
     session: Session = Depends(_get_request_db_session),

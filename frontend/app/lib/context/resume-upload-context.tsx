@@ -1,5 +1,3 @@
-"use client";
-
 import {
   createContext,
   useCallback,
@@ -9,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useToast } from "@/app/components/ui/toast";
 import type { ResumeDetail, ResumeStreamEvent } from "@/app/lib/api/types";
@@ -62,6 +61,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
   const [task, setTask] = useState<ResumeUploadTask | null>(null);
   const runningRef = useRef(false);
   const { addToast } = useToast();
+  const { t } = useTranslation();
 
   const running = task?.status === "running";
 
@@ -83,7 +83,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
       onCompleted,
     }: StartResumeUploadOptions) => {
       if (runningRef.current) {
-        addToast("已有简历正在上传或解析，请等待完成", "warning");
+        addToast(t("upload.busy"), "warning");
         return;
       }
 
@@ -94,7 +94,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
         fileName: file.name,
         status: "running",
         progress: 0,
-        message: `正在上传「${file.name}」`,
+        message: t("upload.uploading", { name: file.name }),
         modelError: null,
         error: null,
         resumeId: null,
@@ -110,7 +110,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
             updateTask(taskId, (current) => ({
               ...current,
               progress: 0.05,
-              message: "文件已保存，开始解析",
+              message: t("upload.saved"),
               resumeId: detail?.id ?? current.resumeId,
               detail: detail ?? current.detail,
             }));
@@ -127,7 +127,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
               message:
                 typeof event.data.message === "string"
                   ? event.data.message
-                  : "正在解析简历",
+                  : t("upload.parsing"),
             }));
             break;
           }
@@ -137,10 +137,10 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
             const detail =
               typeof event.data.detail === "string"
                 ? event.data.detail
-                : "模型调用失败，正在重试";
+                : t("upload.modelRetry");
             updateTask(taskId, (current) => ({
               ...current,
-              modelError: `模型调用失败${
+              modelError: `${t("upload.modelFailed")}${
                 attempt && maxAttempts ? ` (${attempt}/${maxAttempts})` : ""
               }: ${detail}`,
             }));
@@ -152,12 +152,12 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
               ...current,
               status: "success",
               progress: 1,
-              message: "解析完成",
+              message: t("upload.complete"),
               detail: detail ?? current.detail,
               resumeId: detail?.id ?? current.resumeId,
             }));
             runningRef.current = false;
-            addToast("简历已上传并解析完成", "success");
+            addToast(t("upload.success"), "success");
             onCompleted?.(detail);
             break;
           }
@@ -165,11 +165,11 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
             const detail =
               typeof event.data.detail === "string"
                 ? event.data.detail
-                : "简历解析失败";
+                : t("upload.parseFailed");
             updateTask(taskId, (current) => ({
               ...current,
               status: "error",
-              message: "解析失败",
+              message: t("upload.failed"),
               error: detail,
               resumeId:
                 typeof event.data.resume_id === "number"
@@ -189,7 +189,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
           updateTask(taskId, (current) => ({
             ...current,
             status: "error",
-            message: "上传或解析失败",
+            message: t("upload.uploadFailed"),
             error: error.message,
           }));
           runningRef.current = false;
@@ -200,7 +200,7 @@ export function ResumeUploadProvider({ children }: { children: ReactNode }) {
         runningRef.current = false;
       }
     },
-    [addToast, updateTask]
+    [addToast, t, updateTask]
   );
 
   const dismissTask = useCallback(() => {

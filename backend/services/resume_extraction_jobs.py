@@ -11,12 +11,20 @@ from schemas.config import Config
 from schemas.resume_document import ResumeDocument
 from services.resume_service import ResumeService
 from utils.stream import render_sse_event
+from utils.i18n import (
+    DEFAULT_LOCALE,
+    Locale,
+    localize_error,
+    localize_model_retry_detail,
+    localize_progress_message,
+)
 
 
 @dataclass(slots=True)
 class _ResumeExtractionJob:
     job_id: str
     resume_id: int
+    locale: Locale = DEFAULT_LOCALE
     history: list[str] = field(default_factory=list)
     subscribers: set[asyncio.Queue[str | None]] = field(default_factory=set)
     done: bool = False
@@ -45,11 +53,13 @@ class ResumeExtractionJobManager:
         selection: Any,
         resume_document: ResumeDocument,
         initial_event: str,
+        locale: Locale = DEFAULT_LOCALE,
     ) -> str:
         job_id = uuid4().hex
         job = _ResumeExtractionJob(
             job_id=job_id,
             resume_id=resume_id,
+            locale=locale,
             history=[initial_event],
         )
 
@@ -68,6 +78,7 @@ class ResumeExtractionJobManager:
                     selection_id=selection_id,
                     selection=selection,
                     resume_document=resume_document,
+                    locale=locale,
                 )
             )
 
@@ -119,6 +130,7 @@ class ResumeExtractionJobManager:
         selection_id: int,
         selection: Any,
         resume_document: ResumeDocument,
+        locale: Locale,
     ) -> None:
         workflow = ResumeExtractWorkflow(config=self._config)
 
@@ -134,7 +146,7 @@ class ResumeExtractionJobManager:
                     {
                         "resume_id": resume_id,
                         "progress": data.get("progress", 0),
-                        "message": data.get("message"),
+                        "message": localize_progress_message(data.get("message"), locale),
                         "additional_data": data.get("additional_data") or {},
                     },
                 )
@@ -149,7 +161,12 @@ class ResumeExtractionJobManager:
                         "resume_id": resume_id,
                         "attempt": data.get("attempt"),
                         "max_attempts": data.get("max_attempts"),
-                        "detail": data.get("error"),
+                        "detail": localize_model_retry_detail(
+                            data.get("error"),
+                            locale,
+                            attempt=data.get("attempt") or 0,
+                            max_attempts=data.get("max_attempts") or 0,
+                        ),
                         "additional_data": data.get("additional_data") or {},
                     },
                 )
@@ -186,6 +203,7 @@ class ResumeExtractionJobManager:
             if not await self._is_current(resume_id, job_id):
                 return
             detail = str(error)
+            localized_detail = localize_error(error, locale)
             with self._database.get_session_factory()() as session:
                 service = ResumeService(
                     repository=ResumeDocumentRepository(session),
@@ -199,7 +217,7 @@ class ResumeExtractionJobManager:
                 "error",
                 {
                     "resume_id": resume_id,
-                    "detail": detail,
+                    "detail": localized_detail,
                     "parse_status": "failed",
                 },
                 done=True,

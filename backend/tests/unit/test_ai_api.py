@@ -553,6 +553,85 @@ def test_ai_chat_history_summarizes_web_search_tool_messages(
     assert "private page text" not in response.text
 
 
+def test_ai_chat_history_summarizes_query_tool_message(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="需要我选择下一步"),
+                ToolMessage(
+                    content=json.dumps(
+                        {
+                            "choice": "firstChoice",
+                            "note": "按推荐方案继续。",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    artifact={
+                        "question": "下一步要怎么处理？",
+                        "firstChoice": "使用推荐方案",
+                        "firstChoiceDescription": "按系统推荐的完整方案继续推进。",
+                        "secondChoice": "只做后端",
+                        "secondChoiceDescription": "只处理后端协议和测试。",
+                        "thirdChoice": "暂不处理",
+                        "thirdChoiceDescription": "先暂停这次调整。",
+                        "internal": "should be hidden",
+                    },
+                    tool_call_id="call-query",
+                    name="query",
+                    status="success",
+                ),
+                AIMessage(content="继续处理。"),
+            ],
+        )
+        raw_tool_message = checkpoint["channel_values"]["messages"][1]
+        assert raw_tool_message.content == json.dumps(
+            {
+                "choice": "firstChoice",
+                "note": "按推荐方案继续。",
+            },
+            ensure_ascii=False,
+        )
+        assert "question" not in raw_tool_message.content
+        assert "firstChoiceDescription" not in raw_tool_message.content
+        assert "使用推荐方案" not in raw_tool_message.content
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history-query"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-history-query", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+
+        response = client.get("/ai/chats/thread-history-query/history")
+
+    assert response.status_code == 200
+    tool_message = response.json()["messages"][1]
+    assert tool_message == {
+        "role": "tool",
+        "type": "tool",
+        "content": {
+            "question": "下一步要怎么处理？",
+            "choice": "firstChoice",
+            "note": "按推荐方案继续。",
+            "firstChoice": "使用推荐方案",
+            "firstChoiceDescription": "按系统推荐的完整方案继续推进。",
+            "secondChoice": "只做后端",
+            "secondChoiceDescription": "只处理后端协议和测试。",
+            "thirdChoice": "暂不处理",
+            "thirdChoiceDescription": "先暂停这次调整。",
+        },
+        "name": "query",
+        "tool_call_id": "call-query",
+        "status": "success",
+    }
+    assert "should be hidden" not in response.text
+
+
 def test_ai_chat_history_summarizes_web_fetch_tool_messages(
     temporary_app_config: Config,
 ) -> None:
@@ -612,7 +691,10 @@ def test_ai_chat_history_endpoint_returns_404_for_missing_thread(
     app = create_app(temporary_app_config)
 
     with TestClient(app) as client:
-        response = client.get("/ai/chats/missing-thread/history")
+        response = client.get(
+            "/ai/chats/missing-thread/history",
+            headers={"Accept-Language": "en-US"},
+        )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Chat history not found: missing-thread"
@@ -671,7 +753,10 @@ def test_ai_chat_history_delete_endpoint_returns_404_for_missing_thread(
     app = create_app(temporary_app_config)
 
     with TestClient(app) as client:
-        response = client.delete("/ai/chats/missing-thread")
+        response = client.delete(
+            "/ai/chats/missing-thread",
+            headers={"Accept-Language": "en-US"},
+        )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Chat history not found: missing-thread"
@@ -783,6 +868,67 @@ def test_ai_chat_stream_endpoint_accepts_attachment_without_prompt(
     assert "请分析这些附件内容。" in human_message.content[0]["text"]
     assert "attachment-only.md" in human_message.content[0]["text"]
     assert "alpha" in human_message.content[1]["text"]
+
+
+def test_ai_chat_stream_endpoint_sends_image_attachment_as_image_url_block(
+    temporary_app_config: Config,
+    workspace_tmp_dir: Path,
+) -> None:
+    app = create_app(temporary_app_config)
+    seen_states: list[dict] = []
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(
+            client,
+            provider_name="vision-openai",
+            model_name="gpt-4o-vision",
+            supports_image_input=True,
+        )
+        file_path = workspace_tmp_dir / "flash.png"
+        file_path.write_bytes(b"fake-png")
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                seen_states.append(state)
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        with file_path.open("rb") as uploaded:
+            response = client.post(
+                "/ai/chat/stream",
+                data={
+                    "selection_id": str(selection_id),
+                    "prompt": "解析图片",
+                    "thread_id": "thread-image-file",
+                },
+                files={"files": ("flash.png", uploaded, "image/png")},
+            )
+
+    assert response.status_code == 200
+    assert '"requires_image_input": true' in response.text
+    assert '"original_filename": "flash.png"' in response.text
+    assert '"injection_mode": "image"' in response.text
+
+    human_message = seen_states[0]["messages"][0]
+    assert human_message.additional_kwargs["display_content"] == "解析图片"
+    assert human_message.additional_kwargs["attachments"][0]["original_filename"] == "flash.png"
+    assert isinstance(human_message.content, list)
+    assert human_message.content[0]["type"] == "text"
+    assert "flash.png" in human_message.content[0]["text"]
+    assert human_message.content[1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,ZmFrZS1wbmc="},
+    }
 
 
 def test_ai_chat_history_prefers_display_content_and_returns_attachments(
@@ -2063,14 +2209,230 @@ def test_ai_chat_stream_endpoint_returns_interrupt_event_without_final(
                 "prompt": "hello",
                 "thread_id": "thread-interrupt",
             },
+            headers={"Accept-Language": "en-US"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-language"] == "en-US"
+    assert (
+        'event: interrupt\ndata: {"thread_id": "thread-interrupt", "type": "error", "message": "The model call failed.", "id": "interrupt-1"}'
+        in response.text
+    )
+    assert "event: final" not in response.text
+
+
+def test_ai_chat_stream_endpoint_returns_query_interrupt_choices(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    class FakeInterrupt:
+        def __init__(self) -> None:
+            self.value = {
+                "type": "query",
+                "question": "下一步要怎么处理？",
+                "firstChoice": "使用推荐方案",
+                "firstChoiceDescription": "按系统推荐的完整方案继续推进。",
+                "secondChoice": "只做后端",
+                "secondChoiceDescription": "只处理后端协议和测试。",
+                "thirdChoice": "暂不处理",
+                "thirdChoiceDescription": "先暂停这次调整。",
+            }
+            self.id = "interrupt-query"
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_chain_stream",
+                    "data": {"chunk": {"__interrupt__": (FakeInterrupt(),)}},
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="should not emit")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-query-interrupt",
+            },
         )
 
     assert response.status_code == 200
     assert (
-        'event: interrupt\ndata: {"thread_id": "thread-interrupt", "type": "error", "message": "Model call failed after 2 retries.", "id": "interrupt-1"}'
+        'event: interrupt\ndata: {"thread_id": "thread-query-interrupt", "type": "query", "message": null, '
+        '"question": "下一步要怎么处理？", "firstChoice": "使用推荐方案", '
+        '"firstChoiceDescription": "按系统推荐的完整方案继续推进。", '
+        '"secondChoice": "只做后端", "secondChoiceDescription": "只处理后端协议和测试。", '
+        '"thirdChoice": "暂不处理", "thirdChoiceDescription": "先暂停这次调整。", '
+        '"id": "interrupt-query"}'
         in response.text
     )
     assert "event: final" not in response.text
+
+
+def test_ai_chat_stream_endpoint_suppresses_query_interrupt_tool_error(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    class FakeInterrupt:
+        def __init__(self) -> None:
+            self.value = {
+                "type": "query",
+                "question": "下一步要怎么处理？",
+                "firstChoice": "使用推荐方案",
+                "firstChoiceDescription": "按系统推荐的完整方案继续推进。",
+                "secondChoice": "只做后端",
+                "secondChoiceDescription": "只处理后端协议和测试。",
+                "thirdChoice": "暂不处理",
+                "thirdChoiceDescription": "先暂停这次调整。",
+            }
+            self.id = "interrupt-query"
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_start",
+                    "name": "query",
+                    "data": {
+                        "input": {
+                            "question": "下一步要怎么处理？",
+                            "firstChoice": "使用推荐方案",
+                            "firstChoiceDescription": "按系统推荐的完整方案继续推进。",
+                            "secondChoice": "只做后端",
+                            "secondChoiceDescription": "只处理后端协议和测试。",
+                            "thirdChoice": "暂不处理",
+                            "thirdChoiceDescription": "先暂停这次调整。",
+                        }
+                    },
+                }
+                yield {
+                    "event": "on_tool_error",
+                    "name": "query",
+                    "data": {
+                        "error": (
+                            "(Interrupt(value={'type': 'query', "
+                            "'question': '下一步要怎么处理？'}, id='interrupt-query'),)"
+                        )
+                    },
+                }
+                yield {
+                    "event": "on_chain_stream",
+                    "data": {"chunk": {"__interrupt__": (FakeInterrupt(),)}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-query-filtered-tool-error",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "event: tool_error" not in response.text
+    assert (
+        'event: interrupt\ndata: {"thread_id": "thread-query-filtered-tool-error", '
+        '"type": "query", "message": null, "question": "下一步要怎么处理？"'
+        in response.text
+    )
+
+
+def test_ai_chat_stream_endpoint_summarizes_query_tool_output(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                yield {
+                    "event": "on_tool_end",
+                    "name": "query",
+                    "data": {
+                        "output": ToolMessage(
+                            content=json.dumps(
+                                {
+                                    "choice": "other",
+                                    "note": "先补充说明。",
+                                },
+                                ensure_ascii=False,
+                            ),
+                            artifact={
+                                "question": "下一步要怎么处理？",
+                                "firstChoice": "使用推荐方案",
+                                "firstChoiceDescription": "按系统推荐的完整方案继续推进。",
+                                "secondChoice": "只做后端",
+                                "secondChoiceDescription": "只处理后端协议和测试。",
+                                "thirdChoice": "暂不处理",
+                                "thirdChoiceDescription": "先暂停这次调整。",
+                                "internal": "should be hidden",
+                            },
+                            tool_call_id="call-query",
+                            name="query",
+                        )
+                    },
+                }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-query-summary",
+            },
+        )
+
+    assert response.status_code == 200
+    assert (
+        'event: tool_end\ndata: {"thread_id": "thread-query-summary", "tool_name": "query", '
+        '"output": {"question": "下一步要怎么处理？", "choice": "other", "note": "先补充说明。", '
+        '"firstChoice": "使用推荐方案", "firstChoiceDescription": "按系统推荐的完整方案继续推进。", '
+        '"secondChoice": "只做后端", "secondChoiceDescription": "只处理后端协议和测试。", '
+        '"thirdChoice": "暂不处理", "thirdChoiceDescription": "先暂停这次调整。"}}'
+        in response.text
+    )
+    assert "should be hidden" not in response.text
 
 
 def test_ai_chat_stream_endpoint_resumes_retry_command(
@@ -2119,6 +2481,59 @@ def test_ai_chat_stream_endpoint_resumes_retry_command(
     assert 'event: final\ndata: {"thread_id": "thread-retry", "content": "retried response"}' in response.text
 
 
+def test_ai_chat_stream_endpoint_resumes_query_command(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+    seen: list[tuple[object, dict, str]] = []
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: object,
+                config: dict,
+                *,
+                version: str,
+            ):
+                seen.append((state, config, version))
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="query resumed")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "thread_id": "thread-query",
+                "command": {
+                    "type": "query",
+                    "choice": "firstChoice",
+                    "note": "按推荐方案继续。",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    agent_input, config, version = seen[0]
+    assert isinstance(agent_input, Command)
+    assert agent_input.resume == {
+        "choice": "firstChoice",
+        "note": "按推荐方案继续。",
+    }
+    assert config == {
+        "configurable": {"thread_id": "thread-query"},
+        "recursion_limit": 100,
+    }
+    assert version == "v2"
+    assert 'event: final\ndata: {"thread_id": "thread-query", "content": "query resumed"}' in response.text
+
+
 def test_ai_chat_stream_endpoint_rejects_retry_without_thread_id(
     temporary_app_config: Config,
 ) -> None:
@@ -2132,6 +2547,7 @@ def test_ai_chat_stream_endpoint_rejects_retry_without_thread_id(
                 "selection_id": selection_id,
                 "command": {"type": "retry"},
             },
+            headers={"Accept-Language": "en-US"},
         )
 
     assert response.status_code == 422
@@ -2150,8 +2566,15 @@ def test_ai_chat_stream_openapi_documents_interrupt_and_retry(
     assert "interrupt" in stream_operation["responses"]["200"]["description"]
     assert "reasoning" in stream_operation["responses"]["200"]["description"]
     assert "reasoning_done" in stream_operation["responses"]["200"]["description"]
-    assert "url、title、favicon" in stream_operation["responses"]["200"]["description"]
+    assert "url, title, and favicon" in stream_operation["responses"]["200"]["description"]
     assert "retry" in stream_operation["description"]
+    assert "query" in stream_operation["description"]
+    assert "choice/note" in stream_operation["description"]
+    assert "question" in stream_operation["responses"]["200"]["description"]
+    assert "firstChoice" in stream_operation["responses"]["200"]["description"]
+    assert "firstChoiceDescription" in stream_operation["responses"]["200"]["description"]
+    assert "secondChoiceDescription" in stream_operation["responses"]["200"]["description"]
+    assert "thirdChoiceDescription" in stream_operation["responses"]["200"]["description"]
 
 
 def test_ai_chat_history_openapi_documents_history_endpoints(
@@ -2165,11 +2588,11 @@ def test_ai_chat_history_openapi_documents_history_endpoints(
     assert "/ai/chats" in payload["paths"]
     assert "/ai/chats/{thread_id}/history" in payload["paths"]
     assert "delete" in payload["paths"]["/ai/chats/{thread_id}"]
-    assert payload["paths"]["/ai/chats"]["get"]["summary"] == "查询 AI 会话历史列表"
-    assert payload["paths"]["/ai/chats/{thread_id}"]["delete"]["summary"] == "删除 AI 会话历史"
+    assert payload["paths"]["/ai/chats"]["get"]["summary"] == "List AI conversation history"
+    assert payload["paths"]["/ai/chats/{thread_id}"]["delete"]["summary"] == "Delete AI conversation history"
     assert (
         payload["paths"]["/ai/chats/{thread_id}/history"]["get"]["summary"]
-        == "查询 AI 会话历史详情"
+        == "Get AI conversation history"
     )
     history_message_schema = payload["components"]["schemas"]["AIChatHistoryMessage"]
     assert "reasoning_duration_ms" in history_message_schema["properties"]
@@ -2182,6 +2605,18 @@ def test_base_command_accepts_retry_without_prompt() -> None:
     assert "prompt" not in command
 
 
+def test_base_command_accepts_query_choice() -> None:
+    command: BaseCommand = {
+        "type": "query",
+        "choice": "firstChoice",
+        "note": "按推荐方案继续。",
+    }
+
+    assert command["type"] == "query"
+    assert command["choice"] == "firstChoice"
+    assert command["note"] == "按推荐方案继续。"
+
+
 async def test_get_all_tools_builds_exa_tools_from_config() -> None:
     config = Config(exa_api_key="test-exa-key")
 
@@ -2191,4 +2626,5 @@ async def test_get_all_tools_builds_exa_tools_from_config() -> None:
         "web_search",
         "web_fetch",
         "find_similar",
+        "query",
     ]

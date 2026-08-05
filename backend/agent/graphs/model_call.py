@@ -1,14 +1,17 @@
 
 import asyncio
+from uuid import uuid4
 from time import perf_counter
 from typing import override
 
+from langgraph.runtime import Runtime
+from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-from langchain_core.tools import BaseTool
+from langchain.tools import BaseTool, ToolRuntime
+from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
-from langchain_core.callbacks.manager import adispatch_custom_event
 
 from ..models import load_chat_model
 from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
@@ -32,19 +35,8 @@ from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 from schemas.command import BaseCommand
 from utils.logger import logger
-
-
-def _is_missing_parent_run_error(error: RuntimeError) -> bool:
-    return "parent run id" in str(error)
-
-
-async def _adispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        await adispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
+from utils.json import jsonify
+from utils.custom_events import _adispatch_custom_event_safely
 
 
 def _message_reasoning_content(message: BaseMessage) -> str:
@@ -76,6 +68,76 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     system_prompts: PromptMessageBuilder[State]
     tools: ToolsBuilder[State]
 
+    def _add_interrupt_tool(self, message_id: str, tool_call: ToolCall, tool: BaseTool) -> str:
+        logger.debug(f"Tool {tool.name} is an interrupt tool, skip calling it synchronously.")
+        self._interrupt_tools.append((message_id, tool_call, tool))
+        return "[INTERRUPT_TOOL_CALLED]"
+
+    @staticmethod
+    def _is_interrupt_tool(tool: BaseTool) -> bool:
+        return tool.extras is not None and tool.extras.get("interrupt", False)
+
+    @staticmethod
+    def _convert_tool_message(
+        result: object,
+        tool_call: ToolCall,
+        message_id: str | None = None,
+        tool: BaseTool | None = None
+        ) -> ToolMessage:
+        if isinstance(result, ToolMessage):
+            msg = result
+            if message_id and msg.id is None:
+                msg.id = message_id
+        else:
+            msg = ToolMessage(
+                id=message_id,
+                content=str(result),
+                tool_call_id=tool_call.get("id") or "",
+                name=tool_call["name"],
+            )
+
+        if tool and tool.return_direct:
+            msg.additional_kwargs.update({
+                'return_direct': True
+            })
+
+        return msg
+
+    @staticmethod
+    def _schema_has_field(schema: object, field_name: str) -> bool:
+        model_fields = getattr(schema, "model_fields", None)
+        if isinstance(model_fields, dict) and field_name in model_fields:
+            return True
+
+        annotations = getattr(schema, "__annotations__", None)
+        if isinstance(annotations, dict) and field_name in annotations:
+            return True
+
+        if isinstance(schema, dict):
+            properties = schema.get("properties")
+            if isinstance(properties, dict) and field_name in properties:
+                return True
+
+        return False
+
+    @staticmethod
+    def _inject_runtime_if_requested(
+        tool_call: ToolCall,
+        tool: BaseTool,
+        runtime: ToolRuntime[None, State],
+    ) -> ToolCall:
+        if not (
+            ModelCallGraph._schema_has_field(getattr(tool, "args_schema", None), "runtime")
+            or ModelCallGraph._schema_has_field(tool.tool_call_schema, "runtime")
+        ):
+            return tool_call
+
+        logger.debug(f"Injecting runtime into tool call for tool {tool.name}.")
+
+        args = dict(tool_call["args"])
+        args["runtime"] = runtime
+        return {**tool_call, "args": args}
+
     def __init__(
             self,
             *args,
@@ -87,16 +149,23 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
+        self._interrupt_tools: list[tuple[str, ToolCall, BaseTool]] = []
 
         prompts = normalize_system_prompts(system_prompts)
         self.system_prompts = prompts if callable(prompts) else lambda runtime: prompts
 
-    async def _tool_node(self, state: State) -> State:
+    async def _tool_node(
+        self,
+        state: State,
+        runtime: Runtime[None],
+        config: RunnableConfig | None = None,
+    ) -> State:
         """
         Tool node. This node is responsible for calling the tool and getting the response.
         It calls the tool with the state.messages and returns the response.
         """
         
+        config = config or {}
         messages = state.get("messages")
 
         if not messages:
@@ -148,10 +217,33 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     name=name,
                     status="error",
                 )
-            
+
+            tool = tools_dict[name]
+            injected_tool_call = self._inject_runtime_if_requested(
+                tool_call,
+                tool,
+                ToolRuntime[None, State](
+                    state=state,
+                    context=runtime.context,
+                    tool_call_id=tool_call_id,
+                    config=config,
+                    stream_writer=runtime.stream_writer,
+                    store=runtime.store,
+                    execution_info=runtime.execution_info,
+                    server_info=runtime.server_info,
+                ),
+            )
+
+            message_id = str(uuid4())
             try:
-                tool = tools_dict[name]
-                result = await tool.ainvoke(tool_call)
+                result = (
+                    self._add_interrupt_tool(message_id, injected_tool_call, tool)
+                    if self._is_interrupt_tool(tool)
+                    else await tool.ainvoke(injected_tool_call, config)
+                )
+            except GraphInterrupt:
+                logger.warning(f"Tool {name} raised GraphInterrupt, treating it as an interrupt tool.")
+                result = self._add_interrupt_tool(message_id, injected_tool_call, tool)
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
                 await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(
@@ -167,21 +259,49 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     status="error",
                 )
             
-            tool_msg = result if isinstance(result, ToolMessage) else ToolMessage(
-                content=result,
-                tool_call_id=tool_call_id,
-                name=name,
-            )
-
-            if tool.return_direct:
-                tool_msg.additional_kwargs.update({
-                    'return_direct': True
-                })
-
-            return tool_msg
+            return self._convert_tool_message(result, tool_call, message_id, tool)
         
         results = await asyncio.gather(*(_call_tool(tool_call) for tool_call in tool_calls))
         return {'messages': list(results)} # type: ignore
+
+    async def _exec_interrupt_tool_node(
+        self,
+        state: State,
+        config: RunnableConfig | None = None,
+    ) -> State:
+        """
+        Execute tools that may cause an interrupt one by one.
+        """
+
+        if len(self._interrupt_tools) == 0:
+            return state
+
+        message_id, tool_call, tool = self._interrupt_tools[-1]
+        tool_call_id = tool_call.get("id") or ""
+
+        try:
+            result = await tool.ainvoke(tool_call, config)
+        except GraphInterrupt:
+            raise
+        except Exception as e:
+            logger.error(f"Error calling interrupt tool {tool.name} with args {tool_call['args']}: {e}")
+            await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(
+                error=str(e),
+                tool_name=tool.name,
+                args=tool_call['args'],
+                tool_call_id=tool_call_id
+            ))
+            result = ToolMessage(
+                content=f"Error calling interrupt tool {tool.name} with args {tool_call['args']}: {e}",
+                tool_call_id=tool_call_id,
+                name=tool.name,
+                status="error",
+            )
+
+        self._interrupt_tools.pop()
+        return {
+            'messages': [self._convert_tool_message(result, tool_call, message_id, tool)]
+        } # type: ignore
 
     async def _model_call_node(self, state: State) -> State:
         """
@@ -190,11 +310,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         """
         
         while True:
+            model_selection = state.get('model')
             try:
                 tools = await resolve_tools(self.tools, self.get_runtime(state))
                 system_prompts = self.system_prompts(self.get_runtime(state))
                 
-                model_selection = state.get('model')
                 if callable(model_selection):
                     model_selection = model_selection(state=state)
                 model = load_chat_model(model_selection).bind_tools(tools)
@@ -224,9 +344,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 try:
                     started_at = perf_counter()
 
-                    #logger.debug(f"Invoking model with system prompts '{system_prompts}' and messages:\n{state.get('messages')}")
+                    input = system_prompts + state.get('messages', [])
 
-                    response = await model.ainvoke(system_prompts + state.get('messages', []))
+                    #logger.debug(f"Calling model with input messages:\n{jsonify(input)}")
+
+                    response = await model.ainvoke(input)
 
                     duration_ms = max(0, round((perf_counter() - started_at) * 1000))
                     if _record_reasoning_duration(response, duration_ms):
@@ -275,25 +397,45 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             raise AgentStateError(
                 "Last message in state is not an AI or tool message, this should not happen."
             )
-
-        return_direct = msg.additional_kwargs.get('return_direct')
-
-        if return_direct:
-            logger.debug("Message has return_direct flag, ending the graph.")
-            return 'end'
         
-        tool_calls = getattr(msg, 'tool_calls', None) or []
+        tool_calls = getattr(msg, 'tool_calls', None)
 
         return 'tool' if tool_calls else 'end'
+
+    def _dicide_after_tool(self, state: State) -> str:
+        """
+        Decide whether to end after tool execution or return to the model.
+        """
+
+        messages = state.get("messages")
+
+        if not messages:
+            logger.error("No messages in state, this should not happen.")
+            raise AgentStateError("No messages in state, this should not happen.")
+
+        msg = messages[-1]
+        if msg.type == "tool":
+            return_direct = msg.additional_kwargs.get('return_direct')
+            if return_direct:
+                logger.debug("Tool message has return_direct flag, ending the graph.")
+                return 'end'
+            return 'model'
+        else:
+            logger.error(
+                "Last message in state is not a tool message, this should not happen."
+            )
+            raise AgentStateError(
+                "Last message in state is not a tool message, this should not happen."
+            )
             
     @override
     def get_graph(self) -> StateGraph[BaseAgentState]:
         
         graph = StateGraph(BaseAgentState)
         graph.add_node('model', self._model_call_node)
-        graph.add_node('tool', self._tool_node)
+        graph.add_node('tool', self._tool_node) #type: ignore
+        graph.add_node('interrupt_tool', self._exec_interrupt_tool_node)
         graph.add_edge(START, 'model')
-        graph.add_edge('tool', 'model')
         graph.add_conditional_edges(
             'model',
             self._dicide_next_action,
@@ -302,6 +444,17 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 'end': END
             }
         )
+        graph.add_edge('tool', 'interrupt_tool')
+        graph.add_conditional_edges(
+            'interrupt_tool',
+            lambda state: True if len(self._interrupt_tools) > 0 else self._dicide_after_tool(state),
+            {
+                True: 'interrupt_tool',
+                'model': 'model',
+                'end': END
+            }
+        )
+        
 
         return graph
 

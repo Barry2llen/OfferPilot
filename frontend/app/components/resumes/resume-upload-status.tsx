@@ -1,21 +1,21 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useResumeUpload } from "@/app/lib/context/resume-upload-context";
 import Button from "@/app/components/ui/button";
 
 export default function ResumeUploadStatus() {
   const { task, running, dismissTask } = useResumeUpload();
+  const { t } = useTranslation();
 
   if (!task) return null;
 
   const failed = task.status === "error";
   const completed = task.status === "success";
   const title = failed
-    ? "简历解析失败"
+    ? t("resume.parseFailed")
     : completed
-      ? "简历解析完成"
-      : "简历解析中";
+      ? t("resume.uploadComplete")
+      : t("resume.uploadInProgress");
 
   return (
     <div className="fixed bottom-4 left-4 z-[90] w-[min(360px,calc(100vw-2rem))] rounded-xl border border-border-default bg-white p-4 shadow-elevated">
@@ -29,7 +29,7 @@ export default function ResumeUploadStatus() {
             type="button"
             onClick={dismissTask}
             className="rounded-lg p-1 text-text-muted hover:bg-surface-secondary hover:text-text-primary"
-            aria-label="关闭简历解析状态"
+            aria-label={t("resume.closeUploadStatus")}
           >
             <svg
               className="h-4 w-4"
@@ -67,9 +67,9 @@ export default function ResumeUploadStatus() {
 
       {task.resumeId && !running && (
         <div className="mt-3 flex justify-end">
-          <Link href={`/resumes/${task.resumeId}`}>
+          <Link to={`/resumes/${task.resumeId}`}>
             <Button variant="secondary" size="sm">
-              查看简历
+              {t("resume.viewResume")}
             </Button>
           </Link>
         </div>

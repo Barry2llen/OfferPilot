@@ -1,15 +1,15 @@
 # OfferPilot Electron
 
-OfferPilot Electron is the desktop shell for OfferPilot. It starts the local backend and frontend services, waits for them to become ready, and opens the application in an Electron window.
+OfferPilot Electron is the desktop shell for OfferPilot. It starts the local FastAPI and Vite services in development, or a single FastAPI service that serves the React build in production, waits for readiness, and opens the application in an Electron window.
 
-The main process lives in `electron/main.ts`. In development it locates sibling projects at `../backend` and `../frontend`, starts them on available localhost ports, and injects the API URL into the frontend environment. In packaged builds it runs the staged backend executable and Next.js standalone server from Electron resources.
+The main process lives in `electron/main.ts`. In development it locates sibling projects at `../backend` and `../frontend`, starts FastAPI and Vite on available localhost ports, and exposes the backend URL through the preload bridge. In packaged builds it runs only the staged backend executable and passes `resources/frontend` as `--frontend-dist`; FastAPI serves both the API and the React SPA.
 
 ## Project Layout
 
 - `electron/main.ts` - Electron main process, service startup, logging, window lifecycle, and packaged runtime config.
 - `electron/preload.ts` - safe preload bridge exposing `window.offerPilotRuntime.apiBaseUrl`.
-- `src/` - Vite/React renderer shell. The current `App.tsx` is still the starter UI.
-- `scripts/prepare-frontend.mjs` - copies the Next.js standalone build into `resources/frontend`.
+- `src/` - Vite/React renderer shell used by the Electron development window.
+- `scripts/prepare-frontend.mjs` - copies the Vite `frontend/dist` build into `resources/frontend`.
 - `scripts/prepare-backend.mjs` - copies the PyInstaller backend output into `resources/backend/offer-pilot-api`.
 - `electron-builder.json5` - installer and extra resource configuration.
 
@@ -19,7 +19,7 @@ Generated directories such as `dist/`, `dist-electron/`, `release/`, `resources/
 
 - Node.js and npm
 - `uv` for backend packaging
-- A sibling `../frontend` project with a Next.js standalone build configuration
+- A sibling `../frontend` project with a Vite build (`npm run build` must produce `dist/index.html`)
 - A sibling `../backend` project with `pyproject.toml` and `packaging/offer_pilot_api.spec`
 
 Use `OFFER_PILOT_FRONTEND_DIR` and `OFFER_PILOT_BACKEND_DIR` if those projects are not located beside this repository.
@@ -38,7 +38,7 @@ Start the Electron development shell:
 npm run dev
 ```
 
-The development shell starts the backend with `uv run uvicorn main:app` and the frontend with `npm run dev`. Both services bind to `127.0.0.1` on available ports.
+The development shell starts the backend with `uv run uvicorn main:app` and the frontend with Vite's `npm run dev`. Both services bind to `127.0.0.1` on available ports. The frontend uses the runtime API URL exposed by preload; an independently started Vite server falls back to its API proxy.
 
 ## Build
 
@@ -54,7 +54,20 @@ Build the full Windows package:
 npm run build
 ```
 
-The full build runs frontend staging, backend packaging, Electron compilation, and `electron-builder --win --x64`.
+The full build runs the Vite frontend build and staging, backend packaging, Electron compilation, and `electron-builder --win --x64`. The packaged app starts only FastAPI; it does not require a Node frontend server.
+
+## Release workflow
+
+The repository-level `Release` workflow creates Windows releases from the
+`main` branch. A `bump-patch`, `bump-minor`, or `bump-major` dispatch creates a
+`release/vX.Y.Z` pull request. After that pull request is merged, the workflow
+creates the tag, runs the full Windows x64 build, and publishes the installer
+with automatically generated GitHub Release notes.
+
+Use the `build-windows` action with an existing `X.Y.Z` version to rebuild a
+Windows installer after a failed build or to replace the same release asset.
+The published compatibility filename is
+`OfferPilot-Windows-x64-vX.Y.Z.exe`.
 
 ## Quality Checks
 

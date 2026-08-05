@@ -1,6 +1,5 @@
-"use client";
-
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
 import type {
@@ -27,6 +26,7 @@ export default function SelectionForm({
   onCancel,
   submitting,
 }: SelectionFormProps) {
+  const { t } = useTranslation();
   const [providerName, setProviderName] = useState(
     initial?.provider.name || defaultProviderName || ""
   );
@@ -65,7 +65,7 @@ export default function SelectionForm({
     <form onSubmit={handleSubmit} className="space-y-5">
       <div>
         <label className="block text-sm font-medium text-text-primary mb-1.5">
-          模型供应商
+          {t("settings.modelProvider")}
         </label>
         <select
           value={providerName}
@@ -73,30 +73,30 @@ export default function SelectionForm({
           required
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         >
-          <option value="">选择供应商...</option>
+          <option value="">{t("settings.chooseProvider")}</option>
           {providers.map((p) => (
             <option key={p.name} value={p.name}>
               {p.name} ({p.provider}{" "}
-              {p.has_api_key ? "✓ 已配置" : "✗ 未配置密钥"})
+              {p.has_api_key ? t("settings.providerConfigured") : t("settings.providerNotConfigured")})
             </option>
           ))}
         </select>
         {providers.length === 0 && (
           <p className="text-xs text-warning-text mt-1">
-            暂无可用供应商，请先创建模型供应商配置
+            {t("settings.noAvailableProviders")}
           </p>
         )}
       </div>
 
       <div>
         <label className="block text-sm font-medium text-text-primary mb-1.5">
-          模型名称
+          {t("settings.modelName")}
         </label>
         <input
           type="text"
           value={modelName}
           onChange={(e) => setModelName(e.target.value)}
-          placeholder="如: gpt-4o-mini"
+          placeholder={t("settings.modelNamePlaceholder")}
           required
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40"
         />
@@ -115,10 +115,10 @@ export default function SelectionForm({
             <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${supportsImage ? "translate-x-4" : "translate-x-0"}`} />
           </div>
           <span className="text-sm font-medium text-text-primary">
-            支持图片输入
+            {t("settings.imageInput")}
           </span>
           <span className="text-xs text-text-muted">
-            用于简历图片和多模态工作流
+            {t("settings.imageInputDescription")}
           </span>
         </label>
       </div>
@@ -129,7 +129,7 @@ export default function SelectionForm({
           disabled={submitting || !providerName || !modelName}
           className="flex-1"
         >
-          {submitting ? "保存中..." : isEdit ? "保存更改" : "创建"}
+          {submitting ? t("common.saving") : isEdit ? t("settings.save") : t("common.create")}
         </Button>
         <Button
           type="button"
@@ -138,7 +138,7 @@ export default function SelectionForm({
           disabled={submitting}
           className="flex-1"
         >
-          取消
+          {t("common.cancel")}
         </Button>
       </div>
     </form>

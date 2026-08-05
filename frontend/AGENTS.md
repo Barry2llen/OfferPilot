@@ -1,77 +1,133 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
-
 # OfferPilot Frontend Agent Guide
 
-## 基本要求
+## General requirements
 
-- 始终用中文回复用户。
-- 修改代码前先阅读相关源码；涉及 Next.js 行为时，先查 `node_modules/next/dist/docs/` 中对应文档。本项目使用 `next@16.2.3`，不要按旧版 Next.js 经验直接改。
-- 工作区可能已有用户改动；不要回退非本次任务产生的修改。
+- Read the relevant source, configuration, and project documentation before
+  changing code.
+- The worktree may contain user changes. Do not revert changes outside the
+  current task.
 
-## 项目概览
+## Project overview
 
-- 技术栈：Next.js 16 App Router、React 19、TypeScript strict、Tailwind CSS v4。
-- 入口和路由都在 `app/` 下，没有 `src/` 或 `pages/` 目录。
-- `app/layout.tsx` 是服务端组件，负责 metadata、全局 CSS、`AppProvider`、`ToastProvider` 和 `AppShell`。
-- 主要页面：
-  - `app/page.tsx`：AI 对话页，使用 SSE 流式聊天。
-  - `app/resumes/page.tsx`：简历列表、上传、删除。
-  - `app/resumes/[id]/page.tsx`：简历详情、预览、替换、删除。
-  - `app/settings/providers/page.tsx`：模型供应商配置。
-  - `app/settings/selections/page.tsx`：模型选择配置。
-- 共享代码：
-  - `app/components/layout/`：全局外壳、侧边栏、上下文栏。
-  - `app/components/ui/`：Button、Card、Badge、Toast、Drawer、Dialog、Spinner 等基础 UI。
-  - `app/components/chat/`、`app/components/resumes/`、`app/components/settings/`：业务组件。
-  - `app/lib/api/`：后端 REST/SSE API 封装和共享类型。
-  - `app/lib/context/app-context.tsx`：当前模型选择、会话线程、Agent 状态、聊天历史刷新版本。
-  - `app/hooks/`：`useAsyncData` 和 `useChatStream`。
+- Stack: Vite, React 19, React Router, strict TypeScript, and Tailwind CSS v4.
+- Static entry: `index.html`; React entry: `main.tsx`; routes:
+  `app/router.tsx`.
+- Files under `app/**/page.tsx` are ordinary React Router page components and
+  are lazy-loaded with `React.lazy`.
+- `app/components/layout/app-error-boundary.tsx` provides the global error
+  boundary; `Suspense` provides route loading states.
+- Main pages:
+  - `app/page.tsx`: AI conversation with SSE streaming.
+  - `app/resumes/page.tsx`: resume list, upload, and deletion.
+  - `app/resumes/[id]/page.tsx`: resume details, preview, replacement, and
+    deletion.
+  - `app/job-descriptions/`: job-description analysis and details.
+  - `app/files/page.tsx`: chat attachment library.
+  - `app/settings/providers/page.tsx`: model provider and model selection
+    configuration.
+- Shared code:
+  - `app/components/layout/`: application shell, sidebar, and context bar.
+  - `app/components/ui/`: buttons, cards, badges, toasts, drawers, dialogs,
+    spinners, and other primitives.
+  - `app/components/chat/`, `app/components/resumes/`, and
+    `app/components/settings/`: domain components.
+  - `app/lib/api/`: REST/SSE API wrappers and shared types.
+  - `app/lib/context/app-context.tsx`: model selection, thread, Agent state,
+    chat history refresh, and global application state.
+  - `app/hooks/`: `useAsyncData` and `useChatStream`.
+  - `app/lib/i18n.ts`: `zh-CN` and `en-US` translation resources and
+    locale selection.
 
-## 开发命令
+## Development commands
 
-- 安装依赖：`npm install`
-- 本地开发：`npm run dev`
-- 代码检查：`npm run lint`
-- 生产构建：`npm run build`
+- `npm install`: install dependencies.
+- `npm run dev`: start the local Vite server.
+- `npm run lint`: run ESLint.
+- `npm run typecheck`: run the TypeScript compiler without emitting files.
+- `npm run build`: create the production Vite build.
 
-## Next.js / React 约定
+## React and routing conventions
 
-- 默认保留服务端组件；只有用到 state、effect、事件处理、浏览器 API、React context 或自定义客户端 hook 时才加 `"use client"`。
-- 不要把大范围布局无故改成客户端组件。客户端 Provider 可从服务端 `layout.tsx` 引入并包裹 `children`。
-- App Router 文件约定按 Next 16 文档执行：`page.tsx` 暴露路由，`layout.tsx` 提供布局，`loading.tsx` 和 `error.tsx` 处理加载和错误边界。
-- 动态路由如果使用服务端组件接收 `params`，先查 Next 16 文档；当前 `app/resumes/[id]/page.tsx` 是客户端组件，使用 `useParams()`。
-- 使用 `@/*` 路径别名，指向项目根目录，例如 `@/app/lib/api/client`。
+- Use React Router's `Link`, `useNavigate`, `useLocation`, and
+  `useParams`; do not introduce Next.js routing or components.
+- Keep routes `/`, `/resumes`, `/resumes/:id`, `/files`,
+  `/job-descriptions`, `/job-descriptions/:id`, and
+  `/settings/providers`.
+- `/settings` and `/settings/selections` redirect to
+  `/settings/providers`.
+- Use `React.lazy` and `Suspense` for page-level modules. Do not recreate
+  route loading boundaries inside individual pages.
+- Use the `@/*` path alias for imports from the project root.
 
-## API 与运行时配置
+## API and runtime configuration
 
-- 后端基础地址来自 `NEXT_PUBLIC_API_URL`，默认 `http://localhost:8080`。
-- 浏览器运行时也支持 `window.offerPilotRuntime?.apiBaseUrl` 覆盖 API 地址。
-- 所有普通 JSON 请求优先走 `apiRequest<T>()`；它会处理 base URL、JSON header、`FormData`、204 和 `ApiError`。
-- 文件上传使用 `FormData`，不要手动设置 JSON `Content-Type`。
-- SSE 聊天由 `aiChatApi.streamChat()` 和 `useChatStream()` 处理，事件类型包括 `thread`、`token`、`reasoning`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。
-- 新增后端字段或接口时，同步更新 `app/lib/api/types.ts` 和对应 API 模块。可参考根目录 `openapi.json`。
+- API URL precedence is
+  `window.offerPilotRuntime.apiBaseUrl`, `VITE_API_URL`, then the current
+  page's same-origin relative path.
+- Without `VITE_API_URL`, the Vite server proxies through
+  `VITE_API_PROXY_TARGET` (default `http://127.0.0.1:8080`).
+- Production is served by FastAPI from the same origin and uses relative API
+  paths by default.
+- Use `apiRequest<T>()` for ordinary JSON requests. It handles the base URL,
+  JSON headers, `FormData`, 204 responses, locale headers, and `ApiError`.
+- Use `FormData` for file uploads; do not set the JSON `Content-Type`
+  manually.
+- REST and SSE requests must send the active locale in `Accept-Language`.
+  The backend returns localized known errors and matching
+  `Content-Language`.
+- SSE chat is handled by `aiChatApi.streamChat()` and
+  `useChatStream()`. Event types include `thread`, `token`,
+  `reasoning`, `tool_start`, `tool_end`, `tool_error`, `interrupt`,
+  `final`, and `error`.
+- When adding or changing backend fields or endpoints, update
+  `app/lib/api/types.ts` and the corresponding API module.
 
-## 状态与交互模式
+## Internationalization
 
-- 全局会话状态通过 `AppProvider` 管理；不要为当前线程、当前模型选择、Agent 状态再创建平行全局状态。
-- 列表页常用 `useAsyncData(fetcher, deps)` 管理 loading/error/refetch。
-- 操作成功或失败通过 `useToast()` 给反馈；确认删除走 `ConfirmDialog`。
-- 表单抽屉使用 `FormDrawer`，提交期间用 `submitting`/`loading` 禁用按钮。
-- 对话流式状态集中在 `useChatStream()`，不要在页面里重复实现 SSE 解析。
+- All user-visible copy must use `i18next`/ `react-i18next`; do not add
+  hardcoded UI text in a component.
+- Keep both `zh-CN` and `en-US` resources in
+  `app/lib/i18n.ts), with Simplified Chinese as the fallback.
+- Initial locale precedence is persisted user choice, browser/system language,
+  then `zh-CN`. The selected locale must remain persisted across reloads.
+- Keep `document.documentElement.lang` and the page title synchronized with
+  the active locale.
+- Format dates, numbers, counts, labels, placeholders, validation messages,
+  empty/loading/error states, modal text, and accessibility labels through the
+  active locale.
+- Do not translate AI responses, user input, resume or job-description source
+  text, or persisted technical error details.
 
-## UI 与样式
+## State and interaction patterns
 
-- Tailwind v4 token 定义在 `app/globals.css` 的 `@theme inline` 中，优先复用现有颜色、字体、阴影和语义 token。
-- 基础按钮优先使用 `Button` 或 `buttonClassName()`；卡片、徽章、弹窗、抽屉、加载态优先使用 `app/components/ui/` 现有组件。
-- 页面主体布局目前偏后台工具风格：`max-w-2xl`/`max-w-3xl` 内容区、紧凑标题、列表卡片、清晰 loading/error/empty 状态。新增页面保持一致。
-- UI 文案以中文为主，匹配现有 OfferPilot 求职助手语境。
+- Keep global thread, model selection, Agent state, and chat refresh state in
+  `AppProvider`; do not create parallel global stores.
+- Use `useAsyncData(fetcher, deps)` for list-page loading, error, and refresh
+  state.
+- Report successful and failed operations with `useToast()`; use
+  `ConfirmDialog` for destructive confirmations.
+- Use `FormDrawer` for forms and disable controls while submitting.
+- Keep streaming state in `useChatStream()`; do not duplicate SSE parsing in
+  page components.
 
-## 验证要求
+## UI and styling
 
-- 改 TypeScript/React 代码后至少运行 `npm run lint`。
-- 涉及路由、构建配置、Next 特性或服务端/客户端边界时，运行 `npm run build`。
-- 仅改文档时不强制运行构建，但应检查 Markdown 内容和 git diff。
+- Tailwind v4 tokens are defined in `app/globals.css`; prefer existing
+  colors, fonts, shadows, and semantic tokens.
+- Prefer `Button` or `buttonClassName()` for buttons. Reuse existing UI
+  primitives for cards, badges, dialogs, drawers, loading, and empty states.
+- The application uses a compact, readable operations-console style. New
+  pages should preserve that visual language.
+- Verify both locales when changing layout: translated text can be longer,
+  and the language selector must remain usable on narrow screens.
+
+## Validation
+
+- After TypeScript/React changes, run `npm run lint` and
+  `npm run typecheck`.
+- For route, Vite, API-boundary, or rendering changes, run `npm run build`.
+- For UI behavior changes, verify initial load, deep-route refresh, desktop
+  and mobile layouts, language detection, manual switching, persistence,
+  loading/error/empty states, and browser console errors.
+- Documentation-only changes do not require a build, but Markdown content and
+  the git diff must be checked.

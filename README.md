@@ -1,45 +1,63 @@
 # OfferPilot
 
-OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Next.js 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、聊天附件上传与文件库复用、LangGraph checkpoint 会话恢复，以及 Windows 桌面安装包构建。
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-## 项目结构
+OfferPilot is a locally hosted AI job-search assistant monorepo with a
+FastAPI backend, a Vite + React SPA frontend, and an Electron desktop shell.
+It supports resume upload and preview, model-provider and model-selection
+configuration, synchronous and streaming AI conversations, reusable chat
+attachments, LangGraph checkpoint recovery, and Windows desktop packaging.
+
+## Project structure
 
 ```text
 OfferPilot/
-├── backend/   # FastAPI API、Agent、数据库、简历解析、pytest 测试
-├── frontend/  # Next.js 16 Web UI、SSE 聊天、简历和设置页面
-├── electron/  # Electron 桌面壳、托管进程、资源 staging、安装包构建
-├── docs/      # 跨项目技术文档
+├── backend/   # FastAPI APIs, Agents, database, resume parsing, pytest tests
+├── frontend/  # Vite + React web UI, SSE chat, resume and settings pages
+├── electron/  # Electron shell, managed processes, resource staging, packaging
+├── docs/      # Cross-project technical documentation
 └── LICENSE
 ```
 
-三个子项目目前保持依赖和命令独立：
+The three subprojects keep their dependencies and commands independent:
 
-- `backend/` 使用 Python `>=3.13` 和 `uv`。
-- `frontend/` 使用 Node.js、npm、Next.js 16、React 19。
-- `electron/` 使用 Node.js、npm、Electron、Vite、Electron Builder。
+- `backend/` uses Python `>=3.13` and `uv`.
+- `frontend/` uses Node.js, npm, Vite, React 19, and React Router.
+- `electron/` uses Node.js, npm, Electron, Vite, and Electron Builder.
 
-## 核心功能
+## Core features
 
-- 简历管理：上传解析、替换解析、列表、详情、删除和原文件预览；支持 PDF、DOCX、PNG、JPG、JPEG。解析任务在后端后台运行，前端路由切换不会中断已开始的解析。
-- 模型配置：维护模型供应商、API Key、Base URL 和具体模型选择；响应不回显 API Key 明文。
-- AI 对话：提供 `/ai/chat` 同步对话和 `/ai/chat/stream` SSE 流式对话，支持文本、图片、PDF、DOCX 和常见文本文件附件。
-- 文件库：前端新增“文件库”页面，后端提供 `/ai/files` 系列接口，可查看历史聊天附件并在不同会话中复用。
-- Agent 运行：基于 LangChain/LangGraph，支持工具调用、失败 interrupt/retry 和数据库 checkpoint。
-- 桌面运行：Electron 开发模式自动启动后端和前端，打包后从 Electron resources 启动本地服务。
+- Resume management: upload, parse, replace, list, inspect, delete, and
+  preview original files. PDF, DOCX, PNG, JPG, and JPEG are supported.
+  Parsing runs in the backend so changing frontend routes does not cancel a
+  task that has already started.
+- Model configuration: manage providers, API keys, base URLs, and model
+  selections without returning API keys in plaintext.
+- AI conversations: `/ai/chat` for synchronous responses and
+  `/ai/chat/stream` for SSE streaming, with text, image, PDF, DOCX, and common
+  text-file attachments.
+- File library: the frontend provides a file-library page and the backend
+  exposes `/ai/files` endpoints for viewing and reusing historical chat
+  attachments across conversations.
+- Agent runtime: LangChain/LangGraph tool calls, interrupt/retry handling,
+  and database checkpoints.
+- Desktop runtime: Electron starts the backend and frontend in development and
+  starts the local packaged service from Electron resources after packaging.
 
-## 环境要求
+## Requirements
 
 - Python `>=3.13`
 - `uv`
-- Node.js 和 npm
-- Windows 安装包构建需要 Electron Builder 与后端 PyInstaller 打包依赖
+- Node.js and npm
+- Electron Builder and backend PyInstaller packaging dependencies for Windows
+  installer builds
 
-后端默认使用 SQLite，不需要额外数据库服务。PostgreSQL 配置已预留，可在 `backend/config.yaml` 中启用。
+The backend uses SQLite by default and needs no additional database service.
+PostgreSQL configuration is available in `backend/config.yaml`.
 
-## 本地开发
+## Local development
 
-### 1. 启动后端
+### 1. Start the backend
 
 ```sh
 cd backend
@@ -47,15 +65,22 @@ uv sync
 uv run uvicorn main:app --reload --host 127.0.0.1 --port 8080
 ```
 
-后端默认读取 `backend/config.yaml`。如果需要新建本地配置，可参考 `backend/config.example.yaml`。默认 SQLite 数据库位于 `backend/data/offer_pilot.db`，简历文件位于 `backend/data/resumes`，聊天附件文件位于 `backend/data/chat_files`。
+The backend reads `backend/config.yaml` by default. Use
+`backend/config.example.yaml` as a template for a local configuration. The
+default SQLite database is `backend/data/offer_pilot.db`; resumes are stored
+under `backend/data/resumes`, and chat attachments under
+`backend/data/chat_files`.
 
-启动后可访问：
+Once started:
 
-- API 探活：`http://127.0.0.1:8080/`
-- Swagger 文档：`http://127.0.0.1:8080/docs`
-- OpenAPI JSON：`http://127.0.0.1:8080/openapi.json`
+- Health check: [http://127.0.0.1:8080/health](http://127.0.0.1:8080/health)
+- Swagger UI: [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs)
+- OpenAPI JSON: [http://127.0.0.1:8080/openapi.json](http://127.0.0.1:8080/openapi.json)
 
-### 2. 启动前端
+If `frontend/dist` has been built, FastAPI also serves the React application
+and deep-route fallback from [http://127.0.0.1:8080/](http://127.0.0.1:8080/).
+
+### 2. Start the frontend
 
 ```sh
 cd frontend
@@ -63,9 +88,13 @@ npm install
 npm run dev
 ```
 
-前端默认访问 `NEXT_PUBLIC_API_URL`，未配置时使用 `http://localhost:8080`。本地访问地址通常是 `http://localhost:3000`。
+The frontend uses the current page's same-origin relative API path by default.
+Without `VITE_API_URL`, Vite proxies API requests to
+`VITE_API_PROXY_TARGET`, which defaults to `http://127.0.0.1:8080`.
+The local frontend is usually available at
+[http://127.0.0.1:3000](http://127.0.0.1:3000).
 
-### 3. 启动 Electron 桌面壳
+### 3. Start the Electron shell
 
 ```sh
 cd electron
@@ -73,16 +102,18 @@ npm install
 npm run dev
 ```
 
-Electron 开发模式会自动查找相邻的 `backend/` 和 `frontend/`，选择可用 localhost 端口启动两个子进程，并把后端 API 地址注入给前端。
+Electron development discovers sibling `backend/` and `frontend/`
+directories, starts both processes on available localhost ports, and injects
+the backend API address into the frontend.
 
-如果子项目不在默认位置，可设置：
+If the subprojects are elsewhere, set:
 
 ```sh
 OFFER_PILOT_BACKEND_DIR=/path/to/backend
 OFFER_PILOT_FRONTEND_DIR=/path/to/frontend
 ```
 
-PowerShell 示例：
+PowerShell example:
 
 ```powershell
 $env:OFFER_PILOT_BACKEND_DIR="C:\projects\OfferPilot\backend"
@@ -90,9 +121,9 @@ $env:OFFER_PILOT_FRONTEND_DIR="C:\projects\OfferPilot\frontend"
 npm run dev
 ```
 
-## 常用命令
+## Common commands
 
-后端：
+Backend:
 
 ```sh
 cd backend
@@ -102,15 +133,16 @@ uv run pytest tests/unit/test_ai_api.py
 uv run pytest tests/unit/test_resume_api.py
 ```
 
-前端：
+Frontend:
 
 ```sh
 cd frontend
 npm run lint
+npm run typecheck
 npm run build
 ```
 
-Electron：
+Electron:
 
 ```sh
 cd electron
@@ -119,49 +151,110 @@ npm run build:electron
 npm run build
 ```
 
-在 `electron/` 目录运行 `npm run build` 会依次构建前端 standalone bundle、用 PyInstaller 打包后端、构建 Electron/Vite 输出，并生成 Windows x64 NSIS 安装包。
+Running `npm run build` in `electron/` builds and stages `frontend/dist`,
+packages the backend with PyInstaller, builds the Electron/Vite output, and
+generates a Windows x64 NSIS installer. The packaged application starts only
+FastAPI; FastAPI serves the frontend static files.
 
-## 运行配置
+## Windows releases
 
-后端主要配置项位于 `backend/config.example.yaml`：
+Windows releases are managed by
+`.github/workflows/build-windows-release.yml` through the `Release` workflow.
+Run version bumps from the `main` branch in GitHub Actions:
 
-- `database`：默认 SQLite，路径 `./data/offer_pilot.db`；可切换 PostgreSQL。
-- `resume_upload_dir`：默认 `./data/resumes`。
-- `chat_file_upload_dir`：默认 `./data/chat_files`，用于 AI 对话附件和文件库。
-- `cors`：本地开发默认允许跨域。
-- `exa_api_key`：存在时启用 Exa Web Search 工具；缺失时禁用相关工具。
-- `web_search`、`model_call_retry_attempts`、`graph_recursion_limit`、`debug`：用于 Agent 工具、重试、LangGraph 递归上限和调试行为。
+1. Select `bump-patch`, `bump-minor`, or `bump-major`.
+2. Review and merge the generated `release/vX.Y.Z` pull request.
+3. The merge creates tag `vX.Y.Z`, builds the Windows x64 NSIS installer, and
+   publishes a GitHub Release with automatically generated notes.
 
-前端运行时配置：
+The bump keeps the root project, frontend, Electron shell, lockfiles, and
+sidebar version labels synchronized. The backend package version is managed
+independently. To rebuild an existing release asset, run the same workflow with
+`build-windows` and enter the existing version as `X.Y.Z` without the leading
+`v`. The uploaded asset is named `OfferPilot-Windows-x64-vX.Y.Z.exe`.
 
-- `NEXT_PUBLIC_API_URL`：后端 API 基础地址。
-- `window.offerPilotRuntime.apiBaseUrl`：Electron preload 注入的运行时覆盖地址。
+## Runtime configuration
 
-Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置；首次启动时如果该文件不存在，会在 `~/.offerpilot` 下创建默认配置、SQLite 数据库目录、简历上传目录和后端运行时日志目录。托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
+Backend configuration is documented in `backend/config.example.yaml`:
 
-## API 概览
+- `database`: SQLite by default at `./data/offer_pilot.db`, with optional
+  PostgreSQL support.
+- `resume_upload_dir`: defaults to `./data/resumes`.
+- `chat_file_upload_dir`: defaults to `./data/chat_files` for AI
+  attachments and the file library.
+- `cors`: cross-origin requests are allowed by default for local development.
+- `exa_api_key`: enables the Exa Web Search tool when present; related tools
+  are disabled when it is absent.
+- `web_search`, `model_call_retry_attempts`,
+  `graph_recursion_limit`, and `debug`: configure Agent tools, retries,
+  LangGraph recursion limits, and debugging.
 
-- `/resumes`：简历上传解析、列表、详情、替换解析、删除和预览。
-- `/model-providers`：模型供应商配置 CRUD。
-- `/model-selections`：模型选择配置 CRUD。
-- `/ai/chat`：同步 AI 对话。
-- `/ai/chat/stream`：SSE 流式 AI 对话。
-- `/ai/files`：聊天附件文件库列表、详情和原文件查看。
+Frontend and static-hosting runtime settings:
 
-AI 对话流式事件包括 `thread`、`token`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。前端当前也支持展示 `reasoning` 类型事件。`thread` 事件会额外返回 `resolved_attachments`、`attachment_count` 和 `requires_image_input`，用于前端回填正式文件 ID，并在图片模式附件线程切换到仅文本模型时展示非阻塞提示。
+- `VITE_API_URL`: backend API base URL at build time; same-origin relative
+  paths are used when unset.
+- `VITE_API_PROXY_TARGET`: Vite development API proxy target, defaulting to
+  `http://127.0.0.1:8080`.
+- `window.offerPilotRuntime.apiBaseUrl`: runtime override injected by the
+  Electron preload bridge.
+- `OFFER_PILOT_FRONTEND_DIST`: FastAPI frontend directory override. It
+  defaults to the repository's `frontend/dist`; Electron production passes
+  `resources/frontend` with `--frontend-dist`.
 
-简历上传和替换接口使用 `text/event-stream` 返回解析进度，事件包括 `resume`、`progress`、`model_error`、`final`、`error`，请求必须携带 `selection_id`。SSE 连接断开不代表解析取消，最终结果以列表/详情接口持久化的解析状态为准。
+After packaging, Electron reads backend configuration from
+`~/.offerpilot/config.yaml`. On first launch it creates default
+configuration, SQLite data, resume-upload, and backend runtime-log
+directories under `~/.offerpilot`. Managed-process stdout/stderr remains
+under Electron's `userData/logs`.
 
-客户端收到 `interrupt` 后，应使用同一个 `thread_id` 发送 `command.type="retry"` 恢复执行。
+## API overview
 
-## 开发约定
+- `/resumes`: resume upload/parsing, list, detail, replacement, deletion,
+  and preview.
+- `/model-providers`: model-provider configuration CRUD.
+- `/model-selections`: model-selection configuration CRUD.
+- `/ai/chat`: synchronous AI conversation.
+- `/ai/chat/stream`: streaming AI conversation over SSE.
+- `/ai/files`: chat-attachment library list, detail, and original-file
+  access.
 
-- 根目录 `AGENTS.md` 描述总仓库规则；进入具体子项目后继续遵守对应子目录的 `AGENTS.md`。
-- 后端接口或 schema 变化时，同步更新前端 `app/lib/api/` 类型和调用。
-- SSE 协议变化时，同步更新后端事件输出、前端 `useChatStream()` 和相关 UI。
-- 打包或资源目录变化时，同步更新 Electron scripts、Electron README 和本文件。
-- 不要提交真实密钥、本地配置、数据库、日志、依赖目录或构建产物。
+AI streaming events include `thread`, `token`, `tool_start`,
+`tool_end`, `tool_error`, `interrupt`, `final`, and `error`. The
+frontend also supports `reasoning` events. A `thread` event can include
+`resolved_attachments`, `attachment_count`, and
+`requires_image_input`, which let the frontend restore formal file IDs and
+show a non-blocking notice when an image-attachment thread switches to a
+text-only model.
 
-## 许可证
+Resume upload and replacement endpoints return parsing progress as
+`text/event-stream` events: `resume`, `progress`, `model_error`,
+`final`, and `error`. Requests must include `selection_id`. Disconnecting
+an SSE connection does not cancel parsing; the persisted parsing status from
+the list/detail endpoints is authoritative.
 
-见 `LICENSE`。
+After receiving an `interrupt`, the client should send
+`command.type="retry"` with the same `thread_id` to resume execution.
+
+The frontend supports Simplified Chinese and English. The initial locale uses
+the persisted user choice, then the browser/system language, and falls back to
+Simplified Chinese. REST and SSE requests send `Accept-Language`; the backend
+returns matching `Content-Language` and localizes known errors and temporary
+progress messages. AI output, user input, and source documents remain
+unchanged.
+
+## Development conventions
+
+- The root `AGENTS.md` contains repository-wide rules; follow the relevant
+  subproject guide after entering a subproject.
+- When backend APIs or schemas change, update frontend types and calls under
+  `app/lib/api/`.
+- When the SSE protocol changes, update backend event output,
+  `useChatStream()`, and related UI together.
+- When packaging or resource directories change, update Electron scripts,
+  Electron documentation, and this README.
+- Never commit real keys, local configuration, databases, logs, dependency
+  directories, or build artifacts.
+
+## License
+
+See `LICENSE`.

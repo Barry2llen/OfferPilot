@@ -200,7 +200,7 @@ def _resolve_json_schema_ref(ref: str, root: dict[str, Any]) -> dict[str, Any] |
     return resolved if isinstance(resolved, dict) else None
 
 
-def load_chat_model(model_selection: ModelSelection | None) -> BaseChatModel:
+def load_chat_model(model_selection: ModelSelection | None, **kwargs) -> BaseChatModel:
     if model_selection is None:
         raise ChatModelLoadError("Model selection is required to load a chat model.")
     return _load_chat_model_cached(
@@ -208,6 +208,7 @@ def load_chat_model(model_selection: ModelSelection | None) -> BaseChatModel:
         model_name=model_selection.model_name,
         base_url=model_selection.provider.base_url,
         api_key=model_selection.provider.api_key,
+        **kwargs
     )
 
 
@@ -218,6 +219,7 @@ def _load_chat_model_cached(
     model_name: str,
     base_url: str | None,
     api_key: str | None,
+    **kwargs: Any,
 ) -> BaseChatModel:
     
     from dotenv import load_dotenv
@@ -242,16 +244,18 @@ def _load_chat_model_cached(
                 deepseek_kwargs["api_base"] = base_url
             if api_key is not None:
                 deepseek_kwargs["api_key"] = api_key
-            return DeepSeekThinkingChatModel(**deepseek_kwargs)
+            return DeepSeekThinkingChatModel(**deepseek_kwargs, **kwargs)
 
         return init_chat_model(
             model_provider=model_provider,
             model=model_name,
             base_url=base_url,
             api_key=api_key,
+            **kwargs
         ) if required_base_and_key else init_chat_model(
             model_provider=model_provider,
             model=model_name,
+            **kwargs
         )
     except Exception as e:
         logger.error(f"Error loading chat model for provider {provider_name}: {e}")

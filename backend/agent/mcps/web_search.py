@@ -7,10 +7,9 @@ import httpx
 from langchain.tools import BaseTool
 import langchain_mcp_adapters.sessions as mcp_sessions
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from mcp.client.streamable_http import (
-    create_mcp_http_client,
-    streamable_http_client,
-)
+from langchain_mcp_adapters.sessions import StreamableHttpConnection
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 
 
 @asynccontextmanager
@@ -44,14 +43,14 @@ async def _streamable_http_client(
 
 
 # langchain-mcp-adapters 0.2.2 still calls the deprecated MCP alias.
-mcp_sessions.streamablehttp_client = _streamable_http_client
+setattr(mcp_sessions, "streamablehttp_client", _streamable_http_client)
 
-client = MultiServerMCPClient({
-    "exa": {
-      "transport": "http",
-      "url": "https://mcp.exa.ai/mcp"
-    }
-})
+exa_connection: StreamableHttpConnection = {
+    "transport": "streamable_http",
+    "url": "https://mcp.exa.ai/mcp",
+}
+
+client = MultiServerMCPClient({"exa": exa_connection})
 
 web_search_mcp_tools: list[BaseTool] = []
 

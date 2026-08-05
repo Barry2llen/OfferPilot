@@ -5,16 +5,17 @@ from typing import Sequence, override
 from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
-from langgraph.graph.message import REMOVE_ALL_MESSAGES, RemoveMessage
 from langchain_core.runnables import Runnable
 from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from exceptions.agent import ModelCallExecutionError
-from exceptions.validation import ValidationError
 from utils import document_parser
 from utils.logger import logger
+from utils.custom_events import (
+    _adispatch_custom_event_safely,
+    _dispatch_custom_event_safely,
+)
 from schemas.config import Config
 from schemas.command import BaseCommand
 from schemas.model_selection import ModelSelection
@@ -25,6 +26,7 @@ from schemas.job_description import (
     JdFactsEx,
     JdRequirementBlock,
     JdRequirementBlockEx,
+    JdSalary,
 )
 from .state import State
 from .prompt import (
@@ -42,6 +44,7 @@ from ...models import load_structured_model
 
 
 _FACT_EXTRACTION_CONCURRENCY = 5
+JD_STRUCTURED_OUTPUT_METHOD = "function_calling"
 
 
 async def _get_jd_source_tools(config: Config | None = None):
@@ -50,28 +53,6 @@ async def _get_jd_source_tools(config: Config | None = None):
         mark_jd_extraction_success,
         mark_jd_extraction_failure,
     )
-
-
-def _is_missing_parent_run_error(error: RuntimeError) -> bool:
-    return "parent run id" in str(error)
-
-
-def _dispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        dispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
-
-
-async def _adispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        await adispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
 
 
 def _message_content_to_text(content: object) -> str:
@@ -172,7 +153,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
             source_parts.append(f"[current_messages]\n{message_text}")
         if images:
             source_parts.append(
-                f"[images]\n{len(images)} image(s) were provided as data URLs."
+                f"[images]\n{len(images)} image(s) were provided."
             )
         if len(source_parts) == 2 and not images:
             source_parts.append("[empty]\nNo JD source was provided.")
@@ -188,7 +169,13 @@ class JdAnalyzerAgent(BaseAgent[State]):
         elif images:
             ocr_parts: list[str] = []
             for index, image in enumerate(images, start=1):
-                ocr_text = document_parser.extract_image_data_url_ocr(image)
+                # When images are provided and needs ocr, the process of ocr is probably already done by services.
+                # So here we support both raw image data url and ocr text as input, and if it's image data url, we will do ocr to extract text and include in the prompt.
+                ocr_text = (
+                    document_parser.extract_image_data_url_ocr(image)
+                    if document_parser.is_image_data_url(image)
+                    else image
+                )
                 ocr_parts.append(
                     f"[image_{index}_ocr]\n{ocr_text.strip() if ocr_text else ''}"
                 )
@@ -215,7 +202,6 @@ class JdAnalyzerAgent(BaseAgent[State]):
 
         return State(
             messages=[
-                RemoveMessage(id=REMOVE_ALL_MESSAGES),
                 HumanMessage(content=content_blocks), # type: ignore
             ],
             source_url=source_url,
@@ -238,26 +224,28 @@ class JdAnalyzerAgent(BaseAgent[State]):
 
         if not tool_name:
             logger.warning("No JD extraction marker tool call found.")
+            error_message = "JD extraction failed: missing marker tool call."
             _dispatch_custom_event_safely(
                 "on_progress_update",
                 ProgressUpdateEvent(
                     progress=1.0,
-                    message="JD extraction failed: missing marker tool call.",
+                    message=error_message,
                 ),
             )
-            return State(jd_text=None, source_url=source_url)
+            return State(jd_text=None, source_url=source_url, jd_error=error_message)
 
         if tool_name == mark_jd_extraction_failure.name:
-            logger.warning(f"JD extraction failed: {tool_content[:200]}")
+            error_message = tool_content or "JD extraction failed."
+            logger.info(f"JD extraction failed: {error_message[:200]}")
             _dispatch_custom_event_safely(
                 "on_progress_update",
                 ProgressUpdateEvent(
                     progress=1.0,
                     message="JD extraction failed.",
-                    additional_data={"reason": tool_content[:500]},
+                    additional_data={"reason": error_message[:500]},
                 ),
             )
-            return State(jd_text=None, source_url=source_url)
+            return State(jd_text=None, source_url=source_url, jd_error=error_message)
 
         if tool_name == mark_jd_extraction_success.name and tool_content:
             _dispatch_custom_event_safely(
@@ -271,18 +259,19 @@ class JdAnalyzerAgent(BaseAgent[State]):
             return State(jd_text=tool_content, source_url=source_url)
 
         logger.warning(f"Unexpected or empty JD extraction tool result: {tool_name}")
+        error_message = "JD extraction failed: invalid marker tool result."
         _dispatch_custom_event_safely(
             "on_progress_update",
             ProgressUpdateEvent(
                 progress=1.0,
-                message="JD extraction failed: invalid marker tool result.",
+                message=error_message,
                 additional_data={
                     "tool_name": tool_name,
                     "text_length": len(tool_content),
                 },
             ),
         )
-        return State(jd_text=None, source_url=source_url)
+        return State(jd_text=None, source_url=source_url, jd_error=error_message)
 
     def _should_continue(self, state: State) -> str:
         """Route: if jd_text was extracted, continue to structure extraction; otherwise end."""
@@ -305,36 +294,33 @@ class JdAnalyzerAgent(BaseAgent[State]):
         jd_text: str = state.get("jd_text")  # type: ignore
 
         while True:
-            result: JobDescriptionEx | None = None
             max_retries = self.config.model_call_retry_attempts
-            for attempt in range(max_retries):
-                try:
-                    extractor = load_structured_model(model_selection, JobDescriptionEx)
-                    logger.debug("Invoking model for JD structure extraction.")
-                    candidate = await extractor.ainvoke([
+            repair_attempts = max(0, max_retries - 1)
+            try:
+                extractor = load_structured_model(
+                    model_selection,
+                    JobDescriptionEx,
+                    method=JD_STRUCTURED_OUTPUT_METHOD,
+                )
+                logger.debug("Invoking model for JD structure extraction.")
+                result = await extractor.ainvoke(
+                    [
                         SystemMessage(content=jd_extraction_system_prompt),
                         HumanMessage(content=jd_text),
-                    ])
-
-                    if not isinstance(candidate, JobDescriptionEx):
-                        logger.debug(f"JD extraction result is not in expected format: {candidate}")
-                        raise ValidationError("JD extraction result is not in the expected format.")
-
-                    result = candidate
-                    break
-                except Exception as e:
-                    logger.error(
-                        f"Error calling model for JD extraction, attempt {attempt + 1}/{max_retries}:\n{e}"
-                    )
-                    await _adispatch_custom_event_safely(
-                        "on_model_call_error",
-                        ModelCallErrorEvent(
-                            error=str(e), attempt=attempt + 1, max_attempts=max_retries
-                        ),
-                    )
-
-            if result is not None:
+                    ],
+                    max_repair_attempts=repair_attempts,
+                )
                 break
+            except Exception as e:
+                logger.error(
+                    f"Error calling model for JD extraction after {max_retries} attempts:\n{e}"
+                )
+                await _adispatch_custom_event_safely(
+                    "on_model_call_error",
+                    ModelCallErrorEvent(
+                        error=str(e), attempt=max_retries, max_attempts=max_retries
+                    ),
+                )
 
             logger.error(f"Model call failed after {max_retries} retries for JD extraction.")
             resp: BaseCommand = interrupt(
@@ -406,18 +392,22 @@ class JdAnalyzerAgent(BaseAgent[State]):
             block: JdRequirementBlockEx,
             extractor: Runnable[LanguageModelInput, JdFactsEx],
         ) -> tuple[int, JdRequirementBlock | None]:
-            block_text = f"[{block.block_type}] {block.title}\n{block.content}"
+            block_text = (
+                f"[block_id]\n{block.block_id}\n\n"
+                f"[block_type]\n{block.block_type}\n\n"
+                f"[title]\n{block.title}\n\n"
+                f"[content]\n{block.content}"
+            )
             try:
                 logger.debug(f"Extracting facts from JD block: {block.title}")
                 async with semaphore:
-                    facts_result: JdFactsEx = await extractor.ainvoke([
-                        SystemMessage(content=jd_facts_extraction_system_prompt),
-                        HumanMessage(content=block_text),
-                    ])
-
-                if not isinstance(facts_result, JdFactsEx):
-                    logger.debug(f"Facts result not in expected format: {facts_result}")
-                    raise ValidationError("Facts result is not in the expected format.")
+                    facts_result: JdFactsEx = await extractor.ainvoke(
+                        [
+                            SystemMessage(content=jd_facts_extraction_system_prompt),
+                            HumanMessage(content=block_text),
+                        ],
+                        max_repair_attempts=max(0, self.config.model_call_retry_attempts - 1),
+                    )
 
                 return (
                     index,
@@ -425,7 +415,18 @@ class JdAnalyzerAgent(BaseAgent[State]):
                         block_type=block.block_type,
                         title=block.title,
                         content=block.content,
-                        facts=[JdFact(**fact.model_dump()) for fact in facts_result.facts],
+                        facts=[
+                            JdFact(
+                                fact_type=fact.fact_type,
+                                custom_fact_type=fact.custom_fact_type,
+                                importance=fact.importance,
+                                text=fact.text,
+                                evidence=fact.evidence,
+                                keywords=fact.keywords,
+                            )
+                            for fact in facts_result.facts
+                            if fact.block_id == block.block_id
+                        ],
                     ),
                 )
             except Exception as e:
@@ -447,7 +448,11 @@ class JdAnalyzerAgent(BaseAgent[State]):
             max_retries = self.config.model_call_retry_attempts
             for attempt in range(max_retries):
                 try:
-                    extractor = load_structured_model(model_selection, JdFactsEx)
+                    extractor = load_structured_model(
+                        model_selection,
+                        JdFactsEx,
+                        method=JD_STRUCTURED_OUTPUT_METHOD,
+                    )
                 except Exception as e:
                     logger.error(
                         f"Error loading model for JD fact extraction, attempt {attempt + 1}/{max_retries}:\n{e}"
@@ -556,16 +561,27 @@ class JdAnalyzerAgent(BaseAgent[State]):
             job_family=extracted.job_family,
             primary_location=extracted.primary_location,
             locations=extracted.locations,
-            remote_policy=extracted.remote_policy,
-            employment_type=extracted.employment_type,
+            remote_policy_raw=extracted.remote_policy_raw,
+            employment_type_raw=extracted.employment_type_raw,
             experience_raw=extracted.experience_raw,
             years_experience_min=extracted.years_experience_min,
             years_experience_max=extracted.years_experience_max,
-            experience_level=extracted.experience_level,
             education_raw=extracted.education_raw,
-            education_min=extracted.education_min,
+            education_min_rank=extracted.education_min_rank,
             major_requirement=extracted.major_requirement,
-            salary=extracted.salary,
+            salary=JdSalary(
+                raw=extracted.salary_raw,
+                min_monthly=extracted.salary_min_monthly,
+                max_monthly=extracted.salary_max_monthly,
+                months_per_year=extracted.salary_months_per_year,
+                currency=extracted.salary_currency,
+            ) if (
+                extracted.salary_raw
+                or extracted.salary_min_monthly is not None
+                or extracted.salary_max_monthly is not None
+                or extracted.salary_months_per_year is not None
+                or extracted.salary_currency is not None
+            ) else None,
             benefits=extracted.benefits,
             blocks=blocks_with_facts,
         )

@@ -1,8 +1,7 @@
-"use client";
-
 import Card from "@/app/components/ui/card";
 import Badge from "@/app/components/ui/badge";
 import Button from "@/app/components/ui/button";
+import { useTranslation } from "react-i18next";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
 
 interface SelectionCardProps {
@@ -18,6 +17,7 @@ export default function SelectionCard({
   onDelete,
   deleting,
 }: SelectionCardProps) {
+  const { t } = useTranslation();
   return (
     <Card>
       <div className="flex items-start justify-between gap-4">
@@ -31,25 +31,25 @@ export default function SelectionCard({
             </Badge>
           </div>
           <p className="text-sm text-text-secondary">
-            供应商: {selection.provider.name} ({selection.provider.provider})
+            {t("settings.provider")}: {selection.provider.name} ({selection.provider.provider})
           </p>
           <div className="flex items-center gap-2 mt-1.5">
             <Badge
               variant={selection.supports_image_input ? "success" : "neutral"}
               size="sm"
             >
-              {selection.supports_image_input ? "支持图片" : "仅文本"}
+              {selection.supports_image_input ? t("settings.imageSupported") : t("settings.textOnly")}
             </Badge>
             {selection.provider.has_api_key ? null : (
               <Badge variant="warning" size="sm">
-                供应商未配置密钥
+                {t("settings.missingKey")}
               </Badge>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="ghost" size="sm" onClick={() => onEdit(selection)}>
-            编辑
+            {t("settings.edit")}
           </Button>
           <Button
             variant="ghost"
@@ -58,7 +58,7 @@ export default function SelectionCard({
             disabled={deleting}
             className="text-error-text hover:bg-error-bg"
           >
-            {deleting ? "删除中..." : "删除"}
+            {deleting ? t("settings.deleting") : t("settings.delete")}
           </Button>
         </div>
       </div>

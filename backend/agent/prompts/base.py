@@ -76,7 +76,11 @@ def normalize_system_prompts[State: StateLike = BaseAgentState](
         return []
 
     if callable(system_prompts):
-        return lambda runtime: normalize_system_prompts(system_prompts(runtime))
+        def build_messages(runtime: GraphRuntime[State]) -> list[SystemMessage]:
+            normalized = normalize_system_prompts(system_prompts(runtime))
+            return normalized(runtime) if callable(normalized) else normalized
+
+        return build_messages
 
     if isinstance(system_prompts, str):
         prompts = [SystemMessage(content=system_prompts)]

@@ -1,6 +1,5 @@
-"use client";
-
 import { useState, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { aiChatApi } from "@/app/lib/api/ai";
 import { chatFilesApi } from "@/app/lib/api/chat-files";
 import { useAppActions } from "@/app/lib/context/app-context";
@@ -8,6 +7,8 @@ import type {
   SSEEvent,
   AIChatHistoryMessage,
   ChatAttachmentRef,
+  AIChatCommand,
+  QueryChoice,
 } from "@/app/lib/api/types";
 
 export interface ToolCallEntry {
@@ -50,6 +51,23 @@ export interface ChatMessage {
   toolOutput?: unknown;
   toolError?: string;
 }
+
+export interface ChatInterrupt {
+  interruptId: string;
+  type: string;
+  message: string;
+  question?: string;
+  firstChoice?: string;
+  firstChoiceDescription?: string;
+  secondChoice?: string;
+  secondChoiceDescription?: string;
+  thirdChoice?: string;
+  thirdChoiceDescription?: string;
+}
+
+type ChatMessagesUpdater =
+  | ChatMessage[]
+  | ((prev: ChatMessage[]) => ChatMessage[]);
 
 function extractTextContent(content: unknown): string {
   if (typeof content === "string") {
@@ -134,6 +152,47 @@ function findLastRunningToolMessageIndex(
   return -1;
 }
 
+function mergeQueryInterruptInput(
+  input: Record<string, unknown> | undefined,
+  eventData: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...(input ?? {}),
+    question:
+      typeof eventData.question === "string"
+        ? eventData.question
+        : input?.question,
+    firstChoice:
+      typeof eventData.firstChoice === "string"
+        ? eventData.firstChoice
+        : input?.firstChoice,
+    firstChoiceDescription:
+      typeof eventData.firstChoiceDescription === "string"
+        ? eventData.firstChoiceDescription
+        : input?.firstChoiceDescription,
+    secondChoice:
+      typeof eventData.secondChoice === "string"
+        ? eventData.secondChoice
+        : input?.secondChoice,
+    secondChoiceDescription:
+      typeof eventData.secondChoiceDescription === "string"
+        ? eventData.secondChoiceDescription
+        : input?.secondChoiceDescription,
+    thirdChoice:
+      typeof eventData.thirdChoice === "string"
+        ? eventData.thirdChoice
+        : input?.thirdChoice,
+    thirdChoiceDescription:
+      typeof eventData.thirdChoiceDescription === "string"
+        ? eventData.thirdChoiceDescription
+        : input?.thirdChoiceDescription,
+  };
+}
+
+function isQueryInterruptToolError(name: string, detail: string): boolean {
+  return name === "query" && detail.includes("Interrupt(") && detail.includes("query");
+}
+
 function findLastAssistantMessageIndex(messages: ChatMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index].role === "assistant") {
@@ -170,6 +229,24 @@ function cloneMessages(messages: ChatMessage[]): ChatMessage[] {
     ...message,
     attachments: message.attachments ? [...message.attachments] : undefined,
   }));
+}
+
+function findLastRunningCommittedToolMessageIndex(
+  messages: ChatMessage[],
+  name: string
+): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (
+      message.role === "tool" &&
+      message.toolName === name &&
+      message.toolStatus === "running"
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function shouldDisplayHistoryMessage(message: ChatMessage): boolean {
@@ -258,14 +335,14 @@ function buildStreamBody(
   selectionId: number,
   prompt: string,
   threadId: string | null | undefined,
-  command: { type: "prompt" | "continue" | "retry"; prompt?: string | null } | undefined,
+  command: AIChatCommand | undefined,
   options: ChatStartOptions | undefined
 ): FormData | {
   selection_id: number;
   prompt?: string | null;
   thread_id?: string | null;
   file_ids?: string[];
-  command?: { type: "prompt" | "continue" | "retry"; prompt?: string | null } | null;
+  command?: AIChatCommand | null;
 } {
   const fileIds = options?.fileIds ?? [];
   const localFiles = options?.localFiles ?? [];
@@ -301,6 +378,7 @@ function buildStreamBody(
 }
 
 export function useChatStream() {
+  const { t } = useTranslation();
   const {
     setThreadId,
     setThreadRequiresImageInput,
@@ -312,20 +390,25 @@ export function useChatStream() {
   const [streamingText, setStreamingText] = useState("");
   const [streamingReasoning, setStreamingReasoning] = useState("");
   const [toolCalls, setToolCalls] = useState<ToolCallEntry[]>([]);
-  const [interrupt, setInterrupt] = useState<{
-    interruptId: string;
-    message: string;
-  } | null>(null);
+  const [interrupt, setInterrupt] = useState<ChatInterrupt | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const pendingTokenRef = useRef("");
   const rafIdRef = useRef<number | null>(null);
   const messageIdRef = useRef(0);
+  const messagesRef = useRef<ChatMessage[]>([]);
 
   const createMessageId = useCallback((role: ChatMessage["role"]) => {
     messageIdRef.current += 1;
     return `${role}-${messageIdRef.current}`;
+  }, []);
+
+  const setCommittedMessages = useCallback((updater: ChatMessagesUpdater) => {
+    const next =
+      typeof updater === "function" ? updater(messagesRef.current) : updater;
+    messagesRef.current = next;
+    setMessages(next);
   }, []);
 
   const clearStreamingState = useCallback(() => {
@@ -344,15 +427,15 @@ export function useChatStream() {
   }, []);
 
   const clearMessages = useCallback(() => {
-    setMessages([]);
-  }, []);
+    setCommittedMessages([]);
+  }, [setCommittedMessages]);
 
   const startChat = useCallback(
     async (
       selectionId: number,
       prompt: string,
       threadId?: string | null,
-      command?: { type: "prompt" | "continue" | "retry"; prompt?: string | null },
+      command?: AIChatCommand,
       options?: ChatStartOptions
     ) => {
       abortRef.current?.abort();
@@ -372,6 +455,8 @@ export function useChatStream() {
       let visibleAssistantText = "";
       let userMessageId: string | null = null;
       let requestAccepted = false;
+      let resumedQueryToolEntry: ToolCallEntry | null = null;
+      let pendingQueryResumeMerge = command?.type === "query";
 
       const publishLiveMessages = () => {
         setLiveMessages([...currentLiveMessages]);
@@ -423,13 +508,44 @@ export function useChatStream() {
         setStreamingReasoning("");
       };
 
+      const commitLiveMessages = () => {
+        flushTokenFrame();
+        const completedLiveMessages = cloneMessages(currentLiveMessages);
+        if (completedLiveMessages.length > 0) {
+          setCommittedMessages((prev) => [...prev, ...completedLiveMessages]);
+        }
+        currentLiveMessages = [];
+        currentAssistantIndex = null;
+        setLiveMessages([]);
+        setStreamingText("");
+        setStreamingReasoning("");
+      };
+
+      const updateLastCommittedRunningToolMessage = (
+        name: string,
+        entry: ToolCallEntry
+      ): boolean => {
+        const index = findLastRunningCommittedToolMessageIndex(
+          messagesRef.current,
+          name
+        );
+        if (index < 0) {
+          return false;
+        }
+
+        const next = [...messagesRef.current];
+        next[index] = toolCallToMessage(entry, next[index].id);
+        setCommittedMessages(next);
+        return true;
+      };
+
       const body = buildStreamBody(selectionId, prompt, threadId, command, options);
       const shouldCreateUserMessage = !command || command.type === "prompt";
 
       if (shouldCreateUserMessage) {
         const newUserMessageId = createMessageId("user");
         userMessageId = newUserMessageId;
-        setMessages((prev) => [
+        setCommittedMessages((prev) => [
           ...prev,
           {
             id: newUserMessageId,
@@ -446,7 +562,7 @@ export function useChatStream() {
         if (!userMessageId) {
           return;
         }
-        setMessages((prev) =>
+        setCommittedMessages((prev) =>
           prev.filter((message) => message.id !== userMessageId)
         );
       };
@@ -474,7 +590,7 @@ export function useChatStream() {
                     event.data.resolved_attachments
                   );
                   if (resolvedAttachments.length > 0) {
-                    setMessages((prev) =>
+                    setCommittedMessages((prev) =>
                       prev.map((message) =>
                         message.id === userMessageId
                           ? {
@@ -498,6 +614,7 @@ export function useChatStream() {
                 );
                 accumulatedText += token;
                 if (token) {
+                  pendingQueryResumeMerge = false;
                   const assistantIndex = ensureAssistantMessage();
                   const assistantMessage = currentLiveMessages[assistantIndex];
                   assistantMessage.content += token;
@@ -522,6 +639,7 @@ export function useChatStream() {
                 if (!reasoning) {
                   break;
                 }
+                pendingQueryResumeMerge = false;
                 flushTokenFrame();
                 accumulatedReasoning += reasoning;
                 const assistantIndex = ensureAssistantMessage();
@@ -564,6 +682,17 @@ export function useChatStream() {
                   input,
                   status: "running",
                 };
+                if (pendingQueryResumeMerge && name === "query") {
+                  resumedQueryToolEntry = entry;
+                  pendingQueryResumeMerge = false;
+                  if (updateLastCommittedRunningToolMessage(name, entry)) {
+                    setToolCalls([entry]);
+                    break;
+                  }
+                  resumedQueryToolEntry = null;
+                } else if (name !== "query") {
+                  pendingQueryResumeMerge = false;
+                }
                 currentToolCalls.push(entry);
                 setToolCalls([...currentToolCalls]);
                 currentLiveMessages.push(toolCallToMessage(entry, createMessageId("tool")));
@@ -574,6 +703,19 @@ export function useChatStream() {
               case "tool_end": {
                 const name = (event.data.tool_name as string) || "unknown_tool";
                 const output = event.data.output;
+                if (resumedQueryToolEntry && name === "query") {
+                  resumedQueryToolEntry = {
+                    ...resumedQueryToolEntry,
+                    output,
+                    status: "success",
+                  };
+                  updateLastCommittedRunningToolMessage(name, resumedQueryToolEntry);
+                  setToolCalls([resumedQueryToolEntry]);
+                  resumedQueryToolEntry = null;
+                  endAssistantSegment();
+                  setAgentStatus("generating");
+                  break;
+                }
                 const idx = findLastRunningToolCallIndex(currentToolCalls, name);
                 if (idx >= 0) {
                   currentToolCalls[idx] = {
@@ -617,7 +759,23 @@ export function useChatStream() {
                 const name = (event.data.tool_name as string) || "unknown_tool";
                 const errMsg =
                   extractTextContent(event.data.detail ?? event.data.error) ||
-                  "Tool error";
+                  t("errors.toolError");
+                if (isQueryInterruptToolError(name, errMsg)) {
+                  break;
+                }
+                if (resumedQueryToolEntry && name === "query") {
+                  resumedQueryToolEntry = {
+                    ...resumedQueryToolEntry,
+                    error: errMsg,
+                    status: "error",
+                  };
+                  updateLastCommittedRunningToolMessage(name, resumedQueryToolEntry);
+                  setToolCalls([resumedQueryToolEntry]);
+                  resumedQueryToolEntry = null;
+                  endAssistantSegment();
+                  setAgentStatus("generating");
+                  break;
+                }
                 const idx = findLastRunningToolCallIndex(currentToolCalls, name);
                 if (idx >= 0) {
                   currentToolCalls[idx] = {
@@ -658,11 +816,79 @@ export function useChatStream() {
               }
 
               case "interrupt": {
-                cancelPendingTokenFrame();
+                flushTokenFrame();
                 setAgentStatus("interrupted");
+                const interruptType = (event.data.type as string) || "other";
+                if (interruptType === "query") {
+                  const queryCallIndex = findLastRunningToolCallIndex(
+                    currentToolCalls,
+                    "query"
+                  );
+                  if (queryCallIndex >= 0) {
+                    currentToolCalls[queryCallIndex] = {
+                      ...currentToolCalls[queryCallIndex],
+                      input: mergeQueryInterruptInput(
+                        currentToolCalls[queryCallIndex].input,
+                        event.data
+                      ),
+                    };
+                    setToolCalls([...currentToolCalls]);
+                  }
+
+                  const queryMessageIndex = findLastRunningToolMessageIndex(
+                    currentLiveMessages,
+                    "query"
+                  );
+                  if (queryMessageIndex >= 0) {
+                    const message = currentLiveMessages[queryMessageIndex];
+                    const input = mergeQueryInterruptInput(
+                      message.toolInput,
+                      event.data
+                    );
+                    currentLiveMessages[queryMessageIndex] = {
+                      ...message,
+                      content: formatDisplayContent(input),
+                      toolInput: input,
+                    };
+                  }
+                  commitLiveMessages();
+                } else {
+                  publishLiveMessages();
+                }
                 setInterrupt({
                   interruptId: (event.data.id as string) || "",
-                  message: extractTextContent(event.data.message) || "Agent interrupted",
+                  type: interruptType,
+                  message:
+                    extractTextContent(event.data.message) ||
+                    t("errors.agentInterrupted"),
+                  question:
+                    typeof event.data.question === "string"
+                      ? event.data.question
+                      : undefined,
+                  firstChoice:
+                    typeof event.data.firstChoice === "string"
+                      ? event.data.firstChoice
+                      : undefined,
+                  firstChoiceDescription:
+                    typeof event.data.firstChoiceDescription === "string"
+                      ? event.data.firstChoiceDescription
+                      : undefined,
+                  secondChoice:
+                    typeof event.data.secondChoice === "string"
+                      ? event.data.secondChoice
+                      : undefined,
+                  secondChoiceDescription:
+                    typeof event.data.secondChoiceDescription === "string"
+                      ? event.data.secondChoiceDescription
+                      : undefined,
+                  thirdChoice:
+                    typeof event.data.thirdChoice === "string"
+                      ? event.data.thirdChoice
+                      : undefined,
+                  thirdChoiceDescription:
+                    typeof event.data.thirdChoiceDescription === "string"
+                      ? event.data.thirdChoiceDescription
+                      : undefined,
                 });
                 setIsStreaming(false);
                 bumpChatHistoryVersion();
@@ -704,15 +930,7 @@ export function useChatStream() {
                     });
                   }
                 }
-                const completedLiveMessages = cloneMessages(currentLiveMessages);
-                if (completedLiveMessages.length > 0) {
-                  setMessages((prev) => [...prev, ...completedLiveMessages]);
-                }
-                currentLiveMessages = [];
-                currentAssistantIndex = null;
-                setLiveMessages([]);
-                setStreamingText("");
-                setStreamingReasoning("");
+                commitLiveMessages();
                 setToolCalls([]);
                 setAgentStatus("idle");
                 setIsStreaming(false);
@@ -725,7 +943,7 @@ export function useChatStream() {
                 const errMsg =
                   (event.data.detail as string) ||
                   (event.data.message as string) ||
-                  "Stream error";
+                  t("errors.streamError");
                 setStreamError(errMsg);
                 setAgentStatus("error");
                 setIsStreaming(false);
@@ -781,6 +999,8 @@ export function useChatStream() {
       setThreadId,
       setThreadRequiresImageInput,
       createMessageId,
+      setCommittedMessages,
+      t,
     ]
   );
 
@@ -799,6 +1019,23 @@ export function useChatStream() {
     (selectionId: number, threadId: string) => {
       clearStreamingState();
       startChat(selectionId, "", threadId, { type: "retry" });
+    },
+    [clearStreamingState, startChat]
+  );
+
+  const answerQuery = useCallback(
+    (
+      selectionId: number,
+      threadId: string,
+      choice: QueryChoice,
+      note?: string | null
+    ) => {
+      clearStreamingState();
+      startChat(selectionId, "", threadId, {
+        type: "query",
+        choice,
+        note: note?.trim() || null,
+      });
     },
     [clearStreamingState, startChat]
   );
@@ -822,10 +1059,10 @@ export function useChatStream() {
           toolOutput: message.role === "tool" ? message.content : undefined,
         }))
         .filter(shouldDisplayHistoryMessage);
-      setMessages(msgs);
+      setCommittedMessages(msgs);
       clearStreamingState();
     },
-    [clearStreamingState, createMessageId]
+    [clearStreamingState, createMessageId, setCommittedMessages]
   );
 
   return {
@@ -840,6 +1077,7 @@ export function useChatStream() {
     startChat,
     stopStream,
     retry,
+    answerQuery,
     loadHistory,
     clearMessages,
     resetStreamingState: clearStreamingState,

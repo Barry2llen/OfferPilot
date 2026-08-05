@@ -43,6 +43,7 @@ from services import (
     UploadedChatFile,
 )
 from utils.tool_outputs import summarize_tool_output
+from utils.i18n import localize_error, request_locale
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -51,7 +52,7 @@ _ERROR_DETAIL_SCHEMA = {
     "properties": {
         "detail": {
             "type": "string",
-            "description": "错误详情描述。",
+            "description": "Description of the error.",
         }
     },
     "required": ["detail"],
@@ -407,6 +408,12 @@ def _is_tool_error_output(output: Any) -> bool:
     return False
 
 
+def _is_query_interrupt_tool_error(tool_name: str, detail: str) -> bool:
+    if tool_name != "query":
+        return False
+    return "Interrupt(" in detail and "type" in detail and "query" in detail
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
 
@@ -437,12 +444,12 @@ def _raise_chat_input_error(error: Exception) -> None:
 @router.get(
     "/chats",
     response_model=AIChatHistoryListResponse,
-    summary="查询 AI 会话历史列表",
+    summary="List AI conversation history",
     description=(
-        "从 LangGraph checkpoint 中读取每个 thread_id 的最新会话状态，"
-        "返回会话标题、最后消息预览、消息数量和更新时间。"
+        "Read the latest state for each thread_id from LangGraph checkpoints and return "
+        "conversation titles, message previews, message counts, and update times."
     ),
-    response_description="返回按最近更新时间倒序排列的 AI 会话历史摘要列表。",
+    response_description="Returns conversation summaries ordered by most recent update.",
 )
 async def list_chat_histories(
     request: Request,
@@ -450,13 +457,13 @@ async def list_chat_histories(
         default=20,
         ge=1,
         le=100,
-        description="分页大小，最大 100。",
+        description="Page size, up to 100.",
         examples=[20],
     ),
     offset: int = Query(
         default=0,
         ge=0,
-        description="分页偏移量。",
+        description="Number of items to skip.",
         examples=[0],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -473,15 +480,15 @@ async def list_chat_histories(
     "/chats/{thread_id}/history",
     response_model=AIChatHistoryDetailResponse,
     response_model_exclude_none=True,
-    summary="查询 AI 会话历史详情",
+    summary="Get AI conversation history",
     description=(
-        "按 thread_id 从最新 LangGraph checkpoint 中读取完整 messages 历史，"
-        "并转换为前端可直接消费的简化消息结构。"
+        "Read the complete message history for a thread_id from the latest LangGraph checkpoint "
+        "and convert it into a simplified structure for the frontend."
     ),
-    response_description="返回指定会话的完整消息历史。",
+    response_description="Returns the complete history for the requested conversation.",
     responses={
         404: _error_response(
-            "未找到指定会话历史。",
+            "Conversation history was not found.",
             example="Chat history not found: conversation-001",
         ),
     },
@@ -508,15 +515,15 @@ async def get_chat_history(
 @router.delete(
     "/chats/{thread_id}",
     status_code=204,
-    summary="删除 AI 会话历史",
+    summary="Delete AI conversation history",
     description=(
-        "根据 thread_id 删除指定 AI 会话的 LangGraph checkpoint、"
-        "checkpoint blob 和 pending writes。删除后该会话无法继续 retry 或续聊。"
+        "Delete the LangGraph checkpoint, checkpoint blobs, and pending writes for a thread_id. "
+        "The conversation cannot be retried or continued after deletion."
     ),
-    response_description="删除成功，无响应体。",
+    response_description="Deleted successfully with no response body.",
     responses={
         404: _error_response(
-            "未找到指定会话历史。",
+            "Conversation history was not found.",
             example="Chat history not found: conversation-001",
         ),
     },
@@ -525,7 +532,7 @@ async def delete_chat_history(
     request: Request,
     thread_id: str = Path(
         ...,
-        description="待删除的会话线程 ID。",
+        description="Conversation thread ID to delete.",
         examples=["conversation-001"],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -548,9 +555,9 @@ async def delete_chat_history(
 @router.get(
     "/files",
     response_model=list[ChatFileListItem],
-    summary="列出聊天文件库",
-    description="返回当前可复用的聊天附件文件列表及其线程引用数量。",
-    response_description="按入库时间倒序返回聊天附件列表。",
+    summary="List chat files",
+    description="Return reusable chat attachments and their thread reference counts.",
+    response_description="Returns chat attachments ordered by storage time.",
 )
 async def list_chat_files(
     request: Request,
@@ -562,18 +569,18 @@ async def list_chat_files(
 @router.get(
     "/files/{file_id}",
     response_model=ChatFileDetail,
-    summary="获取聊天文件详情",
-    description="根据聊天文件短 ID 返回文件详情与引用数量。",
-    response_description="返回指定聊天文件详情。",
+    summary="Get chat file details",
+    description="Return file details and reference counts for a short chat file ID.",
+    response_description="Returns the requested chat file details.",
     responses={
-        404: _error_response("未找到指定聊天文件。", example="Chat file not found: A1B2C3"),
+        404: _error_response("The requested chat file was not found.", example="Chat file not found: A1B2C3"),
     },
 )
 async def get_chat_file(
     request: Request,
     file_id: str = Path(
         ...,
-        description="聊天文件短 ID。",
+        description="Short chat file ID.",
         examples=["A1B2C3"],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -587,18 +594,18 @@ async def get_chat_file(
 @router.get(
     "/files/{file_id}/raw",
     response_class=FileResponse,
-    summary="查看聊天文件原始内容",
-    description="返回聊天文件原始内容，适用于预览和复用前确认文件。",
-    response_description="返回聊天文件原始文件流。",
+    summary="Get raw chat file content",
+    description="Return raw chat file content for preview or confirmation before reuse.",
+    response_description="Returns the raw chat file stream.",
     responses={
-        404: _error_response("未找到指定聊天文件。", example="Chat file not found: A1B2C3"),
+        404: _error_response("The requested chat file was not found.", example="Chat file not found: A1B2C3"),
     },
 )
 async def get_chat_file_raw(
     request: Request,
     file_id: str = Path(
         ...,
-        description="聊天文件短 ID。",
+        description="Short chat file ID.",
         examples=["A1B2C3"],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -618,17 +625,17 @@ async def get_chat_file_raw(
 @router.post(
     "/chat",
     response_model=AIChatResponse,
-    summary="调用基础 AI 对话",
+    summary="Call the AI chat API",
     description=(
-        "使用指定模型选择记录调用 SupervisorAgent，并通过 DatabaseCheckpointer 保存会话状态。"
-        "支持纯 JSON 请求，以及带 files[] / file_ids[] 的 multipart 请求。"
+        "Call SupervisorAgent with the selected model and persist conversation state through "
+        "DatabaseCheckpointer. Supports JSON requests and multipart requests with files[] / file_ids[]."
     ),
-    response_description="返回 AI 最终回复和本次会话线程 ID。",
+    response_description="Returns the AI response and the conversation thread ID.",
     responses={
-        404: _error_response("未找到指定模型选择配置。", example="Model selection not found: 1"),
-        415: _error_response("上传了不支持的聊天文件类型。", example="Unsupported chat file type: .exe"),
-        422: _error_response("聊天附件无效或无法处理。", example="Uploaded chat file is empty."),
-        502: _error_response("模型加载或调用失败。", example="Model call failed after 3 retries."),
+        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
+        415: _error_response("The uploaded chat file type is not supported.", example="Unsupported chat file type: .exe"),
+        422: _error_response("The chat attachment is invalid or could not be processed.", example="Uploaded chat file is empty."),
+        502: _error_response("The model could not be loaded or called.", example="Model call failed after 3 retries."),
     },
 )
 async def chat(
@@ -684,32 +691,34 @@ async def chat(
 
 @router.post(
     "/chat/stream",
-    summary="流式调用基础 AI 对话",
+    summary="Stream the AI chat API",
     description=(
-        "使用指定模型选择记录调用 SupervisorAgent，并以 SSE 返回会话线程、工具调用过程、"
-        "失败中断和最终回复。首次请求传 prompt；收到 interrupt 后可使用同一 thread_id "
-        "和 command.type=retry 恢复失败节点。支持纯 JSON 请求，以及带 files[] / file_ids[] "
-        "的 multipart 请求。"
+        "Call SupervisorAgent with the selected model and return the thread, tool activity, "
+        "interrupts, and final response over SSE. Send prompt for the first request; after an interrupt, "
+        "reuse the thread_id with command.type=retry to retry a failed node or command.type=query to "
+        "submit a query tool choice/note. Supports JSON and multipart requests with files[] / file_ids[]."
     ),
-    response_description="返回 text/event-stream 事件流。",
+    response_description="Returns a text/event-stream response.",
     responses={
         200: {
             "description": (
-                "返回 SSE 事件流。事件包括 thread、token、reasoning、reasoning_done、"
-                "tool_start、tool_end、tool_error、interrupt、final，失败时返回 error。搜索类工具的 tool_end.output "
-                "仅包含前端安全摘要字段 url、title、favicon。thread 事件会额外返回 resolved_attachments、"
-                "attachment_count 和 requires_image_input。"
+                "Returns SSE events including thread, token, reasoning, reasoning_done, tool_start, "
+                "tool_end, tool_error, interrupt, and final; failures use error. Query interrupts include "
+                "question, firstChoice, firstChoiceDescription, secondChoice, secondChoiceDescription, "
+                "thirdChoice, and thirdChoiceDescription. Search tool output contains only the safe frontend "
+                "summary fields url, title, and favicon. The thread event also includes resolved_attachments, "
+                "attachment_count, and requires_image_input."
             ),
             "content": {
                 "text/event-stream": {
                     "schema": {"type": "string"},
-                    "example": 'event: final\ndata: {"content":"你好"}\n\n',
+                    "example": 'event: final\ndata: {"content":"Hello"}\n\n',
                 }
             },
         },
-        404: _error_response("未找到指定模型选择配置。", example="Model selection not found: 1"),
-        415: _error_response("上传了不支持的聊天文件类型。", example="Unsupported chat file type: .exe"),
-        422: _error_response("聊天附件无效或无法处理。", example="Uploaded chat file is empty."),
+        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
+        415: _error_response("The uploaded chat file type is not supported.", example="Unsupported chat file type: .exe"),
+        422: _error_response("The chat attachment is invalid or could not be processed.", example="Uploaded chat file is empty."),
     },
 )
 async def chat_stream(
@@ -723,11 +732,19 @@ async def chat_stream(
     thread_id = payload.thread_id if command_type == "retry" else _make_thread_id(payload.thread_id)
     prepared_prompt = None
 
-    if command_type == "retry":
+    if command_type in {"retry", "query"}:
         assert payload.command is not None
         chat_file_service = _build_chat_file_service(request, session)
+        resume_payload: dict[str, Any]
+        if command_type == "query":
+            resume_payload = {
+                "choice": payload.command.choice,
+                "note": payload.command.note,
+            }
+        else:
+            resume_payload = payload.command.model_dump(exclude_none=True)
         agent_input: dict[str, Any] | Command = Command(
-            resume=payload.command.model_dump(exclude_none=True)
+            resume=resume_payload
         )
         requires_image_input = chat_file_service.thread_requires_image_input(thread_id or "")
         attachment_count = ChatThreadFileRepository(session).count_by_thread(thread_id or "")
@@ -792,6 +809,12 @@ async def chat_stream(
                 interrupt_payloads = _extract_interrupt_payloads(event)
                 if interrupt_payloads:
                     for interrupt_payload in interrupt_payloads:
+                        message = interrupt_payload.get("message")
+                        if isinstance(message, str):
+                            interrupt_payload["message"] = localize_error(
+                                message,
+                                request_locale(request),
+                            )
                         yield _sse(
                             "interrupt",
                             {
@@ -838,12 +861,15 @@ async def chat_stream(
                     continue
 
                 if event_name == "on_tool_error":
+                    detail = str(data.get("error") or data.get("output") or "")
+                    if _is_query_interrupt_tool_error(tool_name, detail):
+                        continue
                     yield _sse(
                         "tool_error",
                         {
                             "thread_id": thread_id,
                             "tool_name": tool_name,
-                            "detail": str(data.get("error") or data.get("output") or ""),
+                            "detail": detail,
                         },
                     )
                     continue
@@ -886,7 +912,10 @@ async def chat_stream(
                 if output is not None:
                     final_state = output
         except Exception as error:
-            yield _sse("error", {"detail": str(error)})
+            yield _sse(
+                "error",
+                {"detail": localize_error(error, request_locale(request))},
+            )
             return
 
         yield _sse(

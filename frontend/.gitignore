@@ -13,7 +13,8 @@
 # testing
 /coverage
 
-# next.js
+# build artifacts
+/dist/
 /.next/
 /out/
 
@@ -38,7 +39,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 
 # openapi
 openapi.json

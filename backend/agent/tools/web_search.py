@@ -1,6 +1,6 @@
 
+import asyncio
 from typing import cast
-from functools import lru_cache
 
 from langchain_core.tools import BaseTool, tool
 from pydantic import Field
@@ -13,11 +13,47 @@ If config.exa_api_key is not set, we fall back to loading MCP-based web search t
 NOTICE: MCP-based 'web_fetch' tool's name is 'get_content'.
 """
 
-@lru_cache(maxsize=10)
+type _WebSearchToolsCacheKey = tuple[str | None, str, int, str | None]
+
+_web_search_tools_cache: dict[_WebSearchToolsCacheKey, tuple[BaseTool, ...]] = {}
+_web_search_tools_locks: dict[_WebSearchToolsCacheKey, asyncio.Lock] = {}
+
+
+def _web_search_tools_cache_key(config: Config) -> _WebSearchToolsCacheKey:
+    return (
+        config.exa_api_key,
+        config.web_search.type,
+        config.web_search.max_characters,
+        config.web_search.guiding_query,
+    )
+
+
+def _clear_web_search_tools_cache() -> None:
+    _web_search_tools_cache.clear()
+    _web_search_tools_locks.clear()
+
+
 async def get_web_search_tools(
     config: Config | None = None
 ) -> list[BaseTool]:
     target_config = config or load_config()
+    cache_key = _web_search_tools_cache_key(target_config)
+    cached_tools = _web_search_tools_cache.get(cache_key)
+    if cached_tools is not None:
+        return list(cached_tools)
+
+    lock = _web_search_tools_locks.setdefault(cache_key, asyncio.Lock())
+    async with lock:
+        cached_tools = _web_search_tools_cache.get(cache_key)
+        if cached_tools is not None:
+            return list(cached_tools)
+
+        tools = await _load_web_search_tools(target_config)
+        _web_search_tools_cache[cache_key] = tuple(tools)
+        return list(tools)
+
+
+async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
     if not target_config.exa_api_key:
         try:
             from ..mcps.web_search import get_web_search_mcp_tools
@@ -244,6 +280,9 @@ async def get_web_search_tools(
         return _optimize_search_response(url, response, target_name="url", index_name="rank")
 
     return [web_search, web_fetch, find_similar]
+
+
+get_web_search_tools.cache_clear = _clear_web_search_tools_cache
 
 __all__ = [
     "get_web_search_tools",

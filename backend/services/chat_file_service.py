@@ -48,6 +48,12 @@ class PreparedChatPrompt:
     created_file_paths: list[Path]
 
 
+@dataclass(slots=True)
+class StoredChatFiles:
+    records: list[ChatFileORM]
+    created_file_paths: list[Path]
+
+
 class ChatFileService:
     """Service for chat attachment storage, prompt injection, and cleanup."""
 
@@ -84,6 +90,23 @@ class ChatFileService:
             media_type=record.media_type,
             filename=record.original_filename,
         )
+
+    def store_files(self, uploaded_files: list[UploadedChatFile]) -> StoredChatFiles:
+        created_file_paths: list[Path] = []
+        records: list[ChatFileORM] = []
+        try:
+            for uploaded_file in uploaded_files:
+                stored = self._create_file_record(uploaded_file)
+                records.append(stored)
+                created_file_paths.append(
+                    self._resolve_storage_path(stored.storage_path, require_exists=False)
+                )
+        except Exception:
+            for path in created_file_paths:
+                self._delete_file_quietly(path)
+            raise
+
+        return StoredChatFiles(records=records, created_file_paths=created_file_paths)
 
     def prepare_prompt(
         self,
@@ -126,7 +149,7 @@ class ChatFileService:
                 )
 
             attachments: list[ChatAttachmentRef] = []
-            content_blocks: list[dict[str, str]] = []
+            content_blocks: list[dict[str, object]] = []
             reference_lines: list[str] = []
 
             for record in stored_records:
@@ -288,7 +311,7 @@ class ChatFileService:
             f"Unsupported chat file type: {file_path.suffix.lower() or '<missing>'}"
         )
 
-    def _build_image_blocks(self, record: ChatFileORM) -> list[dict[str, str]]:
+    def _build_image_blocks(self, record: ChatFileORM) -> list[dict[str, object]]:
         file_path = self._resolve_storage_path(record.storage_path)
         images = render_file_to_images(file_path)
         return [image.to_content_block() for image in images]

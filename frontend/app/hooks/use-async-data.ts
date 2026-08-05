@@ -1,6 +1,5 @@
-"use client";
-
 import { useState, useEffect, useCallback, useRef } from "react";
+import i18n from "@/app/lib/i18n";
 
 interface UseAsyncDataResult<T> {
   data: T | null;
@@ -29,7 +28,7 @@ export function useAsyncData<T>(
     } catch (err: unknown) {
       if (mountedRef.current) {
         const message =
-          err instanceof Error ? err.message : "Unknown error";
+          err instanceof Error ? err.message : i18n.t("common.unknown");
         setError(message);
       }
     } finally {

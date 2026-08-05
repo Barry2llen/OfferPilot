@@ -6,16 +6,16 @@ from langgraph.types import interrupt
 from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
 from langchain.messages import HumanMessage, SystemMessage
-from langchain_core.language_models import LanguageModelInput
-from langchain_core.runnables import Runnable
-from langchain_core.callbacks.manager import adispatch_custom_event, dispatch_custom_event
 
 from schemas.resume_document import ResumeDocument
 from exceptions.agent import ModelCallExecutionError
 from utils.logger import logger
+from utils.custom_events import (
+    _adispatch_custom_event_safely,
+    _dispatch_custom_event_safely,
+)
 from schemas.command import BaseCommand
 from exceptions.resume import ResumePreviewConversionError
-from exceptions.validation import ValidationError
 from schemas.model_selection import ModelSelection
 from schemas.resume import (
     Resume,
@@ -39,32 +39,11 @@ from ...base import BaseAgent, BaseInterupt
 from ...nodes.wrappers import require_fields
 
 
-def _is_missing_parent_run_error(error: RuntimeError) -> bool:
-    return "parent run id" in str(error)
-
-
-def _dispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        dispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
-
-
-async def _adispatch_custom_event_safely(name: str, data: object) -> None:
-    try:
-        await adispatch_custom_event(name, data)
-    except RuntimeError as error:
-        if not _is_missing_parent_run_error(error):
-            raise
-        logger.debug(f"Skipping custom event {name}: {error}")
-
-
+RESUME_STRUCTURED_OUTPUT_METHOD = "function_calling"
 class ResumeExtractorAgent(BaseAgent[State]):
 
     @require_fields('resume_document', 'model', index=1)
-    def _set_up_node(self, state: State) -> State:
+    async def _set_up_node(self, state: State) -> State:
         """
         Set up the initial state for the ResumeExtractorAgent.
         """
@@ -101,40 +80,38 @@ class ResumeExtractorAgent(BaseAgent[State]):
             raise ResumePreviewConversionError(f"Failed to convert resume to image: {e}")
         
         # Check text extraction result.
-        validator = load_structured_model(model_selection, TextValidation)
+        validator = load_structured_model(
+            model_selection,
+            TextValidation,
+            method=RESUME_STRUCTURED_OUTPUT_METHOD,
+        )
         
         while True:
-            flag = False
             max_retries = self.config.model_call_retry_attempts
-            for _ in range(max_retries):
-                try:
-                    logger.debug(f"Invoking model for validation of the extracted resume text.")
-                    validation = validator.invoke([
+            repair_attempts = max(0, max_retries - 1)
+            try:
+                logger.debug(f"Invoking model for validation of the extracted resume text.")
+                validation = await validator.ainvoke(
+                    [
                         SystemMessage(content=validation_system_prompt),
                         HumanMessage(content=resume_text)
-                    ])
+                    ],
+                    max_repair_attempts=repair_attempts,
+                )
+                
+                if validation.is_valid:
+                    logger.debug(f"Extracted resume text seems to be valid, reason: {validation.reason or 'No reason provided.'}")
+                else:
+                    logger.debug(f"Extracted resume text seems to be invalid, reason: {validation.reason or 'No reason provided.'}")
 
-                    if not isinstance(validation, TextValidation):
-                        logger.debug(f"Validation result is not in the expected format, result: {validation}")
-                        raise ValidationError(f"Validation result is not in the expected format.")
-                    
-                    if validation.is_valid:
-                        logger.debug(f"Extracted resume text seems to be valid, reason: {validation.reason or 'No reason provided.'}")
-                    else:
-                        logger.debug(f"Extracted resume text seems to be invalid, reason: {validation.reason or 'No reason provided.'}")
-
-                    flag = True
-                    break
-                except Exception as e:
-                    logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
-                    _dispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
-                        error=str(e),
-                        attempt=_+1,
-                        max_attempts=max_retries
-                    ))
-
-            if flag:
                 break
+            except Exception as e:
+                logger.error(f"Error calling model after {max_retries} attempts:\n{e}")
+                _dispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
+                    error=str(e),
+                    attempt=max_retries,
+                    max_attempts=max_retries
+                ))
 
             logger.error(f"Model call failed after {max_retries} retries.")
             
@@ -183,7 +160,7 @@ class ResumeExtractorAgent(BaseAgent[State]):
             resume_text=resume_text,
         )
     
-    def _extract_section_node(self, state: State) -> State:
+    async def _extract_section_node(self, state: State) -> State:
         """
         Extract sections from the resume text.
         """
@@ -198,35 +175,32 @@ class ResumeExtractorAgent(BaseAgent[State]):
             message="Extracting resume sections.",
         ))  
 
-        extractor = load_structured_model(model_selection, ResumeSections)
+        extractor = load_structured_model(
+            model_selection,
+            ResumeSections,
+            method=RESUME_STRUCTURED_OUTPUT_METHOD,
+        )
 
         while True:
-            flag = False
             max_retries = self.config.model_call_retry_attempts
-            for _ in range(max_retries):
-                try:
-                    logger.debug(f"Invoking model for extracting sections from the resume text.")
-                    sections: ResumeSections = extractor.invoke([
+            repair_attempts = max(0, max_retries - 1)
+            try:
+                logger.debug(f"Invoking model for extracting sections from the resume text.")
+                sections: ResumeSections = await extractor.ainvoke(
+                    [
                         SystemMessage(content=section_extraction_system_prompt),
                         HumanMessage(content=resume_text)
-                    ])
-
-                    if not isinstance(sections, ResumeSections):
-                        logger.debug(f"Sections result is not in the expected format, result: {sections}")
-                        raise ValidationError(f"Sections result is not in the expected format.")
-
-                    flag = True
-                    break
-                except Exception as e:
-                    logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
-                    _dispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
-                        error=str(e),
-                        attempt=_+1,
-                        max_attempts=max_retries
-                    ))
-
-            if flag:
+                    ],
+                    max_repair_attempts=repair_attempts,
+                )
                 break
+            except Exception as e:
+                logger.error(f"Error calling model after {max_retries} attempts:\n{e}")
+                _dispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
+                    error=str(e),
+                    attempt=max_retries,
+                    max_attempts=max_retries
+                ))
 
             logger.error(f"Model call failed after {max_retries} retries.")
             
@@ -264,7 +238,11 @@ class ResumeExtractorAgent(BaseAgent[State]):
         sections: list[ResumeSectionEx] = state.get('sections') # type: ignore
         total_sections = len(sections)
         sections_with_facts = []
-        extractor = load_structured_model(model_selection, ResumeFacts)
+        extractor = load_structured_model(
+            model_selection,
+            ResumeFacts,
+            method=RESUME_STRUCTURED_OUTPUT_METHOD,
+        )
         await _adispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
             progress=0.6,
             message="Extracting facts from resume sections.",
@@ -272,7 +250,11 @@ class ResumeExtractorAgent(BaseAgent[State]):
         ))
 
         async def _extract_facts_for_section(section: ResumeSectionEx) -> ResumeSection | None:
-            section_text = str(section)
+            section_text = (
+                f"[section_id]\n{section.section_id}\n\n"
+                f"[title]\n{section.title}\n\n"
+                f"[content]\n{section.content}"
+            )
             while True:
                 try:
                     logger.debug(f"Invoking model for extracting facts from section: {section.title}")
@@ -284,24 +266,35 @@ class ResumeExtractorAgent(BaseAgent[State]):
                     facts: ResumeFacts = await extractor.ainvoke([
                         SystemMessage(content=facts_extraction_system_prompt),
                         HumanMessage(content=section_text)
-                    ])
-
-                    if not isinstance(facts, ResumeFacts):
-                        logger.debug(f"Facts result is not in the expected format, result: {facts}")
-                        raise ValidationError(f"Facts result is not in the expected format.")
+                    ], max_repair_attempts=max(0, self.config.model_call_retry_attempts - 1))
 
                     await _adispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
                         progress=0.65,
                         message=f"Extracted facts from section: {section.title}",
                         additional_data={
                             "section_title": section.title,
-                            "fact_count": len(facts.facts)
+                            "fact_count": len(
+                                [
+                                    fact
+                                    for fact in facts.facts
+                                    if fact.section_id == section.section_id
+                                ]
+                            )
                         }
                     ))
                     return ResumeSection(
                         title=section.title,
                         content=section.content,
-                        facts=[ResumeFact(**fact.model_dump()) for fact in facts.facts]
+                        facts=[
+                            ResumeFact(
+                                fact_type=fact.fact_type,
+                                text=fact.text,
+                                evidence=fact.evidence,
+                                keywords=fact.keywords,
+                            )
+                            for fact in facts.facts
+                            if fact.section_id == section.section_id
+                        ]
                     )
                 except Exception as e:
                     logger.error(f"Error calling model for section {section.title}:\n{e}")

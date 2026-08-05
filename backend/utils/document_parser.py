@@ -49,6 +49,11 @@ def extract_text_ocr(file_path: Path) -> str:
 
     raise UnsupportedResumeFileError(f"Unsupported resume file type: {suffix}")
 
+def is_image_data_url(data_url: str) -> bool:
+    """Check if a string is a valid image data URL."""
+    if not isinstance(data_url, str):
+        return False
+    return _IMAGE_DATA_URL_PATTERN.match(data_url.strip()) is not None
 
 def decode_image_data_url(data_url: str) -> tuple[str, bytes]:
     """Decode a png/jpeg data URL into OCR-ready image bytes."""

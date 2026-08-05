@@ -1,6 +1,6 @@
-"use client";
-
+import { FileText, Image } from "lucide-react";
 import { useMemo, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAsyncData } from "@/app/hooks/use-async-data";
@@ -13,6 +13,7 @@ import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Badge from "@/app/components/ui/badge";
 import Button from "@/app/components/ui/button";
 import { Skeleton } from "@/app/components/ui/skeleton";
+import { formatLocaleNumber } from "@/app/lib/i18n";
 import type {
   ModelProviderResponse,
   ModelProviderCreate,
@@ -29,8 +30,12 @@ interface ModelConfigData {
 
 const EMPTY_PROVIDERS: ModelProviderResponse[] = [];
 const EMPTY_SELECTIONS: ModelSelectionResponse[] = [];
+const PAGE_CANVAS_CLASS = "electron-titlebar-safe-top min-h-full bg-white";
+const PAGE_INNER_CLASS =
+  "mx-auto max-w-[1040px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6";
 
 export default function ProvidersPage() {
+  const { t } = useTranslation();
   const { data, loading, error, refetch } = useAsyncData<ModelConfigData>(
     async () => {
       const [providers, selections] = await Promise.all([
@@ -38,7 +43,7 @@ export default function ProvidersPage() {
         modelSelectionsApi.list(),
       ]);
       return { providers, selections };
-    }
+    },
   );
 
   const { addToast } = useToast();
@@ -57,7 +62,9 @@ export default function ProvidersPage() {
 
   const [providerDrawerOpen, setProviderDrawerOpen] = useState(false);
   const [selectionDrawerOpen, setSelectionDrawerOpen] = useState(false);
-  const [highlightProvider, setHighlightProvider] = useState<string | null>(null);
+  const [highlightProvider, setHighlightProvider] = useState<string | null>(
+    null,
+  );
   const [editingProvider, setEditingProvider] =
     useState<ModelProviderResponse | null>(null);
   const [editingSelection, setEditingSelection] =
@@ -66,7 +73,9 @@ export default function ProvidersPage() {
   const [providerSubmitting, setProviderSubmitting] = useState(false);
   const [selectionSubmitting, setSelectionSubmitting] = useState(false);
   const [deletingProvider, setDeletingProvider] = useState<string | null>(null);
-  const [deletingSelection, setDeletingSelection] = useState<number | null>(null);
+  const [deletingSelection, setDeletingSelection] = useState<number | null>(
+    null,
+  );
   const [confirmProviderDelete, setConfirmProviderDelete] =
     useState<ModelProviderResponse | null>(null);
   const [confirmSelectionDelete, setConfirmSelectionDelete] =
@@ -101,26 +110,26 @@ export default function ProvidersPage() {
         if (editingProvider) {
           await modelProvidersApi.update(
             editingProvider.name,
-            data as ModelProviderUpdate
+            data as ModelProviderUpdate,
           );
-          addToast("供应商配置已更新", "success");
+          addToast(t("settings.providerUpdated"), "success");
         } else {
           const createData = data as ModelProviderCreate;
           await modelProvidersApi.create(createData);
-          addToast("供应商配置已创建", "success");
+          addToast(t("settings.providerCreated"), "success");
           setHighlightProvider(createData.name);
           setTimeout(() => setHighlightProvider(null), 3000);
         }
         setProviderDrawerOpen(false);
         refetch();
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "操作失败";
+        const msg = err instanceof Error ? err.message : t("settings.operationFailed");
         addToast(msg, "error");
       } finally {
         setProviderSubmitting(false);
       }
     },
-    [editingProvider, refetch, addToast]
+    [editingProvider, refetch, addToast, t],
   );
 
   const handleSelectionSubmit = useCallback(
@@ -130,23 +139,23 @@ export default function ProvidersPage() {
         if (editingSelection) {
           await modelSelectionsApi.update(
             editingSelection.id,
-            data as ModelSelectionUpdate
+            data as ModelSelectionUpdate,
           );
-          addToast("模型选择已更新", "success");
+          addToast(t("settings.selectionUpdated"), "success");
         } else {
           await modelSelectionsApi.create(data as ModelSelectionCreate);
-          addToast("模型选择已创建", "success");
+          addToast(t("settings.selectionCreated"), "success");
         }
         setSelectionDrawerOpen(false);
         refetch();
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "操作失败";
+        const msg = err instanceof Error ? err.message : t("settings.operationFailed");
         addToast(msg, "error");
       } finally {
         setSelectionSubmitting(false);
       }
     },
-    [editingSelection, refetch, addToast]
+    [editingSelection, refetch, addToast, t],
   );
 
   const handleProviderDelete = async () => {
@@ -154,11 +163,11 @@ export default function ProvidersPage() {
     setDeletingProvider(confirmProviderDelete.name);
     try {
       await modelProvidersApi.delete(confirmProviderDelete.name);
-      addToast("供应商已删除", "success");
+      addToast(t("settings.providerDeleted"), "success");
       setConfirmProviderDelete(null);
       refetch();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "删除失败";
+      const msg = err instanceof Error ? err.message : t("settings.deleteFailed");
       addToast(msg, "error");
     } finally {
       setDeletingProvider(null);
@@ -170,11 +179,11 @@ export default function ProvidersPage() {
     setDeletingSelection(confirmSelectionDelete.id);
     try {
       await modelSelectionsApi.delete(confirmSelectionDelete.id);
-      addToast("模型选择已删除", "success");
+      addToast(t("settings.selectionDeleted"), "success");
       setConfirmSelectionDelete(null);
       refetch();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "删除失败";
+      const msg = err instanceof Error ? err.message : t("settings.deleteFailed");
       addToast(msg, "error");
     } finally {
       setDeletingSelection(null);
@@ -183,18 +192,20 @@ export default function ProvidersPage() {
 
   if (loading) {
     return (
-      <div className="electron-titlebar-safe-top max-w-4xl mx-auto p-6 lg:py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
-            <Skeleton className="h-4 w-56 rounded-lg" />
+      <div className={PAGE_CANVAS_CLASS}>
+        <div className={PAGE_INNER_CLASS}>
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
+              <Skeleton className="h-4 w-56 rounded-lg" />
+            </div>
+            <Skeleton className="h-10 w-28 rounded-xl" />
           </div>
-          <Skeleton className="h-10 w-28 rounded-xl" />
-        </div>
-        <div className="space-y-3">
-          {[1, 2, 3].map((item) => (
-            <Skeleton key={item} className="h-32 rounded-[20px]" />
-          ))}
+          <div className="space-y-3">
+            {[1, 2, 3].map((item) => (
+              <Skeleton key={item} className="h-32 rounded-[20px]" />
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -202,195 +213,213 @@ export default function ProvidersPage() {
 
   if (error) {
     return (
-      <div className="electron-titlebar-safe-top max-w-4xl mx-auto p-6">
-        <div className="text-center py-20">
-          <p className="text-error-text text-sm mb-4">{error}</p>
-          <Button variant="secondary" onClick={refetch}>
-            重试
-          </Button>
+      <div className={PAGE_CANVAS_CLASS}>
+        <div className={PAGE_INNER_CLASS}>
+          <div className="py-20 text-center">
+            <p className="mb-4 text-sm text-error-text">{error}</p>
+            <Button variant="secondary" onClick={refetch}>
+              {t("common.retry")}
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="electron-titlebar-safe-top max-w-4xl mx-auto p-6 lg:py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-text-primary">
-            模型配置
-          </h1>
-          <p className="text-sm text-text-muted mt-1">
-            按供应商管理 API 密钥、模型选择和多模态能力
-          </p>
+    <div className={PAGE_CANVAS_CLASS}>
+      <div className={PAGE_INNER_CLASS}>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="font-display text-2xl font-semibold text-text-primary">
+              {t("settings.title")}
+            </h1>
+            <p className="text-sm text-text-muted mt-1">
+              {t("settings.description")}
+            </p>
+          </div>
+          <Button onClick={handleProviderCreate}>{t("settings.addProvider")}</Button>
         </div>
-        <Button onClick={handleProviderCreate}>添加供应商</Button>
-      </div>
 
-      {providers && providers.length === 0 ? (
-        <div className="text-center py-16 border-2 border-dashed border-border-default rounded-[20px]">
-          <p className="text-text-muted text-sm mb-3">暂无模型供应商配置</p>
-          <Button variant="secondary" onClick={handleProviderCreate}>
-            创建第一个供应商
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {providers.map((provider) => {
-            const providerSelections =
-              selectionsByProvider.get(provider.name) ?? [];
-            return (
-            <ProviderCard
-              key={provider.name}
-              provider={provider}
-              onEdit={handleProviderEdit}
-              onDelete={setConfirmProviderDelete}
-              onAddModel={() => handleSelectionCreate(provider.name)}
-              deleting={deletingProvider === provider.name}
-              highlight={highlightProvider === provider.name}
-            >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-medium text-text-primary">
-                    模型选择
-                  </h4>
-                  <span className="text-xs text-text-muted">
-                    {providerSelections.length} 个模型
-                  </span>
-                </div>
-
-                {providerSelections.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border-default px-4 py-5 text-center">
-                    <p className="text-sm text-text-muted mb-3">
-                      暂无模型，请为该供应商添加模型选择
-                    </p>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleSelectionCreate(provider.name)}
-                    >
-                      添加模型
-                    </Button>
-                  </div>
-                ) : (
+        {providers && providers.length === 0 ? (
+          <div className="text-center py-16 border-2 border-dashed border-border-default rounded-[20px]">
+            <p className="text-text-muted text-sm mb-3">{t("settings.noProviders")}</p>
+            <Button variant="secondary" onClick={handleProviderCreate}>
+              {t("settings.createFirstProvider")}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {providers.map((provider) => {
+              const providerSelections =
+                selectionsByProvider.get(provider.name) ?? [];
+              return (
+                <ProviderCard
+                  key={provider.name}
+                  provider={provider}
+                  onEdit={handleProviderEdit}
+                  onDelete={setConfirmProviderDelete}
+                  onAddModel={() => handleSelectionCreate(provider.name)}
+                  deleting={deletingProvider === provider.name}
+                  highlight={highlightProvider === provider.name}
+                >
                   <div className="space-y-2">
-                    {providerSelections.map((selection) => (
-                      <div
-                        key={selection.id}
-                        className="rounded-xl border border-border-light bg-surface-secondary/60 px-4 py-3"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h5 className="text-sm font-medium text-text-primary break-all">
-                                {selection.model_name}
-                              </h5>
-                              <Badge variant="info" size="sm">
-                                ID: {selection.id}
-                              </Badge>
-                              <Badge
-                                variant={
-                                  selection.supports_image_input
-                                    ? "success"
-                                    : "neutral"
-                                }
-                                size="sm"
-                              >
-                                {selection.supports_image_input
-                                  ? "支持图片"
-                                  : "仅文本"}
-                              </Badge>
-                              {selection.provider.has_api_key ? null : (
-                                <Badge variant="warning" size="sm">
-                                  供应商未配置密钥
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-xs text-text-muted mt-1">
-                              {selection.provider.name} ({selection.provider.provider})
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleSelectionEdit(selection)}
-                            >
-                              编辑
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setConfirmSelectionDelete(selection)}
-                              disabled={deletingSelection === selection.id}
-                              className="text-error-text hover:bg-error-bg"
-                            >
-                              {deletingSelection === selection.id
-                                ? "删除中..."
-                                : "删除"}
-                            </Button>
-                          </div>
-                        </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-medium text-text-primary">
+                        {t("settings.modelSelections")}
+                      </h4>
+                      <span className="text-xs text-text-muted">
+                        {t("settings.modelCount", {
+                          count: formatLocaleNumber(providerSelections.length),
+                        })}
+                      </span>
+                    </div>
+
+                    {providerSelections.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border-default px-4 py-5 text-center">
+                        <p className="text-sm text-text-muted mb-3">
+                          {t("settings.noProviderModels")}
+                        </p>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleSelectionCreate(provider.name)}
+                        >
+                          {t("settings.addModel")}
+                        </Button>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="space-y-2">
+                        {providerSelections.map((selection) => (
+                          <div
+                            key={selection.id}
+                            className="group/model-row rounded-xl border border-border-light bg-surface-secondary/60 px-4 py-3"
+                          >
+                            <div className="flex min-h-8 flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h5 className="text-sm font-medium text-text-primary break-all">
+                                    {selection.model_name}
+                                  </h5>
+                                  <ModelCapabilityIcon
+                                    supportsImage={
+                                      selection.supports_image_input
+                                    }
+                                  />
+                                  {selection.provider.has_api_key ? null : (
+                                    <Badge variant="warning" size="sm">
+                                      {t("settings.missingKey")}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/model-row:opacity-100 group-focus-within/model-row:opacity-100">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSelectionEdit(selection)}
+                                >
+                                  {t("settings.edit")}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setConfirmSelectionDelete(selection)
+                                  }
+                                  disabled={deletingSelection === selection.id}
+                                  className="text-error-text hover:bg-error-bg"
+                                >
+                                  {deletingSelection === selection.id
+                                    ? t("settings.deleting")
+                                    : t("settings.delete")}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </ProviderCard>
-          );
-        })}
-        </div>
-      )}
+                </ProviderCard>
+              );
+            })}
+          </div>
+        )}
 
-      <FormDrawer
-        open={providerDrawerOpen}
-        title={editingProvider ? "编辑供应商" : "添加供应商"}
-        onClose={() => setProviderDrawerOpen(false)}
-      >
-        <ProviderForm
-          initial={editingProvider ?? undefined}
-          onSubmit={handleProviderSubmit}
-          onCancel={() => setProviderDrawerOpen(false)}
-          submitting={providerSubmitting}
+        <FormDrawer
+          open={providerDrawerOpen}
+          title={editingProvider ? t("settings.editProvider") : t("settings.addProviderTitle")}
+          onClose={() => setProviderDrawerOpen(false)}
+        >
+          <ProviderForm
+            initial={editingProvider ?? undefined}
+            onSubmit={handleProviderSubmit}
+            onCancel={() => setProviderDrawerOpen(false)}
+            submitting={providerSubmitting}
+          />
+        </FormDrawer>
+
+        <FormDrawer
+          open={selectionDrawerOpen}
+          title={editingSelection ? t("settings.editSelection") : t("settings.addSelection")}
+          onClose={() => setSelectionDrawerOpen(false)}
+        >
+          <SelectionForm
+            initial={editingSelection ?? undefined}
+            providers={providers}
+            defaultProviderName={defaultProviderName}
+            onSubmit={handleSelectionSubmit}
+            onCancel={() => setSelectionDrawerOpen(false)}
+            submitting={selectionSubmitting}
+          />
+        </FormDrawer>
+
+        <ConfirmDialog
+          open={!!confirmProviderDelete}
+          title={t("settings.deleteProviderTitle")}
+          message={t("settings.deleteProviderMessage", {
+            name: confirmProviderDelete?.name,
+          })}
+          confirmLabel={t("settings.delete")}
+          variant="danger"
+          onConfirm={handleProviderDelete}
+          onCancel={() => setConfirmProviderDelete(null)}
+          loading={!!deletingProvider}
         />
-      </FormDrawer>
 
-      <FormDrawer
-        open={selectionDrawerOpen}
-        title={editingSelection ? "编辑模型选择" : "添加模型选择"}
-        onClose={() => setSelectionDrawerOpen(false)}
-      >
-        <SelectionForm
-          initial={editingSelection ?? undefined}
-          providers={providers}
-          defaultProviderName={defaultProviderName}
-          onSubmit={handleSelectionSubmit}
-          onCancel={() => setSelectionDrawerOpen(false)}
-          submitting={selectionSubmitting}
+        <ConfirmDialog
+          open={!!confirmSelectionDelete}
+          title={t("settings.deleteSelectionTitle")}
+          message={t("settings.deleteSelectionMessage", {
+            name: `${confirmSelectionDelete?.provider.name} / ${confirmSelectionDelete?.model_name}`,
+          })}
+          confirmLabel={t("settings.delete")}
+          variant="danger"
+          onConfirm={handleSelectionDelete}
+          onCancel={() => setConfirmSelectionDelete(null)}
+          loading={!!deletingSelection}
         />
-      </FormDrawer>
-
-      <ConfirmDialog
-        open={!!confirmProviderDelete}
-        title="删除供应商配置"
-        message={`确定要删除「${confirmProviderDelete?.name}」吗？如果该供应商仍有模型选择引用，删除将失败。`}
-        confirmLabel="删除"
-        variant="danger"
-        onConfirm={handleProviderDelete}
-        onCancel={() => setConfirmProviderDelete(null)}
-        loading={!!deletingProvider}
-      />
-
-      <ConfirmDialog
-        open={!!confirmSelectionDelete}
-        title="删除模型选择"
-        message={`确定要删除「${confirmSelectionDelete?.provider.name} / ${confirmSelectionDelete?.model_name}」吗？`}
-        confirmLabel="删除"
-        variant="danger"
-        onConfirm={handleSelectionDelete}
-        onCancel={() => setConfirmSelectionDelete(null)}
-        loading={!!deletingSelection}
-      />
+      </div>
     </div>
+  );
+}
+
+function ModelCapabilityIcon({ supportsImage }: { supportsImage: boolean }) {
+  const { t } = useTranslation();
+  const label = supportsImage ? t("settings.imageSupported") : t("settings.textOnly");
+  const Icon = supportsImage ? Image : FileText;
+  const className = supportsImage
+    ? "bg-success-bg text-success-text"
+    : "bg-surface-secondary text-text-muted";
+
+  return (
+    <span
+      aria-label={label}
+      title={label}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${className}`}
+    >
+      <Icon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
+    </span>
   );
 }

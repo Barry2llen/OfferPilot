@@ -23,6 +23,7 @@ from schemas.resume_document import (
 from services import ModelSelectionService, ResumeService, UploadedResumeFile
 from services.resume_extraction_jobs import ResumeExtractionJobManager
 from utils.stream import render_sse_event
+from utils.i18n import request_locale
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -31,7 +32,7 @@ _ERROR_DETAIL_SCHEMA = {
     "properties": {
         "detail": {
             "type": "string",
-            "description": "错误详情描述。",
+            "description": "Description of the error.",
         }
     },
     "required": ["detail"],
@@ -106,12 +107,12 @@ async def _stream_resume_extraction(
 @router.get(
     "",
     response_model=list[ResumeListItem],
-    summary="列出已上传简历",
+    summary="List uploaded resumes",
     description=(
-        "返回当前系统中所有简历记录的文件信息。"
-        "适用于列表页展示，包含原文件信息和预览地址。"
+        "Return file information for all resume records. Intended for list views and includes "
+        "original file metadata and preview URLs."
     ),
-    response_description="按上传时间倒序返回简历文件列表。",
+    response_description="Returns resumes ordered by upload time.",
 )
 async def list_resumes(
     request: Request,
@@ -124,18 +125,18 @@ async def list_resumes(
 @router.get(
     "/{resume_id}",
     response_model=ResumeDetail,
-    summary="获取简历详情",
-    description="根据简历记录 ID 返回原文件信息和预览地址。",
-    response_description="返回指定简历的文件详情。",
+    summary="Get resume details",
+    description="Return original file information and a preview URL for a resume record ID.",
+    response_description="Returns the requested resume details.",
     responses={
-        404: _error_response("未找到指定简历。", example="Resume not found: 1"),
+        404: _error_response("The requested resume was not found.", example="Resume not found: 1"),
     },
 )
 async def get_resume(
     request: Request,
     resume_id: int = Path(
         ...,
-        description="简历记录 ID。上传成功后响应体中的 `id` 可用于此接口。",
+        description="Resume record ID. Use the `id` returned after upload.",
         examples=[1],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -149,16 +150,16 @@ async def get_resume(
 
 @router.post(
     "/files",
-    summary="上传简历文件",
+    summary="Upload a resume file",
     description=(
-        "上传 PDF、DOCX、PNG、JPG 或 JPEG 格式的简历文件。"
-        "服务会保存原文件和文件元数据，并使用指定模型选择记录流式解析简历内容。"
-        "解析任务会在服务端后台继续运行，SSE 连接断开不会取消已开始的解析。"
+        "Upload a PDF, DOCX, PNG, JPG, or JPEG resume file. The service stores the original file and metadata, "
+        "then streams parsing with the selected model. The parsing job continues in the background if the SSE "
+        "connection is closed."
     ),
-    response_description="返回 text/event-stream 事件流。",
+    response_description="Returns a text/event-stream response.",
     responses={
         200: {
-            "description": "返回 SSE 事件流。事件包括 resume、progress、model_error、final，失败时返回 error。",
+            "description": "Returns SSE events including resume, progress, model_error, and final; failures use error.",
             "content": {
                 "text/event-stream": {
                     "schema": {"type": "string"},
@@ -166,21 +167,21 @@ async def get_resume(
                 }
             },
         },
-        404: _error_response("未找到指定模型选择配置。", example="Model selection not found: 1"),
-        415: _error_response("上传了不支持的文件类型。", example="Legacy .doc files are not supported."),
-        422: _error_response("文件为空或文件名非法。", example="Uploaded file is empty."),
+        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
+        415: _error_response("The uploaded file type is not supported.", example="Legacy .doc files are not supported."),
+        422: _error_response("The file is empty or its name is invalid.", example="Uploaded file is empty."),
     },
 )
 async def upload_resume_file(
     request: Request,
     selection_id: int = Form(
         ...,
-        description="用于解析简历的模型选择记录 ID，对应 tb_model_selection.id。",
+        description="Model selection record ID used to parse the resume.",
         examples=[1],
     ),
     file: UploadFile = File(
         ...,
-        description="待上传的简历文件，支持 PDF、DOCX、PNG、JPG、JPEG。",
+        description="Resume file to upload. PDF, DOCX, PNG, JPG, and JPEG are supported.",
     ),
     session: Session = Depends(_get_request_db_session),
 ) -> StreamingResponse:
@@ -212,6 +213,7 @@ async def upload_resume_file(
         selection=selection,
         resume_document=_resume_document_from_detail(processing_detail),
         initial_event=_sse("resume", {"resume": processing_detail}),
+        locale=request_locale(request),
     )
 
     return StreamingResponse(
@@ -226,16 +228,15 @@ async def upload_resume_file(
 
 @router.put(
     "/{resume_id}/file",
-    summary="替换简历原文件",
+    summary="Replace a resume file",
     description=(
-        "使用新的简历文件替换指定记录对应的原始文件。"
-        "替换成功后会更新文件名和媒体类型，并使用指定模型选择记录流式重新解析简历内容。"
-        "解析任务会在服务端后台继续运行，SSE 连接断开不会取消已开始的解析。"
+        "Replace the original file for a resume record. The filename and media type are updated, and parsing "
+        "is streamed with the selected model. The background parsing job continues if the SSE connection closes."
     ),
-    response_description="返回 text/event-stream 事件流。",
+    response_description="Returns a text/event-stream response.",
     responses={
         200: {
-            "description": "返回 SSE 事件流。事件包括 resume、progress、model_error、final，失败时返回 error。",
+            "description": "Returns SSE events including resume, progress, model_error, and final; failures use error.",
             "content": {
                 "text/event-stream": {
                     "schema": {"type": "string"},
@@ -243,26 +244,26 @@ async def upload_resume_file(
                 }
             },
         },
-        404: _error_response("未找到指定简历。", example="Resume not found: 1"),
-        415: _error_response("上传了不支持的文件类型。", example="Unsupported resume file type: .txt"),
-        422: _error_response("文件为空或文件名非法。", example="Uploaded file is empty."),
+        404: _error_response("The requested resume was not found.", example="Resume not found: 1"),
+        415: _error_response("The uploaded resume file type is not supported.", example="Unsupported resume file type: .txt"),
+        422: _error_response("The file is empty or its name is invalid.", example="Uploaded file is empty."),
     },
 )
 async def replace_resume_file(
     request: Request,
     resume_id: int = Path(
         ...,
-        description="待替换原文件的简历记录 ID。",
+        description="Resume record ID whose original file will be replaced.",
         examples=[1],
     ),
     selection_id: int = Form(
         ...,
-        description="用于重新解析简历的模型选择记录 ID，对应 tb_model_selection.id。",
+        description="Model selection record ID used to reparse the resume.",
         examples=[1],
     ),
     file: UploadFile = File(
         ...,
-        description="新的简历文件，支持 PDF、DOCX、PNG、JPG、JPEG。",
+        description="New resume file. PDF, DOCX, PNG, JPG, and JPEG are supported.",
     ),
     session: Session = Depends(_get_request_db_session),
 ) -> StreamingResponse:
@@ -297,6 +298,7 @@ async def replace_resume_file(
         selection=selection,
         resume_document=_resume_document_from_detail(processing_detail),
         initial_event=_sse("resume", {"resume": processing_detail}),
+        locale=request_locale(request),
     )
 
     return StreamingResponse(
@@ -312,18 +314,18 @@ async def replace_resume_file(
 @router.delete(
     "/{resume_id}",
     status_code=204,
-    summary="删除简历记录",
-    description="删除指定简历记录，并尝试移除对应的已存储原始文件。",
-    response_description="删除成功，无响应体。",
+    summary="Delete a resume",
+    description="Delete a resume record and attempt to remove its stored original file.",
+    response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("未找到指定简历。", example="Resume not found: 1"),
+        404: _error_response("The requested resume was not found.", example="Resume not found: 1"),
     },
 )
 async def delete_resume(
     request: Request,
     resume_id: int = Path(
         ...,
-        description="待删除的简历记录 ID。",
+        description="Resume record ID to delete.",
         examples=[1],
     ),
     session: Session = Depends(_get_request_db_session),
@@ -340,29 +342,29 @@ async def delete_resume(
 @router.get(
     "/{resume_id}/file",
     response_class=FileResponse,
-    summary="预览简历原文件",
+    summary="Preview the original resume file",
     description=(
-        "返回原始简历文件流，适用于浏览器在线预览。"
-        "实际 `content-type` 取决于原始文件类型，常见为 PDF 或图片格式。"
+        "Return the original resume file stream for browser preview. The `content-type` depends on the "
+        "original file and is commonly PDF or an image."
     ),
-    response_description="返回原始简历文件内容。",
+    response_description="Returns the original resume file content.",
     responses={
         200: {
-            "description": "返回原始简历文件流。",
+            "description": "Returns the original resume file stream.",
             "content": {
                 "application/octet-stream": {
                     "schema": {"type": "string", "format": "binary"},
                 }
             },
         },
-        404: _error_response("未找到指定简历或其原文件。", example="Resume file not found: 1"),
+        404: _error_response("The requested resume or original file was not found.", example="Resume file not found: 1"),
     },
 )
 async def preview_resume_file(
     request: Request,
     resume_id: int = Path(
         ...,
-        description="需要预览原文件的简历记录 ID。",
+        description="Resume record ID whose original file should be previewed.",
         examples=[1],
     ),
     session: Session = Depends(_get_request_db_session),

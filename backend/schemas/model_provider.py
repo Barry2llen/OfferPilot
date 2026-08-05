@@ -33,21 +33,21 @@ class ModelProviderCreate(BaseModel):
     )
 
     provider: Provider = Field(
-        description="模型供应商类型。",
+        description="Model provider type.",
         examples=["OpenAI"],
     )
     name: str = Field(
-        description="模型供应商配置名称，作为后续模型选择的引用键。",
+        description="Model provider configuration name used as a reference key for model selections.",
         examples=["default-openai"],
     )
     base_url: str | None = Field(
         default=None,
-        description="供应商 API 地址。OpenAI Compatible 通常需要配置；DeepSeek 省略时使用官方默认地址。",
+        description="Provider API URL. Usually required for OpenAI Compatible providers; DeepSeek uses its official default when omitted.",
         examples=["https://api.example.com/v1"],
     )
     api_key: str | None = Field(
         default=None,
-        description="供应商 API Key。响应不会回显明文。",
+        description="Provider API key. Responses never expose the key in plaintext.",
         examples=["sk-local-secret"],
     )
 
@@ -67,17 +67,17 @@ class ModelProviderUpdate(BaseModel):
 
     provider: Provider | None = Field(
         default=None,
-        description="新的供应商类型。省略时保持原值。",
+        description="New provider type. The current value is kept when omitted.",
         examples=["DeepSeek"],
     )
     base_url: str | None = Field(
         default=None,
-        description="新的供应商兼容 API 地址。省略时保持原值，传 null 时清空。",
+        description="New provider-compatible API URL. The current value is kept when omitted and cleared when null is sent.",
         examples=["https://compatible.example.com/v1"],
     )
     api_key: str | None = Field(
         default=None,
-        description="新的 API Key。省略时保留原值，传 null 时清空。",
+        description="New API key. The current value is kept when omitted and cleared when null is sent.",
         examples=["sk-updated-secret"],
     )
 
@@ -97,19 +97,19 @@ class ModelProviderResponse(BaseModel):
     )
 
     provider: Provider | str = Field(
-        description="模型供应商类型。",
+        description="Model provider type.",
         examples=["OpenAI"],
     )
     name: str = Field(
-        description="模型供应商配置名称。",
+        description="Model provider configuration name.",
         examples=["default-openai"],
     )
     base_url: str | None = Field(
         default=None,
-        description="供应商兼容 API 地址。",
+        description="Provider-compatible API URL.",
         examples=["https://api.example.com/v1"],
     )
     has_api_key: bool = Field(
-        description="是否已配置 API Key。不会回显明文密钥。",
+        description="Whether an API key is configured. The key is never returned in plaintext.",
         examples=[True],
     )

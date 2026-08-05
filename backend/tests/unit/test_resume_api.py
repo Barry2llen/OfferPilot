@@ -268,6 +268,7 @@ def test_upload_resume_file_endpoint_returns_404_for_missing_selection(
             "/resumes/files",
             data={"selection_id": "999"},
             files={"file": ("resume.png", b"fake-image", "image/png")},
+            headers={"Accept-Language": "en-US"},
         )
 
     assert response.status_code == 404
@@ -541,10 +542,11 @@ def test_upload_resume_file_endpoint_rejects_doc(temporary_app_config: Config) -
             "/resumes/files",
             data={"selection_id": str(selection_id)},
             files={"file": ("resume.doc", b"legacy-doc", "application/msword")},
+            headers={"Accept-Language": "en-US"},
         )
 
     assert response.status_code == 415
-    assert "Legacy .doc files are not supported." in response.json()["detail"]
+    assert response.json()["detail"] == "The resume file type is not supported."
 
 
 def test_openapi_json_contains_complete_resume_docs(
@@ -559,21 +561,21 @@ def test_openapi_json_contains_complete_resume_docs(
     payload = response.json()
 
     assert payload["info"]["title"] == "OfferPilot API"
-    assert "简历文件管理" in payload["info"]["description"]
+    assert "resume file management" in payload["info"]["description"]
     assert payload["tags"][0]["name"] == "resumes"
-    assert "简历文件管理接口" in payload["tags"][0]["description"]
+    assert "Resume file management" in payload["tags"][0]["description"]
 
-    root_get = payload["paths"]["/"]["get"]
-    assert root_get["summary"] == "服务探活"
-    assert "服务已成功启动" in root_get["description"]
+    health_get = payload["paths"]["/health"]["get"]
+    assert health_get["summary"] == "Health check"
+    assert "API service has started successfully" in health_get["description"]
 
     list_resumes = payload["paths"]["/resumes"]["get"]
-    assert list_resumes["summary"] == "列出已上传简历"
-    assert "文件信息" in list_resumes["description"]
+    assert list_resumes["summary"] == "List uploaded resumes"
+    assert "file information" in list_resumes["description"]
 
     upload_resume = payload["paths"]["/resumes/files"]["post"]
-    assert upload_resume["summary"] == "上传简历文件"
-    assert "PDF、DOCX、PNG、JPG 或 JPEG" in upload_resume["description"]
+    assert upload_resume["summary"] == "Upload a resume file"
+    assert "PDF, DOCX, PNG, JPG, or JPEG" in upload_resume["description"]
     assert upload_resume["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
     assert "text/event-stream" in upload_resume["responses"]["200"]["content"]
     assert "415" in upload_resume["responses"]

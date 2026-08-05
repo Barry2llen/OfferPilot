@@ -70,6 +70,27 @@ CREATE TABLE IF NOT EXISTS tb_resume_extraction (
     FOREIGN KEY (model_selection_id) REFERENCES tb_model_selection(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS tb_job_description_analysis (
+    id INTEGER PRIMARY KEY,
+    status VARCHAR(32) NOT NULL DEFAULT 'processing',
+    source_url VARCHAR(1024),
+    source_image_file_ids JSON DEFAULT '[]' NOT NULL,
+    raw_text TEXT,
+    result JSON DEFAULT '{}' NOT NULL,
+    summary TEXT,
+    error_message TEXT,
+    model_selection_id INTEGER,
+    job_title VARCHAR(255),
+    company_name VARCHAR(255),
+    primary_location VARCHAR(255),
+    block_count INTEGER NOT NULL DEFAULT 0,
+    fact_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP,
+    FOREIGN KEY (model_selection_id) REFERENCES tb_model_selection(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS tb_graph_checkpoint (
     thread_id VARCHAR(255) NOT NULL,
     checkpoint_ns VARCHAR(255) NOT NULL DEFAULT '',

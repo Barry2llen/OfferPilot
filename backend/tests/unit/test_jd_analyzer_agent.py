@@ -1,20 +1,34 @@
+import asyncio
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
 from langgraph.constants import END
+from pydantic import ValidationError
 
 from agent.agents.jd_analyzer import agent as jd_agent_module
+from agent.agents.jd_analyzer import prompt as jd_prompt_module
 from agent.agents.jd_analyzer import JdAnalyzerAgent
+from agent.tools import web_search as web_search_module
+from schemas.config import Config
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
 from schemas.job_description import (
     JdFactEx,
     JdFactsEx,
     JdRequirementBlockEx,
+    JobDescription,
     JobDescriptionEx,
 )
 
 
 _IMAGE_DATA_URL = "data:image/png;base64,ZmFrZS1pbWFnZQ=="
+
+
+@tool
+async def fake_get_content(url: str) -> str:
+    """Return fake fetched content."""
+    return f"content={url}"
 
 
 def _model_selection(*, supports_image_input: bool) -> ModelSelection:
@@ -23,6 +37,172 @@ def _model_selection(*, supports_image_input: bool) -> ModelSelection:
         model_name="gpt-4o-mini",
         supports_image_input=supports_image_input,
     )
+
+
+def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields() -> None:
+    result = JobDescriptionEx.model_validate(
+        {
+            "company": "示例科技",
+            "title": "后端开发工程师",
+            "location": "上海",
+            "experience": "3年以上后端经验",
+            "education": "本科及以上",
+            "remote_policy": "不接受居家办公",
+            "employment_type": "全职",
+            "experience_level": None,
+            "education_min": "本科",
+            "salary": {
+                "raw": "25-40K·15薪",
+                "min_monthly": 25,
+                "max_monthly": 40,
+                "months_per_year": 15,
+                "currency": "CNY",
+            },
+            "keywords": ["Python"],
+            "other_info": "ignored",
+            "blocks": [
+                {
+                    "block_id": "block_1",
+                    "type": "must_have",
+                    "title": "任职要求",
+                    "content": "熟悉 Python。",
+                    "other_info": "ignored",
+                }
+            ],
+        }
+    )
+
+    assert result.company_name == "示例科技"
+    assert result.job_title == "后端开发工程师"
+    assert result.primary_location == "上海"
+    assert result.experience_raw == "3年以上后端经验"
+    assert result.education_raw == "本科及以上"
+    assert result.remote_policy_raw == "不接受居家办公"
+    assert result.employment_type_raw == "全职"
+    assert result.years_experience_min == 3
+    assert result.years_experience_max is None
+    assert result.education_min_rank == 2
+    assert result.salary_raw == "25-40K·15薪"
+    assert result.salary_min_monthly == 25
+    assert result.salary_max_monthly == 40
+    assert result.salary_months_per_year == 15
+    assert result.salary_currency == "CNY"
+    assert result.blocks[0].block_id == "block_1"
+    assert result.blocks[0].block_type == "must_have"
+    assert not hasattr(result, "salary")
+    assert not hasattr(result, "remote_policy")
+    assert not hasattr(result, "employment_type")
+    assert not hasattr(result, "experience_level")
+    assert not hasattr(result, "education_min")
+    assert not hasattr(result, "keywords")
+    assert not hasattr(result, "other_info")
+
+
+def test_job_description_final_model_remains_strict() -> None:
+    with pytest.raises(ValidationError):
+        JobDescription.model_validate(
+            {
+                "raw_text": "岗位职责：负责后端开发。",
+                "job_title": "后端开发工程师",
+                "title": "后端开发工程师",
+            }
+        )
+
+
+def test_jd_ex_models_normalize_empty_control_enum_fields() -> None:
+    block = JdRequirementBlockEx.model_validate(
+        {
+            "block_id": "block_1",
+            "block_type": "",
+            "title": "其他",
+            "content": "其他说明。",
+        }
+    )
+    fact = JdFactEx.model_validate(
+        {
+            "block_id": "block_1",
+            "fact_type": None,
+            "importance": "",
+            "text": "熟悉 Python。",
+            "evidence": "熟悉 Python。",
+        }
+    )
+
+    assert block.block_type == "other"
+    assert fact.fact_type == "other"
+    assert fact.importance == "unknown"
+
+
+def test_job_description_models_preserve_raw_text_and_normalize_comparable_fields() -> None:
+    result = JobDescriptionEx.model_validate(
+        {
+            "job_title": "后端开发工程师",
+            "remote_policy_raw": "不接受居家办公",
+            "employment_type_raw": "全职",
+            "experience_raw": "3年以上软件开发经验",
+            "years_experience_min": -1,
+            "years_experience_max": 1,
+            "education_raw": "本科及以上",
+            "education_min_rank": None,
+        }
+    )
+
+    assert result.remote_policy_raw == "不接受居家办公"
+    assert result.employment_type_raw == "全职"
+    assert result.experience_raw == "3年以上软件开发经验"
+    assert result.years_experience_min == 3
+    assert result.years_experience_max is None
+    assert result.education_raw == "本科及以上"
+    assert result.education_min_rank == 2
+
+
+def test_job_description_final_model_accepts_legacy_persisted_fields() -> None:
+    result = JobDescription.model_validate(
+        {
+            "raw_text": "岗位职责：负责后端开发。",
+            "job_title": "后端开发工程师",
+            "remote_policy": "onsite",
+            "employment_type": "full_time",
+            "experience_raw": "1-3年后端经验",
+            "experience_level": "mid",
+            "education_raw": "本科及以上",
+            "education_min": "bachelor",
+        }
+    )
+
+    assert result.remote_policy_raw == "onsite"
+    assert result.employment_type_raw == "full_time"
+    assert result.years_experience_min == 1
+    assert result.years_experience_max == 3
+    assert result.education_min_rank == 2
+    assert not hasattr(result, "experience_level")
+
+
+def test_jd_extraction_prompt_constrains_field_names_and_missing_values() -> None:
+    prompt = jd_prompt_module.jd_extraction_system_prompt
+
+    assert (
+        "company_name, company_industry, company_size, job_title, job_level, "
+        "job_family, primary_location, locations, remote_policy_raw, employment_type_raw, "
+        "experience_raw, years_experience_min, years_experience_max, education_raw, "
+        "education_min_rank, major_requirement, salary_raw, salary_min_monthly, "
+        "salary_max_monthly, salary_months_per_year, salary_currency, benefits, blocks"
+    ) in prompt
+    assert (
+        "title, location, experience, education, company, keywords, other_info, "
+        "remote_policy, employment_type, experience_level, education_min, salary"
+    ) in prompt
+    assert "block_id, block_type, title, content" in prompt
+    assert "block_type" in prompt
+    assert "Do NOT output type" in prompt
+    assert "For nullable string fields, use null" in prompt
+    assert "For list fields, use []" in prompt
+    assert "For enum fields, NEVER use null" not in prompt
+    assert "Use \"unknown\"" not in prompt
+    assert "remote_policy_raw" in prompt
+    assert "education_min_rank means" in prompt
+    assert "fixed English enum values" in prompt
+    assert "use null or the default value" not in prompt
 
 
 def test_jd_analyzer_graph_has_expected_nodes_and_edges() -> None:
@@ -57,7 +237,7 @@ def test_jd_text_input_is_prepared_for_model_call() -> None:
         }
     )
 
-    content = result["messages"][1].content
+    content = result["messages"][0].content
     assert isinstance(content, list)
     assert "[jd_text]\n岗位职责：负责后端开发" in content[0]["text"]
 
@@ -75,7 +255,7 @@ def test_prepare_jd_source_uses_image_blocks_for_vision_model() -> None:
         }
     )
 
-    content = result["messages"][1].content
+    content = result["messages"][0].content
     assert isinstance(content, list)
     assert "https://example.com/jobs/123" in content[0]["text"]
     assert "任职要求：熟悉 Python。" in content[0]["text"]
@@ -107,7 +287,7 @@ def test_prepare_jd_source_ocr_images_for_text_model(
         }
     )
 
-    content = result["messages"][1].content
+    content = result["messages"][0].content
     assert isinstance(content, list)
     assert seen_images == [_IMAGE_DATA_URL]
     assert all(block["type"] == "text" for block in content)
@@ -128,6 +308,88 @@ async def test_get_jd_source_tools_includes_marker_tools_when_web_fetch_unavaila
         "mark_jd_extraction_success",
         "mark_jd_extraction_failure",
     ]
+
+
+async def test_web_search_tools_can_be_awaited_repeatedly_with_cached_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_load_web_search_tools(config: Config):
+        nonlocal calls
+        calls += 1
+        return [fake_get_content]
+
+    web_search_module.get_web_search_tools.cache_clear()
+    monkeypatch.setattr(
+        web_search_module,
+        "_load_web_search_tools",
+        fake_load_web_search_tools,
+    )
+
+    config = Config(exa_api_key="test-key")
+    first = await web_search_module.get_web_search_tools(config)
+    second = await web_search_module.get_web_search_tools(config)
+
+    assert calls == 1
+    assert first == second == [fake_get_content]
+
+    web_search_module.get_web_search_tools.cache_clear()
+
+
+async def test_web_search_tools_concurrent_first_load_is_shared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_load_web_search_tools(config: Config):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0)
+        return [fake_get_content]
+
+    web_search_module.get_web_search_tools.cache_clear()
+    monkeypatch.setattr(
+        web_search_module,
+        "_load_web_search_tools",
+        fake_load_web_search_tools,
+    )
+
+    config = Config(exa_api_key="test-key")
+    results = await asyncio.gather(
+        web_search_module.get_web_search_tools(config),
+        web_search_module.get_web_search_tools(config),
+        web_search_module.get_web_search_tools(config),
+    )
+
+    assert calls == 1
+    assert results == [[fake_get_content], [fake_get_content], [fake_get_content]]
+
+    web_search_module.get_web_search_tools.cache_clear()
+
+
+async def test_get_jd_source_tools_can_be_called_repeatedly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_get_tools(*names, config):
+        nonlocal calls
+        calls += 1
+        return [fake_get_content]
+
+    monkeypatch.setattr(jd_agent_module, "get_tools", fake_get_tools)
+
+    first = await jd_agent_module._get_jd_source_tools(None)
+    second = await jd_agent_module._get_jd_source_tools(None)
+
+    assert calls == 2
+    assert [tool.name for tool in first] == [
+        "fake_get_content",
+        "mark_jd_extraction_success",
+        "mark_jd_extraction_failure",
+    ]
+    assert [tool.name for tool in second] == [tool.name for tool in first]
 
 
 def test_parse_jd_text_extracts_success_tool_result_and_source_url() -> None:
@@ -194,6 +456,7 @@ def test_parse_jd_text_marks_failure_tool_result_as_terminal() -> None:
     )
 
     assert result["jd_text"] is None
+    assert result["jd_error"] == "not a JD"
     assert agent._should_continue(result) == "end"
 
 
@@ -204,28 +467,85 @@ def test_parse_jd_text_rejects_plain_ai_response_without_marker_tool() -> None:
     )
 
     assert result["jd_text"] is None
+    assert result["jd_error"] == "JD extraction failed: missing marker tool call."
     assert agent._should_continue(result) == "end"
+
+
+async def test_extract_structure_uses_jd_structured_output_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    block = JdRequirementBlockEx(
+        block_id="block_1",
+        block_type="must_have",
+        title="任职要求",
+        content="熟悉 Python。",
+    )
+
+    class FakeExtractor:
+        async def ainvoke(self, messages, *, max_repair_attempts=0):
+            captured["max_repair_attempts"] = max_repair_attempts
+            captured["message_count"] = len(messages)
+            return JobDescriptionEx(
+                job_title="后端开发工程师",
+                blocks=[block],
+            )
+
+    monkeypatch.setattr(
+        jd_agent_module,
+        "load_structured_model",
+        lambda model_selection, schema, *, method=None: captured.update(
+            schema=schema,
+            method=method,
+        )
+        or FakeExtractor(),
+    )
+
+    result = await JdAnalyzerAgent(
+        config=Config(model_call_retry_attempts=3)
+    )._extract_structure_node(
+        {
+            "jd_text": "岗位职责：负责后端服务开发。",
+            "model": _model_selection(supports_image_input=False),
+        }
+    )
+
+    assert result["jd_extracted"].job_title == "后端开发工程师"
+    assert result["blocks"] == [block]
+    assert captured["schema"] is JobDescriptionEx
+    assert captured["method"] == jd_agent_module.JD_STRUCTURED_OUTPUT_METHOD
+    assert captured["max_repair_attempts"] == 2
+    assert captured["message_count"] == 2
 
 
 async def test_extract_facts_retries_and_preserves_original_block_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls_by_title: dict[str, int] = {}
+    repair_attempts_by_title: dict[str, int] = {}
+    load_calls: list[tuple[object, object]] = []
 
     class FakeExtractor:
-        async def ainvoke(self, messages):
+        async def ainvoke(self, messages, *, max_repair_attempts=0):
             block_text = messages[-1].content
             title = next(
                 candidate
                 for candidate in ("第一", "第二", "第三")
                 if candidate in block_text
             )
+            block_id = {
+                "第一": "block_1",
+                "第二": "block_2",
+                "第三": "block_3",
+            }[title]
             calls_by_title[title] = calls_by_title.get(title, 0) + 1
+            repair_attempts_by_title[title] = max_repair_attempts
             if title == "第二" and calls_by_title[title] == 1:
                 raise RuntimeError("temporary model failure")
             return JdFactsEx(
                 facts=[
                     JdFactEx(
+                        block_id=block_id,
                         fact_type="skill",
                         text=f"{title} fact",
                         evidence=block_text,
@@ -237,21 +557,27 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     monkeypatch.setattr(
         jd_agent_module,
         "load_structured_model",
-        lambda model_selection, schema: FakeExtractor(),
+        lambda model_selection, schema, *, method=None: load_calls.append(
+            (schema, method)
+        )
+        or FakeExtractor(),
     )
 
     blocks = [
         JdRequirementBlockEx(
+            block_id="block_1",
             block_type="must_have",
             title="第一",
             content="熟悉 Python。",
         ),
         JdRequirementBlockEx(
+            block_id="block_2",
             block_type="must_have",
             title="第二",
             content="熟悉 FastAPI。",
         ),
         JdRequirementBlockEx(
+            block_id="block_3",
             block_type="responsibility",
             title="第三",
             content="负责服务端开发。",
@@ -261,6 +587,8 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
         job_title="后端开发工程师",
         primary_location="上海",
         locations=["上海", "杭州"],
+        remote_policy_raw="不接受居家办公",
+        employment_type_raw="全职",
         experience_raw="3年以上后端开发经验",
         years_experience_min=3,
         years_experience_max=5,
@@ -289,9 +617,18 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     ]
     assert job_description.primary_location == "上海"
     assert job_description.locations == ["上海", "杭州"]
+    assert job_description.raw_text == "raw jd"
+    assert job_description.remote_policy_raw == "不接受居家办公"
+    assert job_description.employment_type_raw == "全职"
     assert job_description.experience_raw == "3年以上后端开发经验"
     assert job_description.years_experience_min == 3
     assert job_description.years_experience_max == 5
     assert job_description.education_raw == "本科及以上"
+    assert job_description.education_min_rank == 2
     assert job_description.major_requirement == "计算机相关专业"
     assert calls_by_title["第二"] == 2
+    assert load_calls == [
+        (JdFactsEx, jd_agent_module.JD_STRUCTURED_OUTPUT_METHOD),
+        (JdFactsEx, jd_agent_module.JD_STRUCTURED_OUTPUT_METHOD),
+    ]
+    assert repair_attempts_by_title == {"第一": 2, "第二": 2, "第三": 2}

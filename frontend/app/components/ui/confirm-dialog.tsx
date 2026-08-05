@@ -1,6 +1,5 @@
-"use client";
-
 import Button from "./button";
+import { useTranslation } from "react-i18next";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -18,13 +17,17 @@ export default function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "确认",
-  cancelLabel = "取消",
+  confirmLabel,
+  cancelLabel,
   variant = "danger",
   loading = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
+  const resolvedConfirmLabel = confirmLabel ?? t("common.confirm");
+  const resolvedCancelLabel = cancelLabel ?? t("common.cancel");
+
   if (!open) return null;
 
   return (
@@ -42,14 +45,14 @@ export default function ConfirmDialog({
         </p>
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" onClick={onCancel} disabled={loading}>
-            {cancelLabel}
+            {resolvedCancelLabel}
           </Button>
           <Button
             variant={variant === "danger" ? "danger" : "primary"}
             onClick={onConfirm}
             disabled={loading}
           >
-            {loading ? "处理中..." : confirmLabel}
+            {loading ? t("common.processing") : resolvedConfirmLabel}
           </Button>
         </div>
       </div>

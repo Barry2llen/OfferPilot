@@ -1,6 +1,5 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import QuickTasks from "@/app/components/chat/quick-tasks";
 import { buttonClassName } from "@/app/components/ui/button";
 
@@ -11,6 +10,8 @@ interface ChatWelcomeProps {
 
 
 export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
       <div className="w-full max-w-lg">
@@ -31,19 +32,19 @@ export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) 
         </div>
 
         <h1 className="font-display text-2xl font-semibold text-text-primary">
-          你好，我是 OfferPilot
+          {t("welcome.greeting")}
         </h1>
         <p className="mt-2 text-sm text-text-secondary">
-          基于大模型的 AI 求职助手，帮你分析简历、准备面试
+          {t("welcome.description")}
         </p>
 
         {hasNoModel ? (
           <div className="mt-6 rounded-2xl border border-dashed border-border-default p-6 text-center">
             <p className="mb-4 text-sm text-text-secondary">
-              开始前需要先配置一个 AI 模型
+              {t("welcome.configureFirst")}
             </p>
-            <Link href="/settings/providers" className={buttonClassName()}>
-              前往配置
+            <Link to="/settings/providers" className={buttonClassName()}>
+              {t("welcome.goToSettings")}
             </Link>
           </div>
         ) : (
@@ -53,7 +54,7 @@ export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) 
             </div>
 
             <p className="mt-6 text-center text-[11px] text-text-muted">
-              更多功能正在开发中：JD 分析 · 模拟面试 · 求职追踪
+              {t("welcome.comingSoon")}
             </p>
           </>
         )}

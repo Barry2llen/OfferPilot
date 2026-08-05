@@ -31,73 +31,73 @@ class ResumeDetail(BaseModel):
         }
     )
 
-    id: int = Field(description="简历记录 ID。用于查询详情和预览原文件。", examples=[1])
+    id: int = Field(description="Resume record ID used to retrieve details and preview the original file.", examples=[1])
     file_path: str | None = Field(
         default=None,
-        description="服务端保存的简历文件路径。通常为相对项目根目录的存储路径。",
+        description="Server-side resume file path, usually relative to the project root.",
         examples=["data/resumes/2f8f0a8e1d4047d7a1cf9fd649c95ed3.pdf"],
     )
     upload_time: datetime = Field(
-        description="简历上传时间，采用 ISO 8601 格式。",
+        description="Resume upload time in ISO 8601 format.",
         examples=["2026-04-18T17:00:00"],
     )
     original_filename: str | None = Field(
         default=None,
-        description="用户上传时的原始文件名。",
+        description="Original filename supplied by the user.",
         examples=["zhangsan_resume.pdf"],
     )
     media_type: str | None = Field(
         default=None,
-        description="上传文件的媒体类型。",
+        description="Uploaded file media type.",
         examples=["application/pdf"],
     )
     has_file: bool = Field(
-        description="是否仍然保留原始简历文件，可用于预览。",
+        description="Whether the original resume file is still available for preview.",
         examples=[True],
     )
     preview_url: str | None = Field(
         default=None,
-        description="用于在线预览原始简历文件的接口路径。",
+        description="API path for previewing the original resume file online.",
         examples=["/resumes/1/file"],
     )
     parse_status: ResumeParseStatus = Field(
         default="unparsed",
-        description="简历解析状态。unparsed 表示尚未解析，processing 表示解析中，parsed 表示解析成功，failed 表示解析失败。",
+        description="Resume parsing status: unparsed, processing, parsed, or failed.",
         examples=["parsed"],
     )
     parse_error: str | None = Field(
         default=None,
-        description="解析失败时的错误详情。解析成功或尚未解析时为空。",
+        description="Error details when parsing fails; empty after success or before parsing.",
         examples=["Model call failed after 3 retries."],
     )
     parsed_at: datetime | None = Field(
         default=None,
-        description="解析完成时间。仅解析成功或失败后返回。",
+        description="Time parsing completed; returned after parsing succeeds or fails.",
         examples=["2026-04-18T17:02:00"],
     )
     summary: str | None = Field(
         default=None,
-        description="解析结果摘要，通常取简历原文开头的简短文本。",
+        description="Parsing summary, usually a short excerpt from the beginning of the resume.",
         examples=["张三 高级后端开发工程师 Python, FastAPI"],
     )
     section_count: int = Field(
         default=0,
-        description="已解析出的简历章节数量。",
+        description="Number of parsed resume sections.",
         examples=[4],
     )
     fact_count: int = Field(
         default=0,
-        description="已解析出的事实数量。",
+        description="Number of parsed facts.",
         examples=[18],
     )
     raw_text: str = Field(
         default="",
-        description="完整解析原文。列表接口不返回该字段，详情和解析 final 事件会返回。",
+        description="Complete parsed source text. Omitted from list responses and returned by detail and parsing final events.",
         examples=["张三\n高级后端开发工程师\nPython, FastAPI"],
     )
     sections: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="结构化简历章节及 facts。列表接口不返回该字段，详情和解析 final 事件会返回。",
+        description="Structured resume sections and facts. Omitted from list responses and returned by detail and parsing final events.",
         examples=[
             [
                 {
@@ -174,62 +174,62 @@ class ResumeListItem(BaseModel):
         }
     )
 
-    id: int = Field(description="简历记录 ID。", examples=[2])
+    id: int = Field(description="Resume record ID.", examples=[2])
     file_path: str | None = Field(
         default=None,
-        description="服务端保存的简历文件路径。",
+        description="Server-side resume file path.",
         examples=["data/resumes/6b4f0e8199c54c4ab8d7e7b5c53fb242.png"],
     )
     upload_time: datetime = Field(
-        description="简历上传时间，采用 ISO 8601 格式。",
+        description="Resume upload time in ISO 8601 format.",
         examples=["2026-04-18T17:05:00"],
     )
     original_filename: str | None = Field(
         default=None,
-        description="用户上传时的原始文件名。",
+        description="Original filename supplied by the user.",
         examples=["lisi_resume.png"],
     )
     media_type: str | None = Field(
         default=None,
-        description="上传文件的媒体类型。",
+        description="Uploaded file media type.",
         examples=["image/png"],
     )
     has_file: bool = Field(
-        description="是否仍然保留原始简历文件。",
+        description="Whether the original resume file is still available.",
         examples=[True],
     )
     preview_url: str | None = Field(
         default=None,
-        description="用于在线预览原始简历文件的接口路径。",
+        description="API path for previewing the original resume file online.",
         examples=["/resumes/2/file"],
     )
     parse_status: ResumeParseStatus = Field(
         default="unparsed",
-        description="简历解析状态。",
+        description="Resume parsing status.",
         examples=["parsed"],
     )
     parse_error: str | None = Field(
         default=None,
-        description="解析失败时的错误详情。",
+        description="Error details when parsing fails.",
         examples=["Failed to extract text from resume."],
     )
     parsed_at: datetime | None = Field(
         default=None,
-        description="解析完成时间。",
+        description="Time parsing completed.",
         examples=["2026-04-18T17:06:00"],
     )
     summary: str | None = Field(
         default=None,
-        description="解析结果摘要。",
+        description="Parsing summary.",
         examples=["李四 前端工程师 React, Next.js"],
     )
     section_count: int = Field(
         default=0,
-        description="已解析出的简历章节数量。",
+        description="Number of parsed resume sections.",
         examples=[3],
     )
     fact_count: int = Field(
         default=0,
-        description="已解析出的事实数量。",
+        description="Number of parsed facts.",
         examples=[12],
     )

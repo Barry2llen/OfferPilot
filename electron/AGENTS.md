@@ -2,11 +2,11 @@
 
 ## Project Structure & Module Organization
 
-This repository is the Electron desktop shell for OfferPilot. `electron/main.ts` enforces a single instance, starts managed backend/frontend child processes, logs under Electron `userData`, and opens the app URL. `electron/preload.ts` exposes the minimal `window.offerPilotRuntime.apiBaseUrl` bridge. Renderer code is in `src/`; `src/main.tsx` mounts React and `src/App.tsx` still uses the Vite sample UI. Public files live in `public/`, imported assets in `src/assets/`, packaging scripts in `scripts/`, and installer config in `electron-builder.json5`. `dist/`, `dist-electron/`, `release/`, `resources/`, `logs/`, and `node_modules/` are generated or local-only outputs.
+This repository is the Electron desktop shell for OfferPilot. `electron/main.ts` enforces a single instance, starts the managed FastAPI and Vite processes in development, starts only the packaged FastAPI process in production, logs under Electron `userData`, and opens the app URL. `electron/preload.ts` exposes the minimal `window.offerPilotRuntime.apiBaseUrl` bridge. Renderer code is in `src/`; the application UI is served by the sibling `frontend/dist` build or by Vite during development. Packaging scripts live in `scripts/`, and installer config is in `electron-builder.json5`. `dist/`, `dist-electron/`, `release/`, `resources/`, `logs/`, and `node_modules/` are generated or local-only outputs.
 
 ## Architecture & Runtime Notes
 
-Development resolves sibling projects at `../backend` and `../frontend`, unless `OFFER_PILOT_BACKEND_DIR` or `OFFER_PILOT_FRONTEND_DIR` is set. Production expects `resources/backend/offer-pilot-api` and `resources/frontend`, then serves both on available localhost ports. Preserve `contextIsolation: true` and `nodeIntegration: false`.
+Development resolves sibling projects at `../backend` and `../frontend`, unless `OFFER_PILOT_BACKEND_DIR` or `OFFER_PILOT_FRONTEND_DIR` is set. It starts FastAPI and Vite on available localhost ports. Production expects `resources/backend/offer-pilot-api` and `resources/frontend`, passes the latter to FastAPI with `--frontend-dist`, and uses the FastAPI origin for both API and UI. Preserve `contextIsolation: true` and `nodeIntegration: false`.
 
 ## Build, Test, and Development Commands
 
@@ -14,7 +14,7 @@ Development resolves sibling projects at `../backend` and `../frontend`, unless 
 - `npm run dev`: run the Vite/Electron development shell.
 - `npm run lint`: run ESLint with zero warnings allowed.
 - `npm run build:electron`: run `tsc` and build `dist/` plus `dist-electron/`.
-- `npm run build:frontend`: build `../frontend`, then stage the Next standalone bundle.
+- `npm run build:frontend`: build `../frontend` with Vite, then stage `frontend/dist` into `resources/frontend`.
 - `npm run build:backend`: package `../backend` with `uv` and PyInstaller, then stage the executable.
 - `npm run build` / `npm run build:win`: build assets and the Windows x64 NSIS installer.
 - `npm run preview`: preview the Vite renderer build.
