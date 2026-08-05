@@ -1,5 +1,6 @@
 import { FileText, Image } from "lucide-react";
 import { useMemo, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAsyncData } from "@/app/hooks/use-async-data";
@@ -12,6 +13,7 @@ import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Badge from "@/app/components/ui/badge";
 import Button from "@/app/components/ui/button";
 import { Skeleton } from "@/app/components/ui/skeleton";
+import { formatLocaleNumber } from "@/app/lib/i18n";
 import type {
   ModelProviderResponse,
   ModelProviderCreate,
@@ -33,6 +35,7 @@ const PAGE_INNER_CLASS =
   "mx-auto max-w-[1040px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6";
 
 export default function ProvidersPage() {
+  const { t } = useTranslation();
   const { data, loading, error, refetch } = useAsyncData<ModelConfigData>(
     async () => {
       const [providers, selections] = await Promise.all([
@@ -109,24 +112,24 @@ export default function ProvidersPage() {
             editingProvider.name,
             data as ModelProviderUpdate,
           );
-          addToast("供应商配置已更新", "success");
+          addToast(t("settings.providerUpdated"), "success");
         } else {
           const createData = data as ModelProviderCreate;
           await modelProvidersApi.create(createData);
-          addToast("供应商配置已创建", "success");
+          addToast(t("settings.providerCreated"), "success");
           setHighlightProvider(createData.name);
           setTimeout(() => setHighlightProvider(null), 3000);
         }
         setProviderDrawerOpen(false);
         refetch();
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "操作失败";
+        const msg = err instanceof Error ? err.message : t("settings.operationFailed");
         addToast(msg, "error");
       } finally {
         setProviderSubmitting(false);
       }
     },
-    [editingProvider, refetch, addToast],
+    [editingProvider, refetch, addToast, t],
   );
 
   const handleSelectionSubmit = useCallback(
@@ -138,21 +141,21 @@ export default function ProvidersPage() {
             editingSelection.id,
             data as ModelSelectionUpdate,
           );
-          addToast("模型选择已更新", "success");
+          addToast(t("settings.selectionUpdated"), "success");
         } else {
           await modelSelectionsApi.create(data as ModelSelectionCreate);
-          addToast("模型选择已创建", "success");
+          addToast(t("settings.selectionCreated"), "success");
         }
         setSelectionDrawerOpen(false);
         refetch();
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "操作失败";
+        const msg = err instanceof Error ? err.message : t("settings.operationFailed");
         addToast(msg, "error");
       } finally {
         setSelectionSubmitting(false);
       }
     },
-    [editingSelection, refetch, addToast],
+    [editingSelection, refetch, addToast, t],
   );
 
   const handleProviderDelete = async () => {
@@ -160,11 +163,11 @@ export default function ProvidersPage() {
     setDeletingProvider(confirmProviderDelete.name);
     try {
       await modelProvidersApi.delete(confirmProviderDelete.name);
-      addToast("供应商已删除", "success");
+      addToast(t("settings.providerDeleted"), "success");
       setConfirmProviderDelete(null);
       refetch();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "删除失败";
+      const msg = err instanceof Error ? err.message : t("settings.deleteFailed");
       addToast(msg, "error");
     } finally {
       setDeletingProvider(null);
@@ -176,11 +179,11 @@ export default function ProvidersPage() {
     setDeletingSelection(confirmSelectionDelete.id);
     try {
       await modelSelectionsApi.delete(confirmSelectionDelete.id);
-      addToast("模型选择已删除", "success");
+      addToast(t("settings.selectionDeleted"), "success");
       setConfirmSelectionDelete(null);
       refetch();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "删除失败";
+      const msg = err instanceof Error ? err.message : t("settings.deleteFailed");
       addToast(msg, "error");
     } finally {
       setDeletingSelection(null);
@@ -215,7 +218,7 @@ export default function ProvidersPage() {
           <div className="py-20 text-center">
             <p className="mb-4 text-sm text-error-text">{error}</p>
             <Button variant="secondary" onClick={refetch}>
-              重试
+              {t("common.retry")}
             </Button>
           </div>
         </div>
@@ -229,20 +232,20 @@ export default function ProvidersPage() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl font-semibold text-text-primary">
-              模型配置
+              {t("settings.title")}
             </h1>
             <p className="text-sm text-text-muted mt-1">
-              按供应商管理 API 密钥、模型选择和多模态能力
+              {t("settings.description")}
             </p>
           </div>
-          <Button onClick={handleProviderCreate}>添加供应商</Button>
+          <Button onClick={handleProviderCreate}>{t("settings.addProvider")}</Button>
         </div>
 
         {providers && providers.length === 0 ? (
           <div className="text-center py-16 border-2 border-dashed border-border-default rounded-[20px]">
-            <p className="text-text-muted text-sm mb-3">暂无模型供应商配置</p>
+            <p className="text-text-muted text-sm mb-3">{t("settings.noProviders")}</p>
             <Button variant="secondary" onClick={handleProviderCreate}>
-              创建第一个供应商
+              {t("settings.createFirstProvider")}
             </Button>
           </div>
         ) : (
@@ -263,24 +266,26 @@ export default function ProvidersPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <h4 className="text-sm font-medium text-text-primary">
-                        模型选择
+                        {t("settings.modelSelections")}
                       </h4>
                       <span className="text-xs text-text-muted">
-                        {providerSelections.length} 个模型
+                        {t("settings.modelCount", {
+                          count: formatLocaleNumber(providerSelections.length),
+                        })}
                       </span>
                     </div>
 
                     {providerSelections.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-border-default px-4 py-5 text-center">
                         <p className="text-sm text-text-muted mb-3">
-                          暂无模型，请为该供应商添加模型选择
+                          {t("settings.noProviderModels")}
                         </p>
                         <Button
                           variant="secondary"
                           size="sm"
                           onClick={() => handleSelectionCreate(provider.name)}
                         >
-                          添加模型
+                          {t("settings.addModel")}
                         </Button>
                       </div>
                     ) : (
@@ -303,7 +308,7 @@ export default function ProvidersPage() {
                                   />
                                   {selection.provider.has_api_key ? null : (
                                     <Badge variant="warning" size="sm">
-                                      供应商未配置密钥
+                                      {t("settings.missingKey")}
                                     </Badge>
                                   )}
                                 </div>
@@ -314,7 +319,7 @@ export default function ProvidersPage() {
                                   size="sm"
                                   onClick={() => handleSelectionEdit(selection)}
                                 >
-                                  编辑
+                                  {t("settings.edit")}
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -326,8 +331,8 @@ export default function ProvidersPage() {
                                   className="text-error-text hover:bg-error-bg"
                                 >
                                   {deletingSelection === selection.id
-                                    ? "删除中..."
-                                    : "删除"}
+                                    ? t("settings.deleting")
+                                    : t("settings.delete")}
                                 </Button>
                               </div>
                             </div>
@@ -344,7 +349,7 @@ export default function ProvidersPage() {
 
         <FormDrawer
           open={providerDrawerOpen}
-          title={editingProvider ? "编辑供应商" : "添加供应商"}
+          title={editingProvider ? t("settings.editProvider") : t("settings.addProviderTitle")}
           onClose={() => setProviderDrawerOpen(false)}
         >
           <ProviderForm
@@ -357,7 +362,7 @@ export default function ProvidersPage() {
 
         <FormDrawer
           open={selectionDrawerOpen}
-          title={editingSelection ? "编辑模型选择" : "添加模型选择"}
+          title={editingSelection ? t("settings.editSelection") : t("settings.addSelection")}
           onClose={() => setSelectionDrawerOpen(false)}
         >
           <SelectionForm
@@ -372,9 +377,11 @@ export default function ProvidersPage() {
 
         <ConfirmDialog
           open={!!confirmProviderDelete}
-          title="删除供应商配置"
-          message={`确定要删除「${confirmProviderDelete?.name}」吗？如果该供应商仍有模型选择引用，删除将失败。`}
-          confirmLabel="删除"
+          title={t("settings.deleteProviderTitle")}
+          message={t("settings.deleteProviderMessage", {
+            name: confirmProviderDelete?.name,
+          })}
+          confirmLabel={t("settings.delete")}
           variant="danger"
           onConfirm={handleProviderDelete}
           onCancel={() => setConfirmProviderDelete(null)}
@@ -383,9 +390,11 @@ export default function ProvidersPage() {
 
         <ConfirmDialog
           open={!!confirmSelectionDelete}
-          title="删除模型选择"
-          message={`确定要删除「${confirmSelectionDelete?.provider.name} / ${confirmSelectionDelete?.model_name}」吗？`}
-          confirmLabel="删除"
+          title={t("settings.deleteSelectionTitle")}
+          message={t("settings.deleteSelectionMessage", {
+            name: `${confirmSelectionDelete?.provider.name} / ${confirmSelectionDelete?.model_name}`,
+          })}
+          confirmLabel={t("settings.delete")}
           variant="danger"
           onConfirm={handleSelectionDelete}
           onCancel={() => setConfirmSelectionDelete(null)}
@@ -397,7 +406,8 @@ export default function ProvidersPage() {
 }
 
 function ModelCapabilityIcon({ supportsImage }: { supportsImage: boolean }) {
-  const label = supportsImage ? "支持图片" : "仅文本";
+  const { t } = useTranslation();
+  const label = supportsImage ? t("settings.imageSupported") : t("settings.textOnly");
   const Icon = supportsImage ? Image : FileText;
   const className = supportsImage
     ? "bg-success-bg text-success-text"

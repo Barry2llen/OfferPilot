@@ -1,3 +1,5 @@
+import { getCurrentLocale } from "@/app/lib/i18n";
+
 declare global {
   interface Window {
     offerPilotRuntime?: {
@@ -39,17 +41,22 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const url = `${getBaseUrl()}${path}`;
   const isFormData = options.body instanceof FormData;
+  const { headers: optionHeaders, ...requestOptions } = options;
 
   const res = await fetch(url, {
+    ...requestOptions,
     headers: isFormData
-      ? { ...(options.headers as Record<string, string> | undefined) }
+      ? {
+          ...(optionHeaders as Record<string, string> | undefined),
+          "Accept-Language": getCurrentLocale(),
+        }
       : {
+          ...(optionHeaders as Record<string, string> | undefined),
           "Content-Type": "application/json",
           Accept: "application/json",
-          ...(options.headers as Record<string, string> | undefined),
-      },
+          "Accept-Language": getCurrentLocale(),
+        },
     cache: "no-store",
-    ...options,
   });
 
   if (!res.ok) {
@@ -69,4 +76,8 @@ export async function apiRequest<T>(
 
 export function apiUrl(path: string): string {
   return `${getBaseUrl()}${path}`;
+}
+
+export function localeHeaders(): Record<string, string> {
+  return { "Accept-Language": getCurrentLocale() };
 }

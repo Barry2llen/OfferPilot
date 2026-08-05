@@ -264,17 +264,17 @@ class JdSalaryEx(JdLlmOutputModel):
 
     raw: str = Field(
         default="",
-        description="Original salary string, e.g. '25-40K·15薪'.",
+        description="Original salary string, e.g. '25-40K per month with 15 payments'.",
         examples=["25-40K·15薪"],
     )
     min_monthly: float | None = Field(
         default=None,
-        description="Minimum monthly base in 千元 (k).",
+        description="Minimum monthly base in thousands of currency units (k).",
         examples=[25],
     )
     max_monthly: float | None = Field(
         default=None,
-        description="Maximum monthly base in 千元 (k).",
+        description="Maximum monthly base in thousands of currency units (k).",
         examples=[40],
     )
     months_per_year: float | None = Field(
@@ -294,17 +294,17 @@ class JdSalary(JdSchemaModel):
 
     raw: str = Field(
         default="",
-        description="Original salary string, e.g. '25-40K·15薪'.",
+        description="Original salary string, e.g. '25-40K per month with 15 payments'.",
         examples=["25-40K·15薪"],
     )
     min_monthly: float | None = Field(
         default=None,
-        description="Minimum monthly base in 千元 (k).",
+        description="Minimum monthly base in thousands of currency units (k).",
         examples=[25],
     )
     max_monthly: float | None = Field(
         default=None,
-        description="Maximum monthly base in 千元 (k).",
+        description="Maximum monthly base in thousands of currency units (k).",
         examples=[40],
     )
     months_per_year: float | None = Field(
@@ -335,7 +335,7 @@ class JobDescriptionFields(JdSchemaModel):
     )
     company_size: str | None = Field(
         default=None,
-        description="Company size description, e.g. '500-1000人'.",
+        description="Company size description, e.g. '500-1000 employees'.",
         examples=["500-1000人"],
     )
     job_title: str = Field(
@@ -381,7 +381,7 @@ class JobDescriptionFields(JdSchemaModel):
     # Experience & education
     experience_raw: str | None = Field(
         default=None,
-        description="Original experience requirement text, e.g. '3年以上', '1-3年', '应届生可投'.",
+        description="Original experience requirement text, e.g. '3+ years', '1-3 years', or 'open to new graduates'.",
         examples=["3年以上后端开发经验"],
     )
     years_experience_min: int | None = Field(
@@ -396,7 +396,7 @@ class JobDescriptionFields(JdSchemaModel):
     )
     education_raw: str | None = Field(
         default=None,
-        description="Original education requirement text, e.g. '本科及以上', '计算机相关专业优先'.",
+        description="Original education requirement text, e.g. 'bachelor degree or above' or 'computer science preferred'.",
         examples=["本科及以上，计算机相关专业优先"],
     )
     education_min_rank: int | None = Field(
@@ -479,7 +479,7 @@ class JobDescriptionEx(JdLlmOutputModel):
     )
     company_size: str | None = Field(
         default=None,
-        description="Company size description, e.g. '500-1000人'.",
+        description="Company size description, e.g. '500-1000 employees'.",
         examples=["500-1000人"],
     )
     job_title: str = Field(
@@ -528,7 +528,7 @@ class JobDescriptionEx(JdLlmOutputModel):
     experience_raw: str | None = Field(
         default=None,
         validation_alias=AliasChoices("experience_raw", "experience"),
-        description="Original experience requirement text, e.g. '3年以上', '1-3年', '应届生可投'.",
+        description="Original experience requirement text, e.g. '3+ years', '1-3 years', or 'open to new graduates'.",
         examples=["3年以上后端开发经验"],
     )
     years_experience_min: int | None = Field(
@@ -544,7 +544,7 @@ class JobDescriptionEx(JdLlmOutputModel):
     education_raw: str | None = Field(
         default=None,
         validation_alias=AliasChoices("education_raw", "education"),
-        description="Original education requirement text, e.g. '本科及以上', '计算机相关专业优先'.",
+        description="Original education requirement text, e.g. 'bachelor degree or above' or 'computer science preferred'.",
         examples=["本科及以上，计算机相关专业优先"],
     )
     education_min_rank: int | None = Field(
@@ -565,17 +565,17 @@ class JobDescriptionEx(JdLlmOutputModel):
     # Compensation & benefits
     salary_raw: str = Field(
         default="",
-        description="Original salary string, e.g. '25-40K·15薪'.",
+        description="Original salary string, e.g. '25-40K per month with 15 payments'.",
         examples=["25-40K·15薪"],
     )
     salary_min_monthly: float | None = Field(
         default=None,
-        description="Minimum monthly base in 千元 (k).",
+        description="Minimum monthly base in thousands of currency units (k).",
         examples=[25],
     )
     salary_max_monthly: float | None = Field(
         default=None,
-        description="Maximum monthly base in 千元 (k).",
+        description="Maximum monthly base in thousands of currency units (k).",
         examples=[40],
     )
     salary_months_per_year: float | None = Field(

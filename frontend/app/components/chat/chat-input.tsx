@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
 import { useToast } from "@/app/components/ui/toast";
 import ChatAttachmentCard, {
@@ -9,6 +10,7 @@ import {
   CHAT_ATTACHMENT_ACCEPT,
   isSupportedChatAttachment,
 } from "@/app/lib/api/chat-files";
+import { formatLocaleNumber } from "@/app/lib/i18n";
 import type { ChatFileListItem, QueryChoice } from "@/app/lib/api/types";
 import type {
   ChatAttachmentItem,
@@ -52,6 +54,7 @@ export default function ChatInput({
   onAnswerQuery,
 }: ChatInputProps) {
   const { addToast } = useToast();
+  const { t } = useTranslation();
   const [input, setInput] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerLoading, setPickerLoading] = useState(false);
@@ -161,7 +164,7 @@ export default function ChatInput({
       const data = await chatFilesApi.list();
       setLibraryFiles(data);
     } catch (error: unknown) {
-      setPickerError(error instanceof Error ? error.message : "加载文件库失败");
+      setPickerError(error instanceof Error ? error.message : t("errors.loadLibraryFailed"));
     } finally {
       setPickerLoading(false);
     }
@@ -184,7 +187,7 @@ export default function ChatInput({
 
     for (const file of pickedFiles) {
       if (!isSupportedChatAttachment(file)) {
-        addToast(`不支持的附件类型：${file.name}`, "warning");
+        addToast(t("errors.unsupportedAttachment", { name: file.name }), "warning");
         continue;
       }
       uploadIdRef.current += 1;
@@ -297,8 +300,8 @@ export default function ChatInput({
                   onClick={() => setAttachmentMenuOpen((open) => !open)}
                   disabled={disabled || isStreaming}
                   className="rounded-full bg-white p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40"
-                  title="添加附件"
-                  aria-label="添加附件"
+                  title={t("chat.addAttachment")}
+                  aria-label={t("chat.addAttachment")}
                   aria-expanded={attachmentMenuOpen}
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -316,7 +319,7 @@ export default function ChatInput({
                       <svg className="h-4 w-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16V4m0 0l-4 4m4-4l4 4M4 16.5A2.5 2.5 0 006.5 19h11a2.5 2.5 0 002.5-2.5" />
                       </svg>
-                      <span>上传文件</span>
+                      <span>{t("chat.uploadFile")}</span>
                     </button>
                     <button
                       type="button"
@@ -326,7 +329,7 @@ export default function ChatInput({
                       <svg className="h-4 w-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V7z" />
                       </svg>
-                      <span>从文件库选择</span>
+                      <span>{t("chat.chooseFromLibrary")}</span>
                     </button>
                   </div>
                 )}
@@ -339,8 +342,8 @@ export default function ChatInput({
                 onKeyDown={handleKeyDown}
                 placeholder={
                   disabled
-                    ? "请先配置模型选择..."
-                    : "输入求职相关任务，如「根据这份简历优化项目经历」"
+                    ? t("chat.configureModel")
+                    : t("chat.promptPlaceholder")
                 }
                 disabled={disabled}
                 rows={1}
@@ -349,7 +352,7 @@ export default function ChatInput({
               <div className="flex items-center gap-1.5">
                 {isStreaming ? (
                   <Button variant="danger" size="sm" onClick={onStop} pill>
-                    停止
+                    {t("chat.stop")}
                   </Button>
                 ) : isInterrupted ? (
                   <Button
@@ -358,7 +361,7 @@ export default function ChatInput({
                     onClick={onRetry}
                     pill
                   >
-                    重试
+                    {t("chat.retry")}
                   </Button>
                 ) : (
                   <Button
@@ -379,10 +382,10 @@ export default function ChatInput({
         )}
         <p className="mt-2 text-center text-[11px] text-text-muted">
           {queryInterrupt
-            ? "Enter 提交，Shift + Enter 换行"
+            ? t("chat.enterSubmit")
             : noticeMessage
               ? noticeMessage
-              : "Shift + Enter 换行，Enter 发送"}
+              : t("chat.shiftEnterSubmit")}
         </p>
       </div>
 
@@ -396,10 +399,10 @@ export default function ChatInput({
             <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
               <div>
                 <h3 className="font-display text-lg font-semibold text-text-primary">
-                  选择文件库附件
+                  {t("chat.chooseLibraryAttachment")}
                 </h3>
                 <p className="text-xs text-text-muted">
-                  复用已经上传过的聊天文件
+                  {t("chat.reuseUploadedFiles")}
                 </p>
               </div>
               <button
@@ -417,23 +420,23 @@ export default function ChatInput({
               <input
                 value={pickerQuery}
                 onChange={(event) => setPickerQuery(event.target.value)}
-                placeholder="搜索文件名或文件 ID"
+                placeholder={t("files.searchPlaceholder")}
                 className="h-10 w-full rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
               />
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               {pickerLoading ? (
-                <p className="py-8 text-center text-sm text-text-muted">正在加载文件库...</p>
+                <p className="py-8 text-center text-sm text-text-muted">{t("chat.loadingLibrary")}</p>
               ) : pickerError ? (
                 <div className="py-8 text-center">
                   <p className="mb-3 text-sm text-error-text">{pickerError}</p>
                   <Button variant="secondary" size="sm" onClick={loadLibraryFiles}>
-                    重试
+                    {t("chat.retry")}
                   </Button>
                 </div>
               ) : filteredLibraryFiles.length === 0 ? (
-                <p className="py-8 text-center text-sm text-text-muted">暂无可用文件</p>
+                <p className="py-8 text-center text-sm text-text-muted">{t("chat.noAvailableFiles")}</p>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {filteredLibraryFiles.map((file) => {
@@ -468,10 +471,12 @@ export default function ChatInput({
 
             <div className="flex items-center justify-between border-t border-border-light px-5 py-4">
               <span className="text-xs text-text-muted">
-                已选 {selectedLibraryFiles.length} 个文件
+                {t("chat.selectedFiles", {
+                  count: formatLocaleNumber(selectedLibraryFiles.length),
+                })}
               </span>
               <Button variant="primary" size="sm" onClick={() => setPickerOpen(false)}>
-                完成
+                {t("common.done")}
               </Button>
             </div>
           </div>
@@ -491,6 +496,7 @@ function QueryDecisionComposer({
   const [selectedChoice, setSelectedChoice] = useState<QueryChoice | null>(null);
   const [note, setNote] = useState("");
   const noteRef = useRef<HTMLTextAreaElement>(null);
+  const { t } = useTranslation();
   const choices: {
     key: QueryChoice;
     label: string;
@@ -499,25 +505,25 @@ function QueryDecisionComposer({
   }[] = [
     {
       key: "firstChoice",
-      label: interrupt.firstChoice || "选项一",
+      label: interrupt.firstChoice || t("chat.queryOptionOne"),
       description:
-        interrupt.firstChoiceDescription || "按 Agent 推荐的默认方案继续。",
+        interrupt.firstChoiceDescription || t("chat.queryDefaultDescription"),
       recommended: true,
     },
     {
       key: "secondChoice",
-      label: interrupt.secondChoice || "选项二",
-      description: interrupt.secondChoiceDescription || "选择第二个备选方案。",
+      label: interrupt.secondChoice || t("chat.queryOptionTwo"),
+      description: interrupt.secondChoiceDescription || t("chat.querySecondDescription"),
     },
     {
       key: "thirdChoice",
-      label: interrupt.thirdChoice || "选项三",
-      description: interrupt.thirdChoiceDescription || "选择第三个备选方案。",
+      label: interrupt.thirdChoice || t("chat.queryOptionThree"),
+      description: interrupt.thirdChoiceDescription || t("chat.queryThirdDescription"),
     },
     {
       key: "other",
-      label: "让我手填/其他",
-      description: "手动补充一个不在上述选项中的决定。",
+      label: t("chat.queryOther"),
+      description: t("chat.queryOtherDescription"),
     },
   ];
   const trimmedNote = note.trim();
@@ -546,13 +552,13 @@ function QueryDecisionComposer({
   return (
     <div className="rounded-[1.45rem] border border-border-light bg-white px-4 py-3.5 text-text-primary shadow-[0_0_22px_rgba(44,30,116,0.16)] sm:px-5">
       <p className="mb-3 text-sm font-semibold leading-snug sm:text-base">
-        {interrupt.question || "你想用哪个选项继续？"}
+        {interrupt.question || t("chat.queryQuestion")}
       </p>
       <div className="space-y-1.5">
         {choices.map((choice, index) => {
           const selected = selectedChoice === choice.key;
           const displayLabel = choice.recommended
-            ? `${choice.label} (Recommended)`
+            ? `${choice.label} (${t("common.recommended")})`
             : choice.label;
           return (
             <div
@@ -600,7 +606,7 @@ function QueryDecisionComposer({
             onChange={(event) => setNote(event.target.value)}
             onKeyDown={handleNoteKeyDown}
             rows={1}
-            placeholder="可选：补充说明，或直接手填其他选择"
+            placeholder={t("chat.queryNotePlaceholder")}
             className="min-h-9 flex-1 resize-none bg-transparent py-2 text-sm text-text-primary outline-none placeholder:text-text-muted"
           />
         </div>
@@ -610,7 +616,7 @@ function QueryDecisionComposer({
           disabled={!canSubmit}
           className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full bg-[#181e25] px-5 text-sm font-semibold text-white transition hover:bg-[#222b35] disabled:cursor-not-allowed disabled:bg-surface-secondary disabled:text-text-muted"
         >
-          提交
+          {t("chat.submit")}
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -627,12 +633,14 @@ function InfoTooltip({
   description: string;
   label: string;
 }) {
+  const { t } = useTranslation();
+
   return (
     <span className="group relative shrink-0">
       <button
         type="button"
         title={description}
-        aria-label={`${label} 的说明：${description}`}
+        aria-label={t("chat.optionDescription", { label, description })}
         className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition hover:bg-white hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/25"
       >
         <svg

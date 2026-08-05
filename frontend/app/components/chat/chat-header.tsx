@@ -1,13 +1,14 @@
+import { useTranslation } from "react-i18next";
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
 import type { ModelSelectionResponse, AgentStatus } from "@/app/lib/api/types";
 import { useAppContext } from "@/app/lib/context/app-context";
 
-const statusLabels: Record<AgentStatus, string> = {
-  idle: "就绪",
-  generating: "生成中",
-  tool_calling: "工具调用中",
-  interrupted: "已中断",
-  error: "错误",
+const statusLabelKeys: Record<AgentStatus, string> = {
+  idle: "chat.ready",
+  generating: "chat.generating",
+  tool_calling: "chat.toolCalling",
+  interrupted: "chat.interrupted",
+  error: "chat.error",
 };
 
 const statusColors: Record<AgentStatus, string> = {
@@ -40,6 +41,7 @@ export default function ChatHeader({
   onModelChange,
 }: ChatHeaderProps) {
   const { state } = useAppContext();
+  const { t } = useTranslation();
 
   return (
     <div className="app-region-drag electron-titlebar-safe-right min-h-12 shrink-0 border-b border-border-light bg-white px-4 py-2">
@@ -48,8 +50,8 @@ export default function ChatHeader({
           type="button"
           onClick={onToggleSidebar}
           className="app-region-no-drag rounded-lg p-1.5 transition-colors hover:bg-surface-secondary"
-          title={sidebarOpen ? "收起会话侧栏" : "展开会话侧栏"}
-          aria-label={sidebarOpen ? "收起会话侧栏" : "展开会话侧栏"}
+          title={sidebarOpen ? t("nav.collapse") : t("nav.expand")}
+          aria-label={sidebarOpen ? t("nav.collapse") : t("nav.expand")}
           aria-expanded={sidebarOpen}
         >
           <svg
@@ -68,7 +70,7 @@ export default function ChatHeader({
         </button>
 
         <h2 className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-text-primary">
-          {threadId ? "AI 对话" : "新对话"}
+          {threadId ? t("chat.chatTitle") : t("chat.newChat")}
         </h2>
 
         <div className="flex shrink-0 items-center gap-1.5 mr-2">
@@ -76,7 +78,7 @@ export default function ChatHeader({
             className={`w-1.5 h-1.5 rounded-full ${statusColors[state.agentStatus]}`}
           />
           <span className="text-xs text-text-muted">
-            {statusLabels[state.agentStatus]}
+            {t(statusLabelKeys[state.agentStatus])}
           </span>
         </div>
 

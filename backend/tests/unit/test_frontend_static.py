@@ -98,6 +98,7 @@ def test_spa_navigation_does_not_mask_json_api_requests(
             headers={
                 "accept": "text/html",
                 "content-type": "application/json",
+                "accept-language": "en-US",
                 "sec-fetch-dest": "empty",
                 "sec-fetch-mode": "cors",
             },

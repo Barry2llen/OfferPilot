@@ -2,8 +2,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent.agents.supervisor import SupervisorAgent, get_supervisor_tools
@@ -20,11 +22,17 @@ from services.resume_extraction_jobs import ResumeExtractionJobManager
 from services.jd_analysis_jobs import JdAnalysisJobManager
 from utils.asyncio_windows import install_windows_connection_reset_filter
 from utils.frontend_static import mount_frontend
+from utils.i18n import (
+    localize_error,
+    localize_validation_message,
+    request_locale,
+    resolve_locale,
+)
 
 
 class HealthResponse(BaseModel):
     message: str = Field(
-        description="服务探活响应信息。",
+        description="Health check response message.",
         examples=["Hello World!"],
     )
 
@@ -67,30 +75,65 @@ def create_app(
     app = FastAPI(
         title="OfferPilot API",
         description=(
-            "OfferPilot 提供简历文件管理、模型配置管理与基础 AI 对话接口。"
-            "Swagger 文档可用于查看接口用途、参数要求、错误场景和响应示例。"
+            "OfferPilot provides resume file management, model configuration, and AI chat APIs. "
+            "Use the Swagger documentation to review operations, parameters, errors, and response examples."
         ),
         version="0.1.0",
         openapi_tags=[
             {
                 "name": "resumes",
-                "description": "简历文件管理接口，包含上传解析、替换解析、查询、预览和删除。",
+                "description": "Resume file management, including upload, parsing, replacement, retrieval, preview, and deletion.",
             },
             {
                 "name": "job-descriptions",
-                "description": "JD 分析接口，包含文本、URL、图片输入和历史结果管理。",
+                "description": "Job description analysis from text, URLs, and images, with historical result management.",
             },
             {
                 "name": "model-config",
-                "description": "模型供应商与模型选择配置接口，用于维护 AI 服务可用模型。",
+                "description": "Model provider and model selection configuration for available AI services.",
             },
             {
                 "name": "ai",
-                "description": "基础 AI 对话接口，使用 SupervisorAgent 与数据库检查点保存会话状态。",
+                "description": "AI chat operations using SupervisorAgent and database checkpoints for conversation state.",
             }
         ],
         lifespan=lifespan,
     )
+
+    @app.middleware("http")
+    async def add_locale_headers(request: Request, call_next):
+        request.state.locale = resolve_locale(request.headers.get("Accept-Language"))
+        response = await call_next(request)
+        response.headers["Content-Language"] = request_locale(request)
+        return response
+
+    @app.exception_handler(HTTPException)
+    async def localized_http_exception(request: Request, error: HTTPException) -> JSONResponse:
+        detail = error.detail
+        if isinstance(detail, str):
+            detail = localize_error(detail, request_locale(request))
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"detail": detail},
+            headers=error.headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def localized_validation_exception(
+        request: Request,
+        error: RequestValidationError,
+    ) -> JSONResponse:
+        locale = request_locale(request)
+        details = []
+        for item in error.errors():
+            details.append(
+                {
+                    "type": item.get("type", "value_error"),
+                    "loc": list(item.get("loc", ())),
+                    "msg": localize_validation_message(str(item.get("msg", "")), locale),
+                }
+            )
+        return JSONResponse(status_code=422, content={"detail": details})
     app.add_middleware(
         CORSMiddleware,
         allow_origins=target_config.cors.allow_origins,
@@ -106,9 +149,9 @@ def create_app(
     @app.get(
         "/health",
         response_model=HealthResponse,
-        summary="服务探活",
-        description="返回一个简单的服务可用性响应，用于确认 API 服务已成功启动。",
-        response_description="返回固定的探活消息。",
+        summary="Health check",
+        description="Return a simple response confirming that the API service has started successfully.",
+        response_description="Returns the fixed health check message.",
     )
     async def health() -> HealthResponse:
         return HealthResponse(message="Hello World!")

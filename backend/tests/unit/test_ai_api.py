@@ -691,7 +691,10 @@ def test_ai_chat_history_endpoint_returns_404_for_missing_thread(
     app = create_app(temporary_app_config)
 
     with TestClient(app) as client:
-        response = client.get("/ai/chats/missing-thread/history")
+        response = client.get(
+            "/ai/chats/missing-thread/history",
+            headers={"Accept-Language": "en-US"},
+        )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Chat history not found: missing-thread"
@@ -750,7 +753,10 @@ def test_ai_chat_history_delete_endpoint_returns_404_for_missing_thread(
     app = create_app(temporary_app_config)
 
     with TestClient(app) as client:
-        response = client.delete("/ai/chats/missing-thread")
+        response = client.delete(
+            "/ai/chats/missing-thread",
+            headers={"Accept-Language": "en-US"},
+        )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Chat history not found: missing-thread"
@@ -2203,11 +2209,13 @@ def test_ai_chat_stream_endpoint_returns_interrupt_event_without_final(
                 "prompt": "hello",
                 "thread_id": "thread-interrupt",
             },
+            headers={"Accept-Language": "en-US"},
         )
 
     assert response.status_code == 200
+    assert response.headers["content-language"] == "en-US"
     assert (
-        'event: interrupt\ndata: {"thread_id": "thread-interrupt", "type": "error", "message": "Model call failed after 2 retries.", "id": "interrupt-1"}'
+        'event: interrupt\ndata: {"thread_id": "thread-interrupt", "type": "error", "message": "The model call failed.", "id": "interrupt-1"}'
         in response.text
     )
     assert "event: final" not in response.text
@@ -2539,6 +2547,7 @@ def test_ai_chat_stream_endpoint_rejects_retry_without_thread_id(
                 "selection_id": selection_id,
                 "command": {"type": "retry"},
             },
+            headers={"Accept-Language": "en-US"},
         )
 
     assert response.status_code == 422
@@ -2557,10 +2566,10 @@ def test_ai_chat_stream_openapi_documents_interrupt_and_retry(
     assert "interrupt" in stream_operation["responses"]["200"]["description"]
     assert "reasoning" in stream_operation["responses"]["200"]["description"]
     assert "reasoning_done" in stream_operation["responses"]["200"]["description"]
-    assert "url、title、favicon" in stream_operation["responses"]["200"]["description"]
+    assert "url, title, and favicon" in stream_operation["responses"]["200"]["description"]
     assert "retry" in stream_operation["description"]
     assert "query" in stream_operation["description"]
-    assert "note 可附加到任意用户选择" in stream_operation["description"]
+    assert "choice/note" in stream_operation["description"]
     assert "question" in stream_operation["responses"]["200"]["description"]
     assert "firstChoice" in stream_operation["responses"]["200"]["description"]
     assert "firstChoiceDescription" in stream_operation["responses"]["200"]["description"]
@@ -2579,11 +2588,11 @@ def test_ai_chat_history_openapi_documents_history_endpoints(
     assert "/ai/chats" in payload["paths"]
     assert "/ai/chats/{thread_id}/history" in payload["paths"]
     assert "delete" in payload["paths"]["/ai/chats/{thread_id}"]
-    assert payload["paths"]["/ai/chats"]["get"]["summary"] == "查询 AI 会话历史列表"
-    assert payload["paths"]["/ai/chats/{thread_id}"]["delete"]["summary"] == "删除 AI 会话历史"
+    assert payload["paths"]["/ai/chats"]["get"]["summary"] == "List AI conversation history"
+    assert payload["paths"]["/ai/chats/{thread_id}"]["delete"]["summary"] == "Delete AI conversation history"
     assert (
         payload["paths"]["/ai/chats/{thread_id}/history"]["get"]["summary"]
-        == "查询 AI 会话历史详情"
+        == "Get AI conversation history"
     )
     history_message_schema = payload["components"]["schemas"]["AIChatHistoryMessage"]
     assert "reasoning_duration_ms" in history_message_schema["properties"]

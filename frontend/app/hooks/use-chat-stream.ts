@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { aiChatApi } from "@/app/lib/api/ai";
 import { chatFilesApi } from "@/app/lib/api/chat-files";
 import { useAppActions } from "@/app/lib/context/app-context";
@@ -377,6 +378,7 @@ function buildStreamBody(
 }
 
 export function useChatStream() {
+  const { t } = useTranslation();
   const {
     setThreadId,
     setThreadRequiresImageInput,
@@ -757,7 +759,7 @@ export function useChatStream() {
                 const name = (event.data.tool_name as string) || "unknown_tool";
                 const errMsg =
                   extractTextContent(event.data.detail ?? event.data.error) ||
-                  "Tool error";
+                  t("errors.toolError");
                 if (isQueryInterruptToolError(name, errMsg)) {
                   break;
                 }
@@ -856,7 +858,9 @@ export function useChatStream() {
                 setInterrupt({
                   interruptId: (event.data.id as string) || "",
                   type: interruptType,
-                  message: extractTextContent(event.data.message) || "Agent interrupted",
+                  message:
+                    extractTextContent(event.data.message) ||
+                    t("errors.agentInterrupted"),
                   question:
                     typeof event.data.question === "string"
                       ? event.data.question
@@ -939,7 +943,7 @@ export function useChatStream() {
                 const errMsg =
                   (event.data.detail as string) ||
                   (event.data.message as string) ||
-                  "Stream error";
+                  t("errors.streamError");
                 setStreamError(errMsg);
                 setAgentStatus("error");
                 setIsStreaming(false);
@@ -996,6 +1000,7 @@ export function useChatStream() {
       setThreadRequiresImageInput,
       createMessageId,
       setCommittedMessages,
+      t,
     ]
   );
 

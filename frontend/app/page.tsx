@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { aiChatApi } from "@/app/lib/api/ai";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
@@ -12,6 +13,7 @@ import ChatSidebar from "@/app/components/chat/chat-sidebar";
 import type { ModelSelectionResponse, QueryChoice } from "@/app/lib/api/types";
 
 export default function Home() {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const {
     setThreadId,
@@ -46,7 +48,7 @@ export default function Home() {
   const threadModelMismatchMessage =
     state.currentThreadRequiresImageInput &&
     currentModel?.supports_image_input === false
-      ? "当前会话包含以图片模式注入的附件，切换到仅文本模型后可能无法正确利用原始图片内容。"
+      ? t("chat.threadImageMismatch")
       : null;
 
   useEffect(() => {

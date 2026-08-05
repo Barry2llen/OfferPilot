@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import ChatAttachmentCard from "@/app/components/chat/chat-attachment-card";
 import { Skeleton } from "@/app/components/ui/skeleton";
@@ -6,6 +7,7 @@ import { useAsyncData } from "@/app/hooks/use-async-data";
 import { chatFilesApi } from "@/app/lib/api/chat-files";
 
 export default function FilesPage() {
+  const { t } = useTranslation();
   const fetchFiles = useCallback(() => chatFilesApi.list(), []);
   const { data, loading, error, refetch } = useAsyncData(fetchFiles, [fetchFiles]);
   const [query, setQuery] = useState("");
@@ -49,7 +51,7 @@ export default function FilesPage() {
         <div className="py-20 text-center">
           <p className="mb-4 text-sm text-error-text">{error}</p>
           <Button variant="secondary" onClick={refetch}>
-            重试
+            {t("common.retry")}
           </Button>
         </div>
       </div>
@@ -60,10 +62,10 @@ export default function FilesPage() {
     <div className="electron-titlebar-safe-top mx-auto max-w-5xl p-6 lg:py-8">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-semibold text-text-primary">
-          文件库
+          {t("files.title")}
         </h1>
         <p className="mt-1 text-sm text-text-muted">
-          查看聊天中上传过的附件，并在对话里复用历史文件
+          {t("files.description")}
         </p>
       </div>
 
@@ -71,15 +73,15 @@ export default function FilesPage() {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜索文件名或文件 ID"
+          placeholder={t("files.searchPlaceholder")}
           className="h-11 w-full rounded-2xl border border-border-light bg-white px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
         />
       </div>
 
       {filteredFiles.length === 0 ? (
         <div className="rounded-[20px] border-2 border-dashed border-border-default bg-surface-primary px-4 py-16 text-center">
-          <p className="mb-1 text-sm font-medium text-text-primary">暂无聊天文件</p>
-          <p className="text-xs text-text-muted">在 AI 对话里上传附件后，这里会显示文件记录</p>
+          <p className="mb-1 text-sm font-medium text-text-primary">{t("files.noFiles")}</p>
+          <p className="text-xs text-text-muted">{t("files.noFilesDescription")}</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 items-stretch gap-4 md:grid-cols-3 xl:grid-cols-4">
@@ -112,7 +114,7 @@ export default function FilesPage() {
                     className: "w-full",
                   })}
                 >
-                  打开原文件
+                  {t("files.openOriginal")}
                 </a>
               </div>
             </div>

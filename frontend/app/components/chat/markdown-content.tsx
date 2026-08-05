@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -117,6 +118,7 @@ export default function MarkdownContent({
 function CodeBlockWrapper({ children, codeClass }: { children: React.ReactNode; codeClass: string }) {
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
+  const { t } = useTranslation();
 
   const handleCopy = () => {
     if (preRef.current) {
@@ -137,7 +139,7 @@ function CodeBlockWrapper({ children, codeClass }: { children: React.ReactNode; 
       <button
         onClick={handleCopy}
         className="absolute top-2 right-2 p-1.5 rounded-md bg-black/20 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/40 hover:text-white"
-        title="复制代码"
+        title={t("chat.copyCode")}
       >
         {copied ? (
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

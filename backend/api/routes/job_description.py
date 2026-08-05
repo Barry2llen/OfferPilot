@@ -34,6 +34,7 @@ from services import (
 )
 from services.jd_analysis_jobs import JdAnalysisJobManager
 from utils.stream import render_sse_event
+from utils.i18n import request_locale
 
 router = APIRouter(prefix="/job-descriptions", tags=["job-descriptions"])
 
@@ -42,7 +43,7 @@ _ERROR_DETAIL_SCHEMA = {
     "properties": {
         "detail": {
             "type": "string",
-            "description": "错误详情描述。",
+            "description": "Description of the error.",
         }
     },
     "required": ["detail"],
@@ -165,9 +166,9 @@ async def _stream_jd_analysis(
 @router.get(
     "",
     response_model=list[JobDescriptionAnalysisListItem],
-    summary="列出 JD 分析历史",
-    description="返回已创建的 JD 分析记录，包含状态、来源和结构化摘要字段。",
-    response_description="按创建时间倒序返回 JD 分析历史。",
+    summary="List JD analysis history",
+    description="Return created JD analysis records with status, source, and structured summary fields.",
+    response_description="Returns JD analysis history ordered by creation time.",
 )
 async def list_job_descriptions(
     session: Session = Depends(_get_request_db_session),
@@ -178,15 +179,15 @@ async def list_job_descriptions(
 @router.get(
     "/{analysis_id}",
     response_model=JobDescriptionAnalysisDetail,
-    summary="获取 JD 分析详情",
-    description="根据 JD 分析记录 ID 返回原始文本和结构化分析结果。",
-    response_description="返回指定 JD 分析详情。",
+    summary="Get JD analysis details",
+    description="Return the original text and structured analysis for a JD analysis ID.",
+    response_description="Returns the requested JD analysis details.",
     responses={
-        404: _error_response("未找到指定 JD 分析记录。", example="Job description analysis not found: 1"),
+        404: _error_response("The requested JD analysis was not found.", example="JD analysis not found: 1"),
     },
 )
 async def get_job_description(
-    analysis_id: int = Path(..., description="JD 分析记录 ID。", examples=[1]),
+    analysis_id: int = Path(..., description="JD analysis record ID.", examples=[1]),
     session: Session = Depends(_get_request_db_session),
 ) -> JobDescriptionAnalysisDetail:
     try:
@@ -197,15 +198,15 @@ async def get_job_description(
 
 @router.post(
     "",
-    summary="创建并流式分析 JD",
+    summary="Create and stream JD analysis",
     description=(
-        "使用指定模型选择记录分析 JD。支持粘贴 JD 文本、来源 URL、上传 PNG/JPG/JPEG 图片，"
-        "也支持通过 file_ids[] 复用文件库中的图片。"
+        "Analyze a JD with the selected model. Supports pasted JD text, source URLs, uploaded PNG/JPG/JPEG "
+        "images, and file_ids[] references to images in the file library."
     ),
-    response_description="返回 text/event-stream 事件流。",
+    response_description="Returns a text/event-stream response.",
     responses={
         200: {
-            "description": "返回 SSE 事件流。事件包括 job_description、progress、model_error、final，失败时返回 error。",
+            "description": "Returns SSE events including job_description, progress, model_error, and final; failures use error.",
             "content": {
                 "text/event-stream": {
                     "schema": {"type": "string"},
@@ -213,9 +214,9 @@ async def get_job_description(
                 }
             },
         },
-        404: _error_response("未找到指定模型选择或文件。", example="Model selection not found: 1"),
-        415: _error_response("上传或引用了不支持的文件类型。", example="Unsupported JD image file type: .pdf"),
-        422: _error_response("JD 输入无效。", example="JD text, source URL, or at least one image is required."),
+        404: _error_response("The requested model selection or file was not found.", example="Model selection not found: 1"),
+        415: _error_response("An unsupported file type was uploaded or referenced.", example="Unsupported JD image file type: .pdf"),
+        422: _error_response("The JD input is invalid.", example="JD text, source URL, or at least one image is required."),
     },
     openapi_extra={
         "requestBody": {
@@ -227,28 +228,28 @@ async def get_job_description(
                         "properties": {
                             "selection_id": {
                                 "type": "integer",
-                                "description": "用于分析 JD 的模型选择记录 ID。",
+                                "description": "Model selection record ID used for JD analysis.",
                                 "example": 1,
                             },
                             "jd_text": {
                                 "type": "string",
-                                "description": "直接粘贴的 JD 原文。",
-                                "example": "岗位职责：负责后端服务开发。",
+                                "description": "Pasted JD text.",
+                                "example": "Responsibilities: Build and maintain backend services.",
                             },
                             "source_url": {
                                 "type": "string",
-                                "description": "JD 来源 URL。",
+                                "description": "Source URL for the JD.",
                                 "example": "https://example.com/jobs/123",
                             },
                             "files[]": {
                                 "type": "array",
                                 "items": {"type": "string", "format": "binary"},
-                                "description": "上传的 JD 图片，支持 PNG、JPG、JPEG。",
+                                "description": "Uploaded JD images. PNG, JPG, and JPEG are supported.",
                             },
                             "file_ids[]": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "复用文件库中的图片文件 ID。",
+                                "description": "File IDs for reusable images in the file library.",
                                 "example": ["A1B2C3"],
                             },
                         },
@@ -315,6 +316,7 @@ async def analyze_job_description(
         source_url=payload.source_url,
         images=images,
         initial_event=_sse("job_description", {"job_description": detail}),
+        locale=request_locale(request),
     )
 
     return StreamingResponse(
@@ -330,15 +332,15 @@ async def analyze_job_description(
 @router.delete(
     "/{analysis_id}",
     status_code=204,
-    summary="删除 JD 分析记录",
-    description="删除指定 JD 分析记录。不会删除被引用的文件库图片。",
-    response_description="删除成功，无响应体。",
+    summary="Delete JD analysis",
+    description="Delete a JD analysis record without deleting referenced file library images.",
+    response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("未找到指定 JD 分析记录。", example="Job description analysis not found: 1"),
+        404: _error_response("The requested JD analysis was not found.", example="JD analysis not found: 1"),
     },
 )
 async def delete_job_description(
-    analysis_id: int = Path(..., description="JD 分析记录 ID。", examples=[1]),
+    analysis_id: int = Path(..., description="JD analysis record ID.", examples=[1]),
     session: Session = Depends(_get_request_db_session),
 ) -> Response:
     try:

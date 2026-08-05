@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import ChatMessage from "@/app/components/chat/chat-message";
 import ChatWelcome from "@/app/components/chat/chat-welcome";
 import Button from "@/app/components/ui/button";
@@ -36,6 +37,7 @@ export default function ChatArea({
   onRetry,
   onPrompt,
 }: ChatAreaProps) {
+  const { t } = useTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
@@ -114,9 +116,9 @@ export default function ChatArea({
           {interrupt && interrupt.type !== "query" && (
             <div className="flex justify-center py-3">
               <div className="flex items-center gap-2 rounded-full bg-warning-bg px-4 py-2 text-xs text-warning-text">
-                <span>Agent 已中断: {interrupt.message}</span>
+                <span>{t("chat.agentInterrupted", { message: interrupt.message })}</span>
                 <Button variant="primary" size="sm" onClick={onRetry} pill>
-                  重试
+                  {t("chat.retry")}
                 </Button>
               </div>
             </div>
@@ -148,8 +150,8 @@ export default function ChatArea({
           <button
             onClick={scrollToBottom}
             className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-card border border-border-default text-text-secondary hover:text-primary-600 hover:border-primary-200 hover:bg-primary-50 transition-all"
-            aria-label="回到最新"
-            title="回到最新"
+            aria-label={t("chat.returnToLatest")}
+            title={t("chat.returnToLatest")}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />

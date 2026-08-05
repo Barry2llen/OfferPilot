@@ -1,3 +1,4 @@
+import i18n, { getCurrentLocale } from "@/app/lib/i18n";
 import { apiRequest, apiUrl } from "./client";
 import type {
   AIChatHistoryListResponse,
@@ -55,7 +56,10 @@ async function streamSSE(
     const isFormData = body instanceof FormData;
     const response = await fetch(url, {
       method: "POST",
-      headers: isFormData ? undefined : { "Content-Type": "application/json" },
+      headers: {
+        "Accept-Language": getCurrentLocale(),
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      },
       body: isFormData ? body : JSON.stringify(body),
       signal,
     });
@@ -74,7 +78,7 @@ async function streamSSE(
     onOpen?.();
 
     const reader = response.body?.getReader();
-    if (!reader) throw new Error("No response body");
+    if (!reader) throw new Error(i18n.t("errors.noResponseBody"));
 
     const decoder = new TextDecoder();
     let buffer = "";

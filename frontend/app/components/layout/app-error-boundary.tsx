@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import i18n from "@/app/lib/i18n";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
@@ -31,17 +32,17 @@ export default class AppErrorBoundary extends Component<
       <div className="flex min-h-full items-center justify-center bg-white p-6">
         <div className="w-full max-w-lg rounded-2xl border border-error-text/20 bg-white p-8 text-center shadow-card">
           <h1 className="font-display text-xl font-semibold text-text-primary">
-            页面加载失败
+            {i18n.t("app.errorTitle")}
           </h1>
           <p className="mt-2 text-sm leading-6 text-text-secondary">
-            {this.state.error.message || "应用遇到未知错误，请重试。"}
+            {this.state.error.message || i18n.t("app.errorDescription")}
           </p>
           <button
             type="button"
             className="mt-6 rounded-lg bg-text-charcoal px-4 py-2 text-sm font-medium text-white transition hover:bg-text-dark"
             onClick={() => window.location.reload()}
           >
-            重试
+            {i18n.t("app.reload")}
           </button>
         </div>
       </div>

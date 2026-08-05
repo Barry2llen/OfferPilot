@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   ChatMessage as ChatMessageType,
   ToolCallEntry,
@@ -15,6 +16,7 @@ interface Props {
 const CHAT_CONTENT_CLASS = "mx-auto w-full max-w-3xl";
 
 export default function ChatMessage({ message, streaming = false }: Props) {
+  const { t } = useTranslation();
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const hasContent = Boolean(message.content.trim());
@@ -90,7 +92,7 @@ export default function ChatMessage({ message, streaming = false }: Props) {
                   )}
                 </div>
               ) : streaming ? (
-                <WaitingIndicator label={hasReasoning ? "正在组织回复" : "正在思考"} />
+                <WaitingIndicator label={hasReasoning ? t("chat.waitingReply") : t("chat.thinking")} />
               ) : null}
             </div>
           )}
@@ -116,8 +118,8 @@ export default function ChatMessage({ message, streaming = false }: Props) {
               type="button"
               onClick={handleCopy}
               className="absolute right-full top-1 mr-2 flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-white text-text-muted opacity-0 shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-all group-hover:opacity-100 hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
-              title="复制文本"
-              aria-label="复制文本"
+              title={t("chat.copyText")}
+              aria-label={t("chat.copyText")}
             >
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -131,8 +133,8 @@ export default function ChatMessage({ message, streaming = false }: Props) {
                 type="button"
                 onClick={handleCopy}
                 className="flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-white text-text-muted shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
-                title="复制文本"
-                aria-label="复制文本"
+                title={t("chat.copyText")}
+                aria-label={t("chat.copyText")}
               >
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -165,7 +167,8 @@ function ReasoningDisclosure({
   hasFollowingContent?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const label = formatReasoningLabel(durationMs, active);
+  const { t } = useTranslation();
+  const label = formatReasoningLabel(durationMs, active, t);
 
   return (
     <div className={`${hasFollowingContent ? "mb-2" : "mb-0"} text-text-secondary`}>
@@ -194,15 +197,21 @@ function ReasoningDisclosure({
   );
 }
 
-function formatReasoningLabel(durationMs?: number, active = false): string {
+function formatReasoningLabel(
+  durationMs: number | undefined,
+  active: boolean,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
   if (typeof durationMs === "number" && Number.isFinite(durationMs)) {
     if (durationMs < 1000) {
-      return "思考了不足 1 秒";
+      return translate("chat.thinkingLessThanSecond");
     }
-    return `思考了 ${Math.round(durationMs / 1000)} 秒`;
+    return translate("chat.thinkingSeconds", {
+      seconds: Math.round(durationMs / 1000),
+    });
   }
 
-  return active ? "正在思考" : "推理过程";
+  return active ? translate("chat.thinking") : translate("chat.reasoning");
 }
 
 function WaitingIndicator({

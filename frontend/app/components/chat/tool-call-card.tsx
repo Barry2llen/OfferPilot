@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
 import type { ToolCallEntry } from "@/app/hooks/use-chat-stream";
+import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 
 type ToolStatus = ToolCallEntry["status"];
 
@@ -27,10 +29,10 @@ interface QueryToolOutput {
   thirdChoiceDescription?: string;
 }
 
-const statusLabels: Record<ToolStatus, string> = {
-  running: "执行中",
+const statusLabelKeys: Record<ToolStatus, string> = {
+  running: "chat.toolRunning",
   success: "",
-  error: "失败",
+  error: "chat.toolFailed",
 };
 
 const statusClassNames: Record<ToolStatus, string> = {
@@ -45,7 +47,6 @@ const dotClassNames: Record<ToolStatus, string> = {
   error: "bg-error-text",
 };
 
-const searchEmptyMessage = "未提取到可展示的搜索链接";
 const searchToolNames = new Set(["web_search", "web_search_exa", "find_similar_exa"]);
 const fetchToolNames = new Set(["web_fetch", "web_fetch_exa"]);
 
@@ -53,6 +54,7 @@ export default function ToolCallCard({
   entry,
   defaultExpanded = false,
 }: ToolCallCardProps) {
+  useTranslation();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const isWebTool = isWebResultTool(entry.name);
   const isQuery = isQueryTool(entry.name);
@@ -157,12 +159,12 @@ function QueryToolDetails({ entry }: { entry: ToolCallEntry }) {
 
   return (
     <div className="space-y-2 text-xs leading-relaxed text-text-secondary">
-      <DetailBlock label="问题" value={question || "未提供问题"} />
+      <DetailBlock label={i18n.t("chat.question")} value={question || i18n.t("chat.noQuestion")} />
       {entry.status === "success" && (
-        <DetailBlock label="答案" value={answer || "未记录答案"} />
+        <DetailBlock label={i18n.t("chat.answer")} value={answer || i18n.t("chat.noAnswer")} />
       )}
       {entry.status === "running" && (
-        <DetailBlock label="状态" value="等待用户决定" />
+        <DetailBlock label={i18n.t("chat.status")} value={i18n.t("chat.waitingUserDecision")} />
       )}
     </div>
   );
@@ -181,7 +183,7 @@ function ToolRawDetails({ entry }: { entry: ToolCallEntry }) {
         <DetailBlock label="error" value={entry.error} tone="error" />
       )}
       {entry.input === undefined && entry.output === undefined && !entry.error && (
-        <span className="text-text-muted">暂无工具详情</span>
+        <span className="text-text-muted">{i18n.t("chat.noToolDetails")}</span>
       )}
     </div>
   );
@@ -275,22 +277,23 @@ function DefaultSiteIcon() {
 
 function getToolDisplayName(entry: ToolCallEntry): string {
   if (isQueryTool(entry.name) && entry.status === "success") {
-    return "Asked a question";
+    return i18n.t("chat.askedQuestion");
   }
   if (isSearchTool(entry.name)) {
-    return "网页搜索";
+    return i18n.t("chat.webSearch");
   }
   if (isFetchTool(entry.name)) {
-    return "网页读取";
+    return i18n.t("chat.webRead");
   }
-  return entry.name || "未知工具";
+  return entry.name || i18n.t("chat.unknownTool");
 }
 
 function getStatusLabel(entry: ToolCallEntry): string {
   if (isQueryTool(entry.name) && entry.status === "running") {
-    return "等待决定";
+    return i18n.t("chat.waitingDecision");
   }
-  return statusLabels[entry.status];
+  const key = statusLabelKeys[entry.status];
+  return key ? i18n.t(key) : "";
 }
 
 function ToolIcon({ name, className }: { name: string, className?: string }) {
@@ -331,19 +334,25 @@ function buildSummary(
   showSearchEmpty: boolean
 ): string {
   if (isQueryTool(entry.name)) {
-    return getQueryQuestion(entry) || "等待用户决定";
+    return getQueryQuestion(entry) || i18n.t("chat.waitingUserDecision");
   }
   if (entry.status === "running") {
     const query = getInputText(entry.input);
-    return query ? `参数：${query}` : "工具正在执行";
+    return query
+      ? i18n.t("chat.parameter", { value: query })
+      : i18n.t("chat.toolWorking");
   }
   if (entry.error) {
     return entry.error;
   }
   if (searchResults.length > 0) {
     return isFetchTool(entry.name)
-      ? `${searchResults.length} 个网页结果`
-      : `${searchResults.length} 个搜索结果`;
+      ? i18n.t("chat.webResults", {
+          count: formatLocaleNumber(searchResults.length),
+        })
+      : i18n.t("chat.searchResults", {
+          count: formatLocaleNumber(searchResults.length),
+        });
   }
   if (showSearchEmpty) {
     return getSearchEmptyMessage(entry.output);
@@ -457,14 +466,14 @@ function getQueryAnswer(entry: ToolCallEntry): string {
     return "";
   }
   if (output.choice === "other") {
-    return output.note || "其他";
+    return output.note || i18n.t("chat.other");
   }
 
   const choiceText = getQueryChoiceText(entry.input, output.choice, output);
   if (!output.note) {
     return choiceText || output.choice;
   }
-  return `${choiceText || output.choice}；备注：${output.note}`;
+  return `${choiceText || output.choice} ${i18n.t("chat.note", { note: output.note })}`;
 }
 
 function getQueryChoiceText(
@@ -527,7 +536,7 @@ function getSearchEmptyMessage(output: unknown): string {
       return message;
     }
   }
-  return searchEmptyMessage;
+  return i18n.t("chat.searchEmpty");
 }
 
 function extractTextBlocks(value: unknown): string {

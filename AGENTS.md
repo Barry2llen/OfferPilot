@@ -1,36 +1,37 @@
-# OfferPilot 总仓库协作指南
+# OfferPilot Repository Collaboration Guide
 
-## 基本要求
+## General requirements
 
-- 修改代码前先阅读相关源码、配置和子项目文档，不要只凭经验改动。
-- 工作区可能已有用户改动；不要回退、覆盖或格式化非本次任务涉及的内容。
-- 本仓库由三个原独立项目合并而来，根目录只提供统一入口；进入具体子项目后，继续遵守该子目录下的 `AGENTS.md`。
+- Read the relevant source, configuration, and subproject documentation before changing code.
+- The worktree may contain user changes. Do not revert, overwrite, or format changes outside the current task.
+- This repository combines three formerly independent projects. The root provides shared entry points; after entering a subproject, continue following that directory's `AGENTS.md`.
 
-## 仓库结构
+## Repository structure
 
-- `backend/`：Python FastAPI 后端，负责简历文件管理、模型配置、AI 对话、LangGraph Agent、数据库和 checkpoint。
-- `frontend/`：Vite + React SPA，负责 Web UI、SSE 流式聊天、简历管理和模型配置页面。
-- `electron/`：Electron 桌面壳，负责本地托管后端和前端进程、注入运行时 API 地址、构建桌面安装包。
-- `docs/`：跨项目技术说明和设计记录。
-- `.github/`、`.vscode/`：仓库级开发辅助配置。
+- `backend/`: Python FastAPI backend for resume files, model configuration, AI chat, LangGraph agents, database access, and checkpoints.
+- `frontend/`: Vite + React SPA for the web UI, SSE chat, resume management, and model configuration.
+- `electron/`: Electron desktop shell that hosts the backend and frontend processes, injects the runtime API URL, and builds installers.
+- `docs/`: Cross-project technical documentation and design notes.
+- `.github/` and `.vscode/`: Repository development helpers.
 
-生成目录、依赖目录、本地数据、日志和打包产物不应作为业务代码依赖，也不应提交：`.venv/`、`node_modules/`、`dist/`、`dist-electron/`、`release/`、`resources/`、`logs/`、`data/` 等。
+Generated directories, dependency directories, local data, logs, and packaging output must not be committed: `.venv/`, `node_modules/`, `dist/`, `dist-electron/`, `release/`, `resources/`, `logs/`, `data/`, and similar paths.
 
-## 后端约定
+## Backend conventions
 
-后端位于 `backend/`，技术栈是 Python `>=3.13`、FastAPI、Pydantic v2、SQLAlchemy 2.x、LangChain、LangGraph、SQLite/PostgreSQL、pytest。
+The backend is under `backend/` and uses Python `>=3.13`, FastAPI, Pydantic v2, SQLAlchemy 2.x, LangChain, LangGraph, SQLite/PostgreSQL, and pytest.
 
-- 使用 `uv` 管理依赖和执行命令。
-- 应用入口是 `main.py`，`create_app()` 在 lifespan 中加载配置、初始化数据库、建表、创建 `DatabaseCheckpointer` 并装配 `SupervisorAgent`。
-- API 路由位于 `api/routes/`，服务逻辑位于 `services/`，数据访问位于 `db/repositories/`，ORM 位于 `db/models/`，对外结构位于 `schemas/`。
-- API 层不要直接写 ORM 逻辑；Agent 节点不要直接处理 HTTP 细节；配置解析不要混入业务服务。
-- FastAPI 路由应维护 `summary`、`description`、`response_description` 和主要错误响应说明。
-- 对外 Pydantic schema 的公开字段应补充 `Field(..., description=..., examples=...)`。
-- `/ai/chat/stream` 的 SSE 事件名需要保持稳定：`thread`、`token`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。前端当前也处理 `reasoning` 事件，修改流式协议时必须同步前端类型和解析逻辑。
-- 修改接口、请求体、响应体、SSE 事件、配置结构、数据库结构或模型接入方式时，同步更新 OpenAPI 描述、测试和必要文档。
-- 生产环境由 FastAPI 在业务 API、`/docs`、`/openapi.json` 和 `/health` 注册后挂载 `frontend/dist`。深层页面导航返回 SPA 入口，缺失静态资源必须保持 404；构建产物缺失时 API 服务仍可启动。
+- Use `uv` to manage dependencies and run commands.
+- The application entry point is `main.py`. `create_app()` loads configuration, initializes databases, creates tables, creates `DatabaseCheckpointer`, and assembles `SupervisorAgent` during the lifespan.
+- API routes live in `api/routes/`, business logic in `services/`, data access in `db/repositories/`, ORM models in `db/models/`, and public contracts in `schemas/`.
+- Do not put ORM logic directly in API routes. Agent nodes must not handle HTTP details, and configuration parsing must stay out of business services.
+- FastAPI routes must maintain `summary`, `description`, `response_description`, and important error responses.
+- Public Pydantic fields should provide `Field(..., description=..., examples=...)`.
+- `/ai/chat/stream` event names must remain stable: `thread`, `token`, `tool_start`, `tool_end`, `tool_error`, `interrupt`, `final`, and `error`. The frontend also handles `reasoning`; update the frontend types and parser when changing the stream protocol.
+- API, request/response, SSE, configuration, database, or model integration changes must update OpenAPI descriptions, tests, and necessary documentation.
+- In production FastAPI registers the business API, `/docs`, `/openapi.json`, and `/health`, then mounts `frontend/dist`. Deep-page navigation returns the SPA entry, missing static assets remain 404, and the API still starts when build output is absent.
+- User-facing API and SSE messages must use the request locale. `Accept-Language` supports `en-US` and `zh-CN`; unknown or missing values fall back to `zh-CN`. Preserve user/model content and persisted technical details.
 
-常用命令：
+Common commands:
 
 ```sh
 cd backend
@@ -39,43 +40,44 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8080
 uv run pytest
 ```
 
-## 前端约定
+## Frontend conventions
 
-前端位于 `frontend/`，技术栈是 Vite、React 19、React Router、TypeScript strict、Tailwind CSS v4。
+The frontend is under `frontend/` and uses Vite, React 19, React Router, TypeScript strict mode, and Tailwind CSS v4.
 
-- 静态 HTML 入口是 `index.html`，应用入口是 `main.tsx`，路由集中在 `app/router.tsx`；`app/**/page.tsx` 是普通 React 页面组件，不遵循 Next 文件约定。
-- 使用 `React.lazy` 和 `Suspense` 按路由加载页面；全局错误处理使用 `app/components/layout/app-error-boundary.tsx`。
-- 使用 React Router 的 `Link`、`useNavigate`、`useLocation` 和 `useParams`，不要引入 Next 路由或 Next 专用组件。
-- 共享 UI 优先复用 `app/components/ui/`，业务组件按 `chat/`、`resumes/`、`settings/` 分组。
-- 后端 API 封装位于 `app/lib/api/`；新增或修改后端字段时，同步更新 `app/lib/api/types.ts` 和对应 API 模块。
-- 全局应用状态通过 `AppProvider` 管理，不要为当前线程、模型选择、Agent 状态另建平行全局状态。
-- SSE 聊天由 `aiChatApi.streamChat()` 和 `useChatStream()` 处理，不要在页面中重复实现解析。
-- API 地址优先级为 `window.offerPilotRuntime.apiBaseUrl`、`VITE_API_URL`、当前页面同源相对路径。开发服务器通过 Vite proxy 转发 API，生产环境走 FastAPI 同源请求。
-- UI 文案以中文为主，保持后台工具风格：紧凑、清晰、可扫描。
+- The static HTML entry is `index.html`, the application entry is `main.tsx`, and routes are centralized in `app/router.tsx`. `app/**/page.tsx` contains ordinary React page components rather than Next.js file conventions.
+- Use `React.lazy` and `Suspense` for route loading; global errors use `app/components/layout/app-error-boundary.tsx`.
+- Use React Router's `Link`, `useNavigate`, `useLocation`, and `useParams`; do not introduce Next.js routing or components.
+- Reuse shared UI from `app/components/ui/`; group business components under `chat/`, `resumes/`, and `settings/`.
+- Backend API wrappers live in `app/lib/api/`. Update `app/lib/api/types.ts` and the relevant API module when backend fields change.
+- Keep global application state in `AppProvider`; do not create parallel global state for the current thread, model selection, or Agent status.
+- SSE chat is handled by `aiChatApi.streamChat()` and `useChatStream()`; do not duplicate parsing in pages.
+- API URL precedence is `window.offerPilotRuntime.apiBaseUrl`, `VITE_API_URL`, then a same-origin relative path. Vite proxies API calls in development and FastAPI serves same-origin requests in production.
+- All visible UI copy, accessibility labels, dates, and counts must use the bilingual i18n resources. Keep the interface compact, clear, and scannable in both locales.
 
-常用命令：
+Common commands:
 
 ```sh
 cd frontend
 npm install
 npm run dev
 npm run lint
+npm run typecheck
 npm run build
 ```
 
-## Electron 约定
+## Electron conventions
 
-Electron 项目位于 `electron/`，技术栈是 Electron、Vite、React 18、TypeScript、Electron Builder。
+The Electron project is under `electron/` and uses Electron, Vite, React 18, TypeScript, and Electron Builder.
 
-- `electron/main.ts` 负责单实例、托管后端/前端子进程、日志、窗口生命周期和打包运行时配置。
-- `electron/preload.ts` 只暴露最小运行时桥接：`window.offerPilotRuntime.apiBaseUrl`。
-- 开发模式默认查找相邻 `../backend` 和 `../frontend`；如目录不在默认位置，使用 `OFFER_PILOT_BACKEND_DIR` 和 `OFFER_PILOT_FRONTEND_DIR`。
-- 开发模式启动 FastAPI 与 Vite；生产模式只启动 FastAPI，并通过 `--frontend-dist resources/frontend` 托管 Vite 构建产物。
-- 生产模式期望资源位于 `resources/backend/offer-pilot-api` 和 `resources/frontend`，由 `scripts/prepare-backend.mjs` 与 `scripts/prepare-frontend.mjs` staging。
-- 必须保留 `contextIsolation: true` 和 `nodeIntegration: false`，不要通过 preload 暴露 Node 原语。
-- 修改打包、资源 staging、运行时配置或端口发现逻辑时，同步更新 Electron README 和根 README。
+- `electron/main.ts` owns single-instance behavior, backend/frontend child processes, logging, window lifecycle, and packaged runtime configuration.
+- `electron/preload.ts` exposes only the minimal runtime bridge: `window.offerPilotRuntime.apiBaseUrl`.
+- Development mode looks for adjacent `../backend` and `../frontend`; use `OFFER_PILOT_BACKEND_DIR` and `OFFER_PILOT_FRONTEND_DIR` when they are elsewhere.
+- Development starts FastAPI and Vite. Production starts only FastAPI and serves the Vite output through `--frontend-dist resources/frontend`.
+- Packaged resources are expected at `resources/backend/offer-pilot-api` and `resources/frontend`, staged by `scripts/prepare-backend.mjs` and `scripts/prepare-frontend.mjs`.
+- Preserve `contextIsolation: true` and `nodeIntegration: false`; never expose Node primitives through preload.
+- Packaging, staging, runtime configuration, or port discovery changes must update the Electron README and root README.
 
-常用命令：
+Common commands:
 
 ```sh
 cd electron
@@ -86,26 +88,26 @@ npm run build:electron
 npm run build
 ```
 
-## 跨项目变更规则
+## Cross-project change rules
 
-- 后端接口变化：同步后端 schema/OpenAPI、前端 `app/lib/api/*` 类型与调用、相关页面状态处理和测试。
-- SSE 协议变化：同步后端事件输出、前端 `SSEEventType`、`useChatStream()`、聊天 UI 状态和相关测试。
-- 模型配置变化：同步后端模型 provider/selection schema、服务层、前端设置页和 Electron 运行时配置说明。
-- 简历能力变化：同步后端解析/预览服务、前端简历页、上传/替换/删除交互和文档。
-- 打包流程变化：同步 Electron scripts、`electron-builder.json5`、资源目录约定和 README。
-- 仅修改文档时不强制运行构建；修改代码时运行对应子项目最窄必要检查。
+- Backend API changes must update backend schemas/OpenAPI, frontend `app/lib/api/*` types and calls, related page state, and tests.
+- SSE protocol changes must update backend event output, frontend `SSEEventType`, `useChatStream()`, chat UI state, and tests.
+- Model configuration changes must update backend provider/selection schemas and services, the frontend settings page, and Electron runtime documentation.
+- Resume changes must update backend parsing/preview services, the resume pages, upload/replace/delete interactions, and documentation.
+- Packaging changes must update Electron scripts, `electron-builder.json5`, resource conventions, and README files.
+- Documentation-only changes do not require a build; code changes require the narrowest necessary checks for the affected subproject.
 
-## 配置与安全
+## Configuration and security
 
-- 不要提交真实 API Key、`.env`、本地 `config.yaml`、数据库文件、日志或打包二进制。
-- 后端默认配置模板是 `backend/config.example.yaml`，默认 SQLite 路径为 `./data/offer_pilot.db`，简历上传目录为 `./data/resumes`。
-- `VITE_API_URL` 可在构建期指定后端基础地址；未设置时前端使用同源相对路径，浏览器运行时可由 `window.offerPilotRuntime?.apiBaseUrl` 覆盖。
-- `OFFER_PILOT_FRONTEND_DIST` 可覆盖后端默认查找的 `frontend/dist`；Electron 生产版通过 `--frontend-dist` 显式传入其资源目录。
-- Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置，并在 `~/.offerpilot` 下创建 SQLite 数据、简历上传目录和后端运行时日志；托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
+- Never commit real API keys, `.env`, local `config.yaml`, database files, logs, or packaged binaries.
+- The backend configuration template is `backend/config.example.yaml`. The default SQLite path is `./data/offer_pilot.db`, and resumes are stored under `./data/resumes`.
+- `VITE_API_URL` may set the backend base URL at build time. When unset, the frontend uses a same-origin relative path; `window.offerPilotRuntime?.apiBaseUrl` can override it at runtime.
+- `OFFER_PILOT_FRONTEND_DIST` overrides the backend's default `frontend/dist` lookup; Electron production explicitly passes its resource directory with `--frontend-dist`.
+- Packaged Electron builds read backend configuration from `~/.offerpilot/config.yaml` and create SQLite data, resume uploads, and backend runtime logs there. Managed process stdout/stderr remains under Electron `userData/logs`.
 
-## 提交与验证
+## Submission and verification
 
-- 后端代码修改后优先运行相关定向 `uv run pytest ...`，跨模块或基础设施变更运行 `uv run pytest`。
-- 前端 TypeScript/React 修改后至少运行 `npm run lint`；涉及路由、构建配置或服务端/客户端边界时运行 `npm run build`。
-- Electron 修改后至少运行 `npm run lint`；涉及打包或托管进程时运行对应 build 命令。
-- PR 或变更说明应包含目的、影响模块、运行过的命令，以及是否涉及配置、数据库、接口协议、SSE 或打包流程。
+- After backend code changes, run focused `uv run pytest ...`; run the full suite for cross-module or infrastructure changes.
+- After frontend TypeScript/React changes, run at least `npm run lint` and `npm run typecheck`; run `npm run build` for routing, build configuration, or server/client boundary changes.
+- After Electron changes, run at least `npm run lint`; run the relevant build command for packaging or managed-process changes.
+- Change or PR notes should state the purpose, affected modules, commands run, and whether configuration, database, API, SSE, or packaging behavior changed.

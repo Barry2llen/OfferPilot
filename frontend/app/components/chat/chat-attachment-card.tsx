@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 
 export interface ChatAttachmentDisplayItem {
   fileId?: string | null;
@@ -129,22 +131,26 @@ export function formatFileSize(sizeBytes?: number): string | null {
     return null;
   }
   if (sizeBytes < 1024) {
-    return `${sizeBytes} B`;
+    return `${formatLocaleNumber(sizeBytes)} B`;
   }
   if (sizeBytes < 1024 * 1024) {
-    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+    return `${new Intl.NumberFormat(i18n.language, {
+      maximumFractionDigits: 1,
+    }).format(sizeBytes / 1024)} KB`;
   }
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${new Intl.NumberFormat(i18n.language, {
+    maximumFractionDigits: 1,
+  }).format(sizeBytes / (1024 * 1024))} MB`;
 }
 
 export function formatInjectionMode(mode?: string | null): string | null {
   switch (mode) {
     case "image":
-      return "图片";
+      return i18n.t("attachments.image");
     case "ocr_text":
       return "OCR";
     case "text":
-      return "文本";
+      return i18n.t("attachments.text");
     case undefined:
     case null:
     case "":
@@ -162,6 +168,7 @@ export default function ChatAttachmentCard({
   onRemove,
   className = "",
 }: ChatAttachmentCardProps) {
+  const { t } = useTranslation();
   const clickable = Boolean(onClick);
   const content = (
     <>
@@ -173,7 +180,7 @@ export default function ChatAttachmentCard({
 
       {variant === "message" && attachment.pending && (
         <span className="absolute right-2 top-2 rounded-full bg-primary-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
-          处理中
+          {t("attachments.processing")}
         </span>
       )}
 
@@ -185,8 +192,8 @@ export default function ChatAttachmentCard({
             onRemove();
           }}
           className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-text-muted shadow-sm transition hover:text-error-text"
-          aria-label={`移除 ${attachment.originalFilename}`}
-          title="移除附件"
+          aria-label={t("attachments.remove", { filename: attachment.originalFilename })}
+          title={t("attachments.removeAttachment")}
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -236,11 +243,11 @@ function RowContent({
   const modeLabel = formatInjectionMode(attachment.injectionMode);
   const statusLabel = attachment.pending
     ? variant === "message"
-      ? "处理中"
-      : "待上传"
+      ? i18n.t("attachments.processing")
+      : i18n.t("attachments.pendingUpload")
     : attachment.fileId
       ? attachment.fileId
-      : "未入库";
+      : i18n.t("attachments.notStored");
 
   return (
     <div className="flex min-h-20 w-full max-w-[18rem] items-center gap-3 p-2.5 pr-8">
@@ -266,13 +273,15 @@ function GridContent({
 }) {
   const sizeLabel = formatFileSize(attachment.sizeBytes);
   const createdAtLabel = attachment.createdAt
-    ? new Date(attachment.createdAt).toLocaleDateString("zh-CN")
+    ? new Date(attachment.createdAt).toLocaleDateString(i18n.language)
     : null;
   const meta = [
     attachment.fileId,
     sizeLabel,
     typeof attachment.referenceCount === "number"
-      ? `${attachment.referenceCount} 个引用`
+      ? i18n.t("attachments.references", {
+          count: formatLocaleNumber(attachment.referenceCount),
+        })
       : null,
     createdAtLabel,
   ].filter(Boolean);
@@ -296,7 +305,7 @@ function GridContent({
       </div>
       {selected && (
         <span className="absolute right-2 top-2 rounded-full bg-text-charcoal px-2 py-1 text-[11px] font-semibold text-white shadow-sm">
-          已选
+          {i18n.t("attachments.selected")}
         </span>
       )}
     </div>

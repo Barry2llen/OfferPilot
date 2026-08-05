@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   resumesApi,
   isSupportedFile,
@@ -36,6 +37,7 @@ export default function ResumeUploader({
   const { state } = useAppContext();
   const { setModelSelection } = useAppActions();
   const { task, running, startUpload } = useResumeUpload();
+  const { t } = useTranslation();
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -71,12 +73,12 @@ export default function ResumeUploader({
   const handleFile = useCallback(
     async (f: File) => {
       if (!isSupportedFile(f)) {
-        addToast("不支持的文件格式，支持 PDF、DOCX、PNG、JPG、JPEG", "error");
+        addToast(t("resume.unsupportedFormat"), "error");
         return;
       }
 
       if (!state.currentModelSelection) {
-        addToast("请先选择用于解析简历的模型", "error");
+        addToast(t("resume.chooseModel"), "error");
         return;
       }
 
@@ -96,6 +98,7 @@ export default function ResumeUploader({
       onUploaded,
       state.currentModelSelection,
       startUpload,
+      t,
       uploadFile,
     ]
   );
@@ -142,7 +145,7 @@ export default function ResumeUploader({
             className: isHero ? "bg-white/90 shadow-sm" : "",
           })}
         >
-          模型配置
+          {t("settings.title")}
         </Link>
       )}
     </div>
@@ -170,7 +173,7 @@ export default function ResumeUploader({
           }`}
         >
           <p className="mb-4 text-sm font-medium text-text-primary">
-            正在处理「{task.fileName}」
+            {t("upload.processingFile", { name: task.fileName })}
           </p>
           <div className="mb-3 h-2 w-full max-w-xs overflow-hidden rounded-full bg-surface-secondary shadow-inner">
             <div
@@ -206,14 +209,14 @@ export default function ResumeUploader({
           isHero ? "text-base sm:text-lg" : "text-base"
         }`}
       >
-        {isHero ? "拖拽简历文件到此处" : "拖拽简历文件到此处，或点击选择"}
+        {isHero ? t("resume.dragHero") : t("resume.dragInline")}
       </p>
       <p
         className={`mt-2 text-text-muted ${
           isHero ? "text-xs" : "text-xs"
         }`}
       >
-        支持 PDF、DOCX、PNG、JPG、JPEG，上传后会自动解析
+        {t("resume.supportedFormats")}
       </p>
       <input
         ref={fileInputRef}
@@ -230,7 +233,7 @@ export default function ResumeUploader({
         disabled={disabled}
         onClick={() => fileInputRef.current?.click()}
       >
-        {running ? "处理中..." : "选择文件"}
+        {running ? t("common.processing") : t("resume.chooseFile")}
       </Button>
     </div>
   );

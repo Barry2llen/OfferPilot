@@ -24,16 +24,16 @@ class ModelSelectionCreate(BaseModel):
     )
 
     provider_name: str = Field(
-        description="已配置模型供应商名称，对应 tb_model_provider.name。",
+        description="Configured model provider name corresponding to tb_model_provider.name.",
         examples=["default-openai"],
     )
     model_name: str = Field(
-        description="模型名称。",
+        description="Model name.",
         examples=["gpt-4o-mini"],
     )
     supports_image_input: bool = Field(
         default=False,
-        description="该模型是否支持图片输入。",
+        description="Whether this model supports image input.",
         examples=[True],
     )
 
@@ -53,17 +53,17 @@ class ModelSelectionUpdate(BaseModel):
 
     provider_name: str | None = Field(
         default=None,
-        description="新的模型供应商名称。省略时保持原值。",
+        description="New model provider name. The current value is kept when omitted.",
         examples=["compatible-main"],
     )
     model_name: str | None = Field(
         default=None,
-        description="新的模型名称。省略时保持原值。",
+        description="New model name. The current value is kept when omitted.",
         examples=["custom-model"],
     )
     supports_image_input: bool | None = Field(
         default=None,
-        description="是否支持图片输入。省略时保持原值。",
+        description="Whether image input is supported. The current value is kept when omitted.",
         examples=[False],
     )
 
@@ -87,10 +87,10 @@ class ModelSelectionResponse(BaseModel):
         }
     )
 
-    id: int = Field(description="模型选择记录 ID。", examples=[1])
-    provider: ModelProviderResponse = Field(description="已展开的模型供应商配置摘要。")
-    model_name: str = Field(description="模型名称。", examples=["gpt-4o-mini"])
+    id: int = Field(description="Model selection record ID.", examples=[1])
+    provider: ModelProviderResponse = Field(description="Expanded model provider configuration summary.")
+    model_name: str = Field(description="Model name.", examples=["gpt-4o-mini"])
     supports_image_input: bool = Field(
-        description="该模型是否支持图片输入。",
+        description="Whether this model supports image input.",
         examples=[True],
     )

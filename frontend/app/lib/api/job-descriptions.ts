@@ -1,4 +1,5 @@
-import { apiRequest, apiUrl } from "./client";
+import { apiRequest, apiUrl, localeHeaders } from "./client";
+import i18n from "@/app/lib/i18n";
 import type {
   JobDescriptionAnalysisDetail,
   JobDescriptionAnalysisListItem,
@@ -66,6 +67,7 @@ async function streamSSEForm(
     const response = await fetch(url, {
       method: "POST",
       body,
+      headers: localeHeaders(),
       signal,
     });
 
@@ -81,7 +83,7 @@ async function streamSSEForm(
     }
 
     const reader = response.body?.getReader();
-    if (!reader) throw new Error("No response body");
+    if (!reader) throw new Error(i18n.t("errors.noResponseBody"));
 
     const decoder = new TextDecoder();
     let buffer = "";

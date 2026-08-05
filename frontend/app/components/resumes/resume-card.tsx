@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 import { resumesApi } from "@/app/lib/api/resumes";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
@@ -11,7 +13,7 @@ interface ResumeCardProps {
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleDateString("zh-CN", {
+  return new Date(iso).toLocaleDateString(i18n.language, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -19,11 +21,11 @@ function formatTime(iso: string): string {
 }
 
 function mediaLabel(type: string | null): string {
-  if (!type) return "未知";
+  if (!type) return i18n.t("common.unknown");
   if (type.includes("pdf")) return "PDF";
   if (type.includes("docx")) return "DOCX";
   if (type.includes("png") || type.includes("jpg") || type.includes("jpeg")) {
-    return "图片";
+    return i18n.t("attachments.image");
   }
   return type;
 }
@@ -31,14 +33,14 @@ function mediaLabel(type: string | null): string {
 function parseLabel(status: ResumeListItem["parse_status"]): string {
   switch (status) {
     case "parsed":
-      return "已解析";
+      return i18n.t("resume.parsed");
     case "processing":
-      return "解析中";
+      return i18n.t("resume.parsing");
     case "failed":
-      return "解析失败";
+      return i18n.t("resume.parseFailed");
     case "unparsed":
     default:
-      return "未解析";
+      return i18n.t("resume.unparsed");
   }
 }
 
@@ -64,16 +66,23 @@ export default function ResumeCard({
   onDelete,
   deleting,
 }: ResumeCardProps) {
+  const { t } = useTranslation();
   const statusText =
     resume.parse_status === "parsed"
-      ? `${resume.section_count} 个章节 · ${resume.fact_count} 条事实`
+      ? t("resume.sectionsFacts", {
+          sections: formatLocaleNumber(resume.section_count),
+          facts: formatLocaleNumber(resume.fact_count),
+        })
       : resume.has_file
         ? mediaLabel(resume.media_type)
-        : "无原文件";
+        : t("common.noFile");
   const description = resume.parse_error || resume.summary || statusText;
   const factLabel =
     resume.parse_status === "parsed"
-      ? `${resume.section_count} 章 · ${resume.fact_count} 事实`
+      ? t("resume.shortSectionsFacts", {
+          sections: formatLocaleNumber(resume.section_count),
+          facts: formatLocaleNumber(resume.fact_count),
+        })
       : mediaLabel(resume.media_type);
 
   return (
@@ -89,7 +98,7 @@ export default function ResumeCard({
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="truncate font-display text-base font-semibold leading-6 text-text-primary">
-              {resume.original_filename || `简历 #${resume.id}`}
+              {resume.original_filename || t("resume.defaultTitle", { id: resume.id })}
             </h3>
             <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-xs text-text-muted">
               <span>{formatTime(resume.upload_time)}</span>
@@ -99,7 +108,9 @@ export default function ResumeCard({
                 <>
                   <span className="h-1 w-1 rounded-full bg-border-default" />
                   <span>
-                    解析于 {new Date(resume.parsed_at).toLocaleDateString("zh-CN")}
+                    {t("resume.parsedAt", {
+                      date: new Date(resume.parsed_at).toLocaleDateString(i18n.language),
+                    })}
                   </span>
                 </>
               )}
@@ -126,7 +137,7 @@ export default function ResumeCard({
               variant="neutral"
               className="rounded-full px-3 py-1 font-mono text-[11px] font-bold"
             >
-              {resume.has_file ? mediaLabel(resume.media_type) : "无原文件"}
+              {resume.has_file ? mediaLabel(resume.media_type) : t("common.noFile")}
             </Badge>
           </div>
 
@@ -142,10 +153,10 @@ export default function ResumeCard({
                   className: "h-8 px-3 text-primary-700 hover:text-primary-600",
                 })}
               >
-                预览
+                {t("common.preview")}
               </a>
             ) : (
-              <span className="px-2.5 text-text-muted">预览</span>
+              <span className="px-2.5 text-text-muted">{t("common.preview")}</span>
             )}
             <Link
               to={`/resumes/${resume.id}`}
@@ -155,7 +166,7 @@ export default function ResumeCard({
                 className: "h-8 px-3 text-primary-700 hover:text-primary-600",
               })}
             >
-              详情
+              {t("common.details")}
             </Link>
             <Button
               variant="ghost"
@@ -163,9 +174,9 @@ export default function ResumeCard({
               onClick={() => onDelete(resume)}
               disabled={deleting}
               className="h-8 px-2.5 text-error-text hover:bg-error-bg"
-              aria-label={`删除 ${resume.original_filename || `简历 #${resume.id}`}`}
+              aria-label={`${t("common.delete")} ${resume.original_filename || t("resume.defaultTitle", { id: resume.id })}`}
             >
-              {deleting ? "删除中..." : <TrashIcon className="h-4 w-4" />}
+              {deleting ? t("resume.deleteInProgress") : <TrashIcon className="h-4 w-4" />}
             </Button>
           </div>
         </div>

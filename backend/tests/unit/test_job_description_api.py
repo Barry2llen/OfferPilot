@@ -290,6 +290,7 @@ def test_analyze_job_description_returns_404_for_missing_selection(
                 "selection_id": "999",
                 "jd_text": "岗位职责：负责后端服务开发。",
             },
+            headers={"Accept-Language": "en-US"},
         )
 
     assert response.status_code == 404
@@ -309,6 +310,7 @@ def test_analyze_job_description_returns_404_for_missing_file_id(
                 "selection_id": str(selection_id),
                 "file_ids[]": "NOFILE",
             },
+            headers={"Accept-Language": "en-US"},
         )
 
     assert response.status_code == 404
@@ -396,14 +398,14 @@ def test_openapi_json_contains_job_description_docs(
 
     tags = {tag["name"]: tag["description"] for tag in payload["tags"]}
     assert "job-descriptions" in tags
-    assert "JD 分析接口" in tags["job-descriptions"]
+    assert "Job description analysis" in tags["job-descriptions"]
 
     paths = payload["paths"]
-    assert paths["/job-descriptions"]["get"]["summary"] == "列出 JD 分析历史"
-    assert paths["/job-descriptions"]["post"]["summary"] == "创建并流式分析 JD"
+    assert paths["/job-descriptions"]["get"]["summary"] == "List JD analysis history"
+    assert paths["/job-descriptions"]["post"]["summary"] == "Create and stream JD analysis"
     assert "text/event-stream" in paths["/job-descriptions"]["post"]["responses"]["200"]["content"]
-    assert paths["/job-descriptions/{analysis_id}"]["get"]["summary"] == "获取 JD 分析详情"
-    assert paths["/job-descriptions/{analysis_id}"]["delete"]["summary"] == "删除 JD 分析记录"
+    assert paths["/job-descriptions/{analysis_id}"]["get"]["summary"] == "Get JD analysis details"
+    assert paths["/job-descriptions/{analysis_id}"]["delete"]["summary"] == "Delete JD analysis"
 
     schemas = payload["components"]["schemas"]
     assert "JobDescriptionAnalysisDetail" in schemas

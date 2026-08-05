@@ -10,12 +10,20 @@ from db.repositories import JobDescriptionAnalysisRepository
 from schemas.config import Config
 from services.job_description_analysis_service import JobDescriptionAnalysisService
 from utils.stream import render_sse_event
+from utils.i18n import (
+    DEFAULT_LOCALE,
+    Locale,
+    localize_error,
+    localize_model_retry_detail,
+    localize_progress_message,
+)
 
 
 @dataclass(slots=True)
 class _JdAnalysisJob:
     job_id: str
     analysis_id: int
+    locale: Locale = DEFAULT_LOCALE
     history: list[str] = field(default_factory=list)
     subscribers: set[asyncio.Queue[str | None]] = field(default_factory=set)
     done: bool = False
@@ -46,11 +54,13 @@ class JdAnalysisJobManager:
         source_url: str | None,
         images: list[str],
         initial_event: str,
+        locale: Locale = DEFAULT_LOCALE,
     ) -> str:
         job_id = uuid4().hex
         job = _JdAnalysisJob(
             job_id=job_id,
             analysis_id=analysis_id,
+            locale=locale,
             history=[initial_event],
         )
 
@@ -65,6 +75,7 @@ class JdAnalysisJobManager:
                     jd_text=jd_text,
                     source_url=source_url,
                     images=images,
+                    locale=locale,
                 )
             )
 
@@ -118,6 +129,7 @@ class JdAnalysisJobManager:
         jd_text: str | None,
         source_url: str | None,
         images: list[str],
+        locale: Locale,
     ) -> None:
         workflow = JdAnalysisWorkflow(config=self._config)
 
@@ -133,7 +145,7 @@ class JdAnalysisJobManager:
                     {
                         "analysis_id": analysis_id,
                         "progress": data.get("progress", 0),
-                        "message": data.get("message"),
+                        "message": localize_progress_message(data.get("message"), locale),
                         "additional_data": data.get("additional_data") or {},
                     },
                 )
@@ -148,7 +160,12 @@ class JdAnalysisJobManager:
                         "analysis_id": analysis_id,
                         "attempt": data.get("attempt"),
                         "max_attempts": data.get("max_attempts"),
-                        "detail": data.get("error"),
+                        "detail": localize_model_retry_detail(
+                            data.get("error"),
+                            locale,
+                            attempt=data.get("attempt") or 0,
+                            max_attempts=data.get("max_attempts") or 0,
+                        ),
                         "additional_data": data.get("additional_data") or {},
                     },
                 )
@@ -185,6 +202,7 @@ class JdAnalysisJobManager:
             if not await self._is_current(analysis_id, job_id):
                 return
             detail = str(error)
+            localized_detail = localize_error(error, locale)
             with self._database.get_session_factory()() as session:
                 service = JobDescriptionAnalysisService(
                     JobDescriptionAnalysisRepository(session)
@@ -196,7 +214,7 @@ class JdAnalysisJobManager:
                 "error",
                 {
                     "analysis_id": analysis_id,
-                    "detail": detail,
+                    "detail": localized_detail,
                     "status": "failed",
                 },
                 done=True,

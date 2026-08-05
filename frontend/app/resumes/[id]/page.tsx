@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";
@@ -13,10 +14,12 @@ import type {
   ResumeFact,
   ResumeSection,
 } from "@/app/lib/api/types";
+import i18n, { formatLocaleList } from "@/app/lib/i18n";
 
 type DetailTab = "analysis" | "source";
 
 export default function ResumeDetailPage() {
+  const { t, i18n: translation } = useTranslation();
   const params = useParams<{ id: string }>();
   const navigate = useNavigate();
   const id = Number(params.id);
@@ -34,23 +37,23 @@ export default function ResumeDetailPage() {
 
   const derived = useMemo(() => {
     if (!resume) return null;
-    return deriveResumeView(resume);
-  }, [resume]);
+    return deriveResumeView(resume, translation.language);
+  }, [resume, translation.language]);
 
   const handleReplace = useCallback(async () => {
     setReplaceOpen(false);
     setActiveTab("analysis");
     refetch();
-    addToast("文件已替换", "success");
-  }, [refetch, addToast]);
+    addToast(t("resume.fileReplaced"), "success");
+  }, [refetch, addToast, t]);
 
   const handleCopyRawText = async () => {
     if (!resume?.raw_text) return;
     try {
       await navigator.clipboard.writeText(resume.raw_text);
-      addToast("解析文本已复制", "success");
+      addToast(t("common.copySuccess"), "success");
     } catch {
-      addToast("复制失败", "error");
+      addToast(t("common.copyFailed"), "error");
     }
   };
 
@@ -58,10 +61,10 @@ export default function ResumeDetailPage() {
     setOperating(true);
     try {
       await resumesApi.delete(id);
-      addToast("简历已删除", "success");
+      addToast(t("upload.resumeDeleted"), "success");
       navigate("/resumes");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "删除失败";
+      const msg = err instanceof Error ? err.message : t("errors.deleteFailed");
       addToast(msg, "error");
     } finally {
       setOperating(false);
@@ -93,13 +96,13 @@ export default function ResumeDetailPage() {
           <p className="mb-4 text-sm text-error-text">{error}</p>
           <div className="flex justify-center gap-3">
             <Button variant="secondary" size="sm" onClick={refetch}>
-              重试
+            {t("common.retry")}
             </Button>
             <Link
               to="/resumes"
               className={buttonClassName({ variant: "ghost", size: "sm" })}
             >
-              返回列表
+              {t("common.back")}
             </Link>
           </div>
         </div>
@@ -117,9 +120,9 @@ export default function ResumeDetailPage() {
           className="inline-flex items-center gap-2 rounded-full px-2 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
         >
           <ArrowLeftIcon className="h-5 w-5" />
-          返回简历库
+          {t("resume.backToLibrary")}
         </Link>
-        <Button variant="ghost" size="sm" aria-label="更多操作">
+        <Button variant="ghost" size="sm" aria-label={t("resume.moreActions")}>
           <DotsIcon className="h-5 w-5" />
         </Button>
       </header>
@@ -176,12 +179,12 @@ export default function ResumeDetailPage() {
             className="justify-start text-error-text hover:bg-error-bg"
           >
             <TrashIcon className="h-4 w-4" />
-            删除
+            {t("common.delete")}
           </Button>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button variant="secondary" size="sm" pill onClick={toggleReplace}>
               <UploadFileIcon className="h-4 w-4" />
-              {replaceOpen ? "取消替换" : "替换"}
+              {replaceOpen ? t("resume.cancelReplace") : t("resume.replace")}
             </Button>
             <Button
               size="sm"
@@ -190,7 +193,7 @@ export default function ResumeDetailPage() {
               className="shadow-sm"
             >
               <CopyIcon className="h-4 w-4" />
-              复制解析文本
+              {t("resume.copyParsedText")}
             </Button>
           </div>
         </div>
@@ -198,9 +201,12 @@ export default function ResumeDetailPage() {
 
       <ConfirmDialog
         open={confirmDelete}
-        title="删除简历"
-        message={`确定要删除「${resume.original_filename || `简历 #${resume.id}`}」吗？此操作会删除数据库记录和原始文件。`}
-        confirmLabel="删除"
+        title={t("resume.deleteTitle")}
+        message={t("resume.deleteMessage", {
+          name:
+            resume.original_filename || t("resume.defaultTitle", { id: resume.id }),
+        })}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
@@ -227,6 +233,7 @@ function TabSwitch({
   activeTab: DetailTab;
   onChange: (tab: DetailTab) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="relative grid w-full grid-cols-2 rounded-full border border-[#e6e1dc] bg-white p-0.5 shadow-[0_1px_8px_rgba(24,24,24,0.06)] sm:w-[188px]">
       <span
@@ -241,7 +248,7 @@ function TabSwitch({
           activeTab === "analysis" ? "text-white" : "text-[#5b5751]"
         }`}
       >
-        AI 解析
+        {t("resume.aiAnalysis")}
       </button>
       <button
         type="button"
@@ -250,7 +257,7 @@ function TabSwitch({
           activeTab === "source" ? "text-white" : "text-[#5b5751]"
         }`}
       >
-        简历原件
+        {t("resume.originalResume")}
       </button>
     </div>
   );
@@ -263,9 +270,10 @@ function AnalysisContent({
   resume: ResumeDetail;
   derived: ReturnType<typeof deriveResumeView>;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mx-auto max-w-[920px] space-y-8 py-7">
-      <AnalysisSection icon={<SummaryIcon className="h-5 w-5" />} title="摘要">
+      <AnalysisSection icon={<SummaryIcon className="h-5 w-5" />} title={t("resume.summary")}>
         {resume.parse_error ? (
           <p className="rounded-xl bg-error-bg px-4 py-3 text-[15px] leading-7 text-error-text">
             {resume.parse_error}
@@ -279,7 +287,7 @@ function AnalysisContent({
 
       <AnalysisSection
         icon={<SkillIcon className="h-5 w-5" />}
-        title="核心关键词"
+        title={t("resume.keywords")}
       >
         {derived.keywords.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -294,14 +302,14 @@ function AnalysisContent({
           </div>
         ) : (
           <p className="text-[15px] text-text-muted">
-            完成解析后会显示技能、经历和事实关键词。
+            {t("resume.keywordsEmpty")}
           </p>
         )}
       </AnalysisSection>
 
       <AnalysisSection
         icon={<BriefcaseIcon className="h-5 w-5" />}
-        title="结构化章节"
+        title={t("resume.sections")}
       >
         {resume.sections.length > 0 ? (
           <div className="space-y-6 border-l-2 border-border-light pl-5">
@@ -315,7 +323,7 @@ function AnalysisContent({
           </div>
         ) : (
           <p className="text-[15px] text-text-muted">
-            上传或替换文件后会在这里显示解析文本和结构化章节。
+            {t("resume.sectionsEmpty")}
           </p>
         )}
       </AnalysisSection>
@@ -323,7 +331,7 @@ function AnalysisContent({
       {resume.raw_text && (
         <AnalysisSection
           icon={<TextIcon className="h-5 w-5" />}
-          title="完整解析文本"
+          title={t("resume.fullText")}
         >
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-[#eee8e2] bg-[#fbfaf8] p-4 text-[13px] leading-7 text-text-secondary">
             {resume.raw_text}
@@ -358,8 +366,8 @@ function SourceContent({
   );
 }
 
-function deriveResumeView(resume: ResumeDetail) {
-  const title = (resume.original_filename || `简历 #${resume.id}`).replace(
+function deriveResumeView(resume: ResumeDetail, locale: string) {
+  const title = (resume.original_filename || i18n.t("resume.defaultTitle", { id: resume.id })).replace(
     /\.[^/.]+$/,
     ""
   );
@@ -369,12 +377,15 @@ function deriveResumeView(resume: ResumeDetail) {
   ).slice(0, 10);
   const subtitle =
     resume.parse_status === "parsed"
-      ? `${resume.section_count} 个章节 · ${resume.fact_count} 条事实`
+      ? i18n.t("resume.sectionsFacts", {
+          sections: new Intl.NumberFormat(locale).format(resume.section_count),
+          facts: new Intl.NumberFormat(locale).format(resume.fact_count),
+        })
       : resume.parse_status === "processing"
-        ? "正在解析候选人简历"
+        ? i18n.t("resume.processingDescription")
         : resume.parse_status === "failed"
-          ? "解析失败，建议替换文件后重试"
-          : "等待解析";
+          ? i18n.t("resume.failedDescription")
+          : i18n.t("resume.waitingDescription");
   return {
     title,
     subtitle,
@@ -382,17 +393,18 @@ function deriveResumeView(resume: ResumeDetail) {
     summary:
       resume.summary ||
       (resume.parse_status === "parsed"
-        ? "已完成结构化解析，可查看章节、事实和完整文本。"
-        : "上传或替换文件后，OfferPilot 会自动提取简历摘要、章节和关键事实。"),
+        ? i18n.t("resume.parsedDescription")
+        : i18n.t("resume.uploadDescription")),
   };
 }
 
 function ResumePreview({ resume }: { resume: ResumeDetail }) {
+  const { t } = useTranslation();
   if (!resume.has_file) {
     return (
       <PreviewEmpty
-        title="没有可预览的原文件"
-        description="可使用底部操作替换文件。"
+        title={t("resume.noPreviewFile")}
+        description={t("resume.noPreviewFileDescription")}
       />
     );
   }
@@ -403,7 +415,7 @@ function ResumePreview({ resume }: { resume: ResumeDetail }) {
         <iframe
           src={resumesApi.previewUrl(resume.id)}
           className="h-[620px] w-full"
-          title="简历预览"
+          title={t("resume.previewTitle")}
         />
       </div>
     );
@@ -423,8 +435,8 @@ function ResumePreview({ resume }: { resume: ResumeDetail }) {
 
   return (
     <PreviewEmpty
-      title="不支持在线预览此格式"
-      description="仍可查看 AI 解析结果和完整文本。"
+      title={t("resume.unsupportedPreview")}
+      description={t("resume.unsupportedPreviewDescription")}
     />
   );
 }
@@ -474,6 +486,7 @@ function TimelineSection({
   section: ResumeSection;
   index: number;
 }) {
+  const { t } = useTranslation();
   const facts = section.facts.slice(0, 3);
   return (
     <section className="relative">
@@ -483,7 +496,7 @@ function TimelineSection({
         }`}
       />
       <h3 className="font-display text-base font-medium text-text-primary">
-        {section.title || `章节 ${index + 1}`}
+        {section.title || t("resume.chapter", { index: index + 1 })}
       </h3>
       <p className="mt-2 whitespace-pre-wrap text-[13px] leading-7 text-text-secondary">
         {section.content}
@@ -515,7 +528,7 @@ function FactLine({ fact }: { fact: ResumeFact }) {
       </div>
       {fact.keywords.length > 0 && (
         <p className="mt-1 font-mono text-[13px] text-text-muted">
-          {fact.keywords.join("、")}
+          {formatLocaleList(fact.keywords)}
         </p>
       )}
     </div>
@@ -525,14 +538,14 @@ function FactLine({ fact }: { fact: ResumeFact }) {
 function parseLabel(status: ResumeDetail["parse_status"]): string {
   switch (status) {
     case "parsed":
-      return "已解析";
+      return i18n.t("resume.parsed");
     case "processing":
-      return "解析中";
+      return i18n.t("resume.parsing");
     case "failed":
-      return "解析失败";
+      return i18n.t("resume.parseFailed");
     case "unparsed":
     default:
-      return "未解析";
+      return i18n.t("resume.unparsed");
   }
 }
 

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 interface FormDrawerProps {
   open: boolean;
@@ -13,6 +14,7 @@ export default function FormDrawer({
   children,
   onClose,
 }: FormDrawerProps) {
+  const { t } = useTranslation();
   if (!open) return null;
 
   return (
@@ -29,7 +31,7 @@ export default function FormDrawer({
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-surface-secondary transition-colors"
-            aria-label="Close"
+            aria-label={t("common.close")}
           >
             <svg
               className="w-5 h-5 text-text-muted"

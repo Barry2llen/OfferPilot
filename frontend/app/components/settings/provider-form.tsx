@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
 import type {
   Provider,
@@ -28,6 +29,7 @@ export default function ProviderForm({
   onCancel,
   submitting,
 }: ProviderFormProps) {
+  const { t } = useTranslation();
   const [provider, setProvider] = useState<Provider>(
     (initial?.provider as Provider) || "OpenAI"
   );
@@ -72,7 +74,7 @@ export default function ProviderForm({
     <form onSubmit={handleSubmit} className="space-y-5">
       <div>
         <label className="block text-sm font-medium text-text-primary mb-1.5">
-          供应商类型
+          {t("settings.providerType")}
         </label>
         <select
           value={provider}
@@ -89,26 +91,26 @@ export default function ProviderForm({
 
       <div>
         <label className="block text-sm font-medium text-text-primary mb-1.5">
-          配置名称
+          {t("settings.configName")}
         </label>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="如: default-openai"
+          placeholder={t("settings.configNamePlaceholder")}
           disabled={isEdit}
           required
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         />
         <p className="text-xs text-text-muted mt-1">
-          配置名称会作为模型选择的引用键，创建后不可修改
+          {t("settings.configNameDescription")}
         </p>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-text-primary mb-1.5">
-          Base URL
-          <span className="text-text-muted font-normal ml-1">(可选)</span>
+          {t("settings.baseUrl")}
+          <span className="text-text-muted font-normal ml-1">({t("settings.baseUrlOptional")})</span>
         </label>
         <input
           type="url"
@@ -118,15 +120,15 @@ export default function ProviderForm({
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40"
         />
         <p className="text-xs text-text-muted mt-1">
-          OpenAI Compatible 通常需要配置
+          {t("settings.baseUrlDescription")}
         </p>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-text-primary mb-1.5">
-          API Key
+          {t("settings.apiKey")}
           <span className="text-text-muted font-normal ml-1">
-            {isEdit ? "(留空保持不变)" : "(可选)"}
+            ({isEdit ? t("settings.apiKeyKeep") : t("settings.apiKeyOptional")})
           </span>
         </label>
         <input
@@ -138,7 +140,7 @@ export default function ProviderForm({
               setClearKey(false);
             }
           }}
-          placeholder={isEdit ? "输入新密钥以更新" : "sk-..."}
+          placeholder={isEdit ? t("settings.apiKeyPlaceholder") : t("settings.apiKeyNewPlaceholder")}
           autoComplete="off"
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40"
         />
@@ -151,14 +153,14 @@ export default function ProviderForm({
               disabled={!!apiKey}
               className="rounded"
             />
-            <span className="text-xs text-text-muted">清空已配置的 API Key</span>
+            <span className="text-xs text-text-muted">{t("settings.clearApiKey")}</span>
           </label>
         )}
       </div>
 
       <div className="flex gap-3 pt-2">
         <Button type="submit" disabled={submitting || !name} className="flex-1">
-          {submitting ? "保存中..." : isEdit ? "保存更改" : "创建"}
+          {submitting ? t("common.saving") : isEdit ? t("settings.save") : t("common.create")}
         </Button>
         <Button
           type="button"
@@ -167,7 +169,7 @@ export default function ProviderForm({
           disabled={submitting}
           className="flex-1"
         >
-          取消
+          {t("common.cancel")}
         </Button>
       </div>
     </form>

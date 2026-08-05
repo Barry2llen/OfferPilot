@@ -1,11 +1,13 @@
 import { Link, useParams } from "react-router-dom";
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import Card from "@/app/components/ui/card";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { jobDescriptionsApi } from "@/app/lib/api/job-descriptions";
+import i18n from "@/app/lib/i18n";
 import type {
   JobDescriptionAnalysisDetail,
   JobDescriptionBlock,
@@ -13,14 +15,14 @@ import type {
 } from "@/app/lib/api/types";
 
 function formatTime(value: string | null): string {
-  if (!value) return "未完成";
-  return new Date(value).toLocaleString("zh-CN");
+  if (!value) return i18n.t("jobDescription.notCompleted");
+  return new Date(value).toLocaleString(i18n.language);
 }
 
 function statusLabel(status: JobDescriptionAnalysisDetail["status"]): string {
-  if (status === "parsed") return "已完成";
-  if (status === "failed") return "失败";
-  return "处理中";
+  if (status === "parsed") return i18n.t("jobDescription.completed");
+  if (status === "failed") return i18n.t("jobDescription.failed");
+  return i18n.t("jobDescription.processing");
 }
 
 function statusVariant(status: JobDescriptionAnalysisDetail["status"]) {
@@ -34,6 +36,7 @@ function factLabel(fact: JobDescriptionFact): string {
 }
 
 export default function JobDescriptionDetailPage() {
+  const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const analysisId = Number(params.id);
   const fetchDetail = useCallback(
@@ -57,9 +60,9 @@ export default function JobDescriptionDetailPage() {
     return (
       <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6">
         <div className="py-20 text-center">
-          <p className="mb-4 text-sm text-error-text">{error || "加载失败"}</p>
+          <p className="mb-4 text-sm text-error-text">{error || t("errors.loadFailed")}</p>
           <Button variant="secondary" onClick={refetch}>
-            重试
+            {t("common.retry")}
           </Button>
         </div>
       </div>
@@ -67,7 +70,8 @@ export default function JobDescriptionDetailPage() {
   }
 
   const result = data.result;
-  const title = data.job_title || result?.job_title || `JD #${data.id}`;
+  const title =
+    data.job_title || result?.job_title || t("jobDescription.defaultTitle", { id: data.id });
   const salary = result?.salary?.raw;
   const metaItems = [
     data.company_name || result?.company_name,
@@ -87,23 +91,23 @@ export default function JobDescriptionDetailPage() {
             <Badge variant={statusVariant(data.status)}>{statusLabel(data.status)}</Badge>
           </div>
           <p className="text-sm text-text-muted">
-            {metaItems.join(" · ") || "未识别公司、地点和要求"}
+            {metaItems.join(" · ") || t("jobDescription.unidentifiedMetadata")}
           </p>
         </div>
         <Link
           to="/job-descriptions"
           className={buttonClassName({ variant: "secondary", size: "sm" })}
         >
-          返回列表
+          {t("common.back")}
         </Link>
       </div>
 
       <Card shadow="none" radius="lg" padding="lg" className="mb-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="公司" value={data.company_name || result?.company_name} />
-          <Metric label="地点" value={data.primary_location || result?.primary_location} />
-          <Metric label="薪资" value={salary} />
-          <Metric label="完成时间" value={formatTime(data.completed_at)} />
+          <Metric label={t("jobDescription.detailCompany")} value={data.company_name || result?.company_name} />
+          <Metric label={t("jobDescription.detailLocation")} value={data.primary_location || result?.primary_location} />
+          <Metric label={t("jobDescription.salary")} value={salary} />
+          <Metric label={t("jobDescription.completedAt")} value={formatTime(data.completed_at)} />
         </div>
         {data.source_url && (
           <a
@@ -124,16 +128,16 @@ export default function JobDescriptionDetailPage() {
 
       {result && (
         <Card shadow="none" radius="lg" padding="lg" className="mb-4">
-          <h2 className="mb-4 text-base font-semibold text-text-primary">结构化字段</h2>
+          <h2 className="mb-4 text-base font-semibold text-text-primary">{t("jobDescription.structuredFields")}</h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Info label="岗位族" value={result.job_family} />
-            <Info label="级别" value={result.job_level} />
-            <Info label="工作方式" value={result.remote_policy_raw} />
-            <Info label="雇佣类型" value={result.employment_type_raw} />
-            <Info label="经验" value={result.experience_raw} />
-            <Info label="学历" value={result.education_raw} />
-            <Info label="专业要求" value={result.major_requirement} />
-            <Info label="公司规模" value={result.company_size} />
+            <Info label={t("jobDescription.jobFamily")} value={result.job_family} />
+            <Info label={t("jobDescription.level")} value={result.job_level} />
+            <Info label={t("jobDescription.workMode")} value={result.remote_policy_raw} />
+            <Info label={t("jobDescription.employmentType")} value={result.employment_type_raw} />
+            <Info label={t("jobDescription.experience")} value={result.experience_raw} />
+            <Info label={t("jobDescription.education")} value={result.education_raw} />
+            <Info label={t("jobDescription.majorRequirement")} value={result.major_requirement} />
+            <Info label={t("jobDescription.companySize")} value={result.company_size} />
           </div>
           {result.benefits.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
@@ -155,14 +159,14 @@ export default function JobDescriptionDetailPage() {
         </div>
       ) : (
         <Card shadow="none" radius="lg" padding="lg" className="mb-4">
-          <p className="text-sm text-text-muted">暂无结构化需求块。</p>
+          <p className="text-sm text-text-muted">{t("jobDescription.noBlocks")}</p>
         </Card>
       )}
 
       <Card shadow="none" radius="lg" padding="lg">
-        <h2 className="mb-3 text-base font-semibold text-text-primary">JD 原文</h2>
+        <h2 className="mb-3 text-base font-semibold text-text-primary">{t("jobDescription.rawText")}</h2>
         <pre className="max-h-[520px] whitespace-pre-wrap rounded-2xl bg-surface-secondary p-4 text-sm leading-6 text-text-primary">
-          {data.raw_text || "暂无原文"}
+          {data.raw_text || t("jobDescription.noRawText")}
         </pre>
       </Card>
     </div>
@@ -174,7 +178,7 @@ function Metric({ label, value }: { label: string; value?: string | null }) {
     <div>
       <p className="mb-1 text-xs text-text-muted">{label}</p>
       <p className="truncate text-sm font-semibold text-text-primary">
-        {value || "未识别"}
+        {value || i18n.t("jobDescription.notIdentified")}
       </p>
     </div>
   );
@@ -184,7 +188,7 @@ function Info({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="rounded-xl bg-surface-secondary px-3 py-2">
       <p className="mb-1 text-xs text-text-muted">{label}</p>
-      <p className="text-sm text-text-primary">{value || "未识别"}</p>
+      <p className="text-sm text-text-primary">{value || i18n.t("jobDescription.notIdentified")}</p>
     </div>
   );
 }

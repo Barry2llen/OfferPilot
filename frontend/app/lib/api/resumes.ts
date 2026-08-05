@@ -1,4 +1,5 @@
-import { apiRequest, apiUrl, ApiError } from "./client";
+import { apiRequest, apiUrl, ApiError, localeHeaders } from "./client";
+import i18n from "@/app/lib/i18n";
 import type { ResumeListItem, ResumeDetail, ResumeStreamEvent } from "./types";
 
 export const resumesApi = {
@@ -55,9 +56,12 @@ export const resumesApi = {
   previewBlob: async (id: number) => {
     const res = await fetch(apiUrl(`/resumes/${id}/file`), {
       cache: "no-store",
-      headers: { Accept: "application/octet-stream" },
+      headers: {
+        Accept: "application/octet-stream",
+        ...localeHeaders(),
+      },
     });
-    if (!res.ok) throw new ApiError(res.status, "Failed to load preview");
+    if (!res.ok) throw new ApiError(res.status, i18n.t("errors.loadPreviewFailed"));
     return res.blob();
   },
 };
@@ -92,6 +96,7 @@ async function streamSSEForm(
     const response = await fetch(url, {
       method,
       body,
+      headers: localeHeaders(),
       signal,
     });
 
@@ -107,7 +112,7 @@ async function streamSSEForm(
     }
 
     const reader = response.body?.getReader();
-    if (!reader) throw new Error("No response body");
+    if (!reader) throw new Error(i18n.t("errors.noResponseBody"));
 
     const decoder = new TextDecoder();
     let buffer = "";

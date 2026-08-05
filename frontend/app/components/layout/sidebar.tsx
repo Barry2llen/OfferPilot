@@ -1,33 +1,35 @@
+import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
+import { getCurrentLocale, setLocale, type Locale } from "@/app/lib/i18n";
 
 const navItems = [
   {
     href: "/",
-    label: "AI 对话",
+    labelKey: "nav.aiChat",
     icon: ChatIcon,
     active: true,
   },
   {
     href: "/resumes",
-    label: "简历库",
+    labelKey: "nav.resumes",
     icon: DocIcon,
     active: true,
   },
   {
     href: "/job-descriptions",
-    label: "JD 分析",
+    labelKey: "nav.jd",
     icon: BriefcaseIcon,
     active: true,
   },
   {
     href: "/files",
-    label: "文件库",
+    labelKey: "nav.files",
     icon: FolderIcon,
     active: true,
   },
   {
     href: "/settings/providers",
-    label: "模型配置",
+    labelKey: "nav.modelConfig",
     icon: SettingsIcon,
     active: true,
   },
@@ -40,13 +42,15 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { pathname } = useLocation();
+  const { t } = useTranslation();
+  const locale = getCurrentLocale();
 
   return (
     <>
       <button
         onClick={onToggle}
         className="app-region-no-drag fixed top-4 left-4 z-50 lg:hidden p-2 rounded-lg bg-white shadow-card border border-border-default"
-        aria-label="Toggle sidebar"
+        aria-label={t("nav.toggle")}
         aria-expanded={!collapsed}
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,7 +84,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     ? "bg-black/5 text-text-dark"
                     : "text-text-muted hover:text-text-dark hover:bg-black/[0.03]"
                 } ${!item.active ? "opacity-40 pointer-events-none" : ""}`}
-                title={item.label}
+                title={t(item.labelKey)}
               >
                 <item.icon className="w-4 h-4 shrink-0" />
                 <span
@@ -88,7 +92,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
                   }`}
                 >
-                  {item.label}
+                  {t(item.labelKey)}
                 </span>
                 {!item.active && (
                   <span
@@ -96,7 +100,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
                     }`}
                   >
-                    规划中
+                    {t("nav.planning")}
                   </span>
                 )}
               </Link>
@@ -110,12 +114,28 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               collapsed ? "h-0 opacity-0" : "h-auto opacity-100"
             }`}
           >
-            OfferPilot v0.0.2
+            {t("nav.version")}
           </p>
+          <label
+            className={`mt-2 flex items-center justify-center gap-1.5 text-[10px] text-text-muted transition-all duration-200 ${
+              collapsed ? "h-0 overflow-hidden opacity-0" : "h-auto opacity-100"
+            }`}
+          >
+            <span>{t("language.label")}</span>
+            <select
+              value={locale}
+              onChange={(event) => void setLocale(event.target.value as Locale)}
+              aria-label={t("language.switchTo")}
+              className="bg-transparent text-[10px] text-text-muted outline-none"
+            >
+              <option value="zh-CN">{t("language.chinese")}</option>
+              <option value="en-US">{t("language.english")}</option>
+            </select>
+          </label>
           <button
             onClick={onToggle}
             className="hidden lg:block w-full mt-1 p-1 rounded-lg hover:bg-black/[0.03] transition-colors"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
             aria-expanded={!collapsed}
           >
             <svg

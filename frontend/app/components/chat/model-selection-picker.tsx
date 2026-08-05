@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
+import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 
 interface ModelSelectionPickerProps {
   models: ModelSelectionResponse[];
@@ -51,7 +53,7 @@ function groupModels(
 
   const groups = new Map<string, ModelSelectionResponse[]>();
   for (const model of filtered) {
-    const provider = model.provider.provider || "其他";
+    const provider = model.provider.provider || i18n.t("chat.other");
     groups.set(provider, [...(groups.get(provider) ?? []), model]);
   }
 
@@ -68,13 +70,15 @@ function EmptyState({
   loading: boolean;
   query: string;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="px-4 py-8 text-center text-sm text-text-muted">
       {loading
-        ? "正在加载模型..."
+        ? t("chat.loadingModels")
         : query
-          ? "没有匹配的模型"
-          : "暂无可用模型"}
+          ? t("chat.noMatchingModels")
+          : t("chat.noModels")}
     </div>
   );
 }
@@ -92,6 +96,8 @@ function SelectionList({
   loading: boolean;
   onSelect: (id: number | null) => void;
 }) {
+  const { t } = useTranslation();
+
   if (groups.length === 0) {
     return <EmptyState loading={loading} query={query} />;
   }
@@ -108,9 +114,9 @@ function SelectionList({
               : "text-text-secondary hover:bg-surface-secondary"
           }`}
         >
-          <span>未选择</span>
+          <span>{t("chat.noSelection")}</span>
           {selectedId === null && (
-            <span className="text-xs font-semibold">当前</span>
+            <span className="text-xs font-semibold">{t("common.current")}</span>
           )}
         </button>
       )}
@@ -125,7 +131,9 @@ function SelectionList({
                 {group.provider}
               </span>
               <span className="text-[11px] text-text-muted">
-                {group.items.length} 个模型
+                {t("chat.modelsCount", {
+                  count: formatLocaleNumber(group.items.length),
+                })}
               </span>
             </div>
           </div>
@@ -163,12 +171,12 @@ function SelectionList({
                       }`}
                     >
                       {model.provider.name}
-                      {model.supports_image_input ? " · 支持图片输入" : ""}
+                      {model.supports_image_input ? ` · ${t("chat.imageInput")}` : ""}
                     </span>
                   </span>
                   {selected && (
                     <span className="shrink-0 text-xs font-semibold">
-                      当前
+                      {t("common.current")}
                     </span>
                   )}
                 </button>
@@ -188,6 +196,7 @@ export default function ModelSelectionPicker({
   disabled = false,
   onChange,
 }: ModelSelectionPickerProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
@@ -251,7 +260,7 @@ export default function ModelSelectionPicker({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜索 provider、供应商或模型"
+          placeholder={t("chat.searchModels")}
           className="h-10 w-full rounded-xl bg-surface-secondary pl-9 pr-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
         />
       </div>
@@ -269,7 +278,7 @@ export default function ModelSelectionPicker({
 
   return (
     <div ref={rootRef} className="relative flex min-w-0 items-center gap-2">
-      <span className="shrink-0 text-xs text-text-muted">模型</span>
+      <span className="shrink-0 text-xs text-text-muted">{t("chat.modelLabel")}</span>
       <button
         type="button"
         onClick={() => {
@@ -279,17 +288,17 @@ export default function ModelSelectionPicker({
           }
         }}
         disabled={isDisabled}
-        title={disabled ? "生成中无法切换模型" : undefined}
+        title={disabled ? t("chat.modelSwitchDisabled") : undefined}
         className="flex h-9 w-60 max-w-[52vw] items-center gap-2 rounded-full bg-surface-secondary px-4 text-left text-sm text-text-primary shadow-sm outline-none transition hover:bg-border-light focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary-500/25 disabled:cursor-not-allowed disabled:text-text-muted disabled:shadow-none"
       >
         <span className="min-w-0 flex-1 truncate">
           {loading
-            ? "加载中..."
+            ? t("common.loading")
             : selected
               ? modelLabel(selected)
               : models.length === 0
-                ? "暂无可用模型"
-                : "未选择"}
+                ? t("chat.noModels")
+                : t("chat.noSelection")}
         </span>
         <svg
           className={`h-4 w-4 shrink-0 text-text-muted transition ${open ? "rotate-180" : ""}`}
@@ -311,7 +320,9 @@ export default function ModelSelectionPicker({
           {renderPickerContent("mt-4 max-h-[22rem] overflow-y-auto pr-1")}
           <div className="mt-3 flex items-center justify-between border-t border-border-light pt-3">
             <span className="text-xs text-text-muted">
-              共 {models.length} 个模型
+              {t("chat.modelsCount", {
+                count: formatLocaleNumber(models.length),
+              })}
             </span>
             <Button
               variant="secondary"
@@ -321,7 +332,7 @@ export default function ModelSelectionPicker({
                 setOpen(false);
               }}
             >
-              展开选择
+              {t("chat.expandSelection")}
             </Button>
           </div>
         </div>
@@ -340,10 +351,10 @@ export default function ModelSelectionPicker({
             <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
               <div>
                 <h3 className="font-display text-lg font-semibold text-text-primary">
-                  选择模型
+                  {t("chat.chooseModel")}
                 </h3>
                 <p className="text-xs text-text-muted">
-                  按 provider 分类浏览当前已配置的模型
+                  {t("chat.browseModels")}
                 </p>
               </div>
               <button
@@ -353,7 +364,7 @@ export default function ModelSelectionPicker({
                   setExpanded(false);
                 }}
                 className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
-                aria-label="关闭模型选择"
+                aria-label={t("chat.closeModelSelection")}
               >
                 <svg
                   className="h-5 w-5"

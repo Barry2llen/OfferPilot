@@ -164,11 +164,11 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     payload = response.json()
     assert "/model-providers" in payload["paths"]
     assert "/model-selections" in payload["paths"]
-    assert payload["paths"]["/model-providers"]["post"]["summary"] == "创建模型供应商配置"
-    assert payload["paths"]["/model-selections"]["post"]["summary"] == "创建模型选择配置"
+    assert payload["paths"]["/model-providers"]["post"]["summary"] == "Create a model provider"
+    assert payload["paths"]["/model-selections"]["post"]["summary"] == "Create a model selection"
     assert "ModelProviderResponse" in payload["components"]["schemas"]
     assert "DeepSeek" in json.dumps(
         payload["components"]["schemas"]["ModelProviderCreate"],
         ensure_ascii=False,
     )
-    assert "不会回显明文密钥" in payload["components"]["schemas"]["ModelProviderResponse"]["properties"]["has_api_key"]["description"]
+    assert "Whether an API key is configured" in payload["components"]["schemas"]["ModelProviderResponse"]["properties"]["has_api_key"]["description"]

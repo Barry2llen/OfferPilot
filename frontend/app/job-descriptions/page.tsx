@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import Card from "@/app/components/ui/card";
@@ -17,6 +18,7 @@ import {
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppActions, useAppContext } from "@/app/lib/context/app-context";
 import { useToast } from "@/app/components/ui/toast";
+import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 import type {
   ChatFileListItem,
   JobDescriptionAnalysisListItem,
@@ -40,8 +42,8 @@ interface LocalJdImage {
 }
 
 function formatTime(value: string | null): string {
-  if (!value) return "未完成";
-  return new Date(value).toLocaleString("zh-CN", {
+  if (!value) return i18n.t("jobDescription.notCompleted");
+  return new Date(value).toLocaleString(i18n.language, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -50,9 +52,9 @@ function formatTime(value: string | null): string {
 }
 
 function statusLabel(status: JobDescriptionAnalysisListItem["status"]): string {
-  if (status === "parsed") return "已完成";
-  if (status === "failed") return "失败";
-  return "处理中";
+  if (status === "parsed") return i18n.t("jobDescription.completed");
+  if (status === "failed") return i18n.t("jobDescription.failed");
+  return i18n.t("jobDescription.processing");
 }
 
 function statusVariant(status: JobDescriptionAnalysisListItem["status"]) {
@@ -75,6 +77,7 @@ function isImageFile(file: ChatFileListItem): boolean {
 }
 
 export default function JobDescriptionsPage() {
+  const { t } = useTranslation();
   const fetchAnalyses = useCallback(() => jobDescriptionsApi.list(), []);
   const { data, loading, error, refetch } = useAsyncData(fetchAnalyses, [
     fetchAnalyses,
@@ -158,7 +161,7 @@ export default function JobDescriptionsPage() {
     const accepted: LocalJdImage[] = [];
     for (const file of picked) {
       if (!isSupportedJdImage(file)) {
-        addToast("JD 图片仅支持 PNG、JPG、JPEG", "error");
+        addToast(t("jobDescription.invalidImage"), "error");
         continue;
       }
       uploadKeyRef.current += 1;
@@ -190,15 +193,15 @@ export default function JobDescriptionsPage() {
 
   const handleSubmit = async () => {
     if (!state.currentModelSelection) {
-      addToast("请先选择用于分析 JD 的模型", "error");
+      addToast(t("jobDescription.chooseModelError"), "error");
       return;
     }
     if (!hasInput) {
-      addToast("请粘贴 JD、填写来源 URL，或选择图片", "error");
+      addToast(t("jobDescription.inputRequired"), "error");
       return;
     }
     if (runningRef.current) {
-      addToast("已有 JD 正在分析，请等待完成", "warning");
+      addToast(t("jobDescription.busy"), "warning");
       return;
     }
 
@@ -206,7 +209,7 @@ export default function JobDescriptionsPage() {
     setTask({
       status: "running",
       progress: 0,
-      message: "正在提交 JD 分析",
+      message: t("jobDescription.submitting"),
       modelError: null,
       error: null,
       analysisId: null,
@@ -227,7 +230,7 @@ export default function JobDescriptionsPage() {
               analysisId: null,
             }),
             progress: 0.05,
-            message: "记录已创建，开始分析",
+            message: t("jobDescription.created"),
             analysisId: detail?.id ?? current?.analysisId ?? null,
           }));
           break;
@@ -249,7 +252,7 @@ export default function JobDescriptionsPage() {
             message:
               typeof event.data.message === "string"
                 ? event.data.message
-                : "正在分析 JD",
+                : t("jobDescription.analysisProgress"),
           }));
           break;
         }
@@ -257,7 +260,7 @@ export default function JobDescriptionsPage() {
           const detail =
             typeof event.data.detail === "string"
               ? event.data.detail
-              : "模型调用失败，正在重试";
+              : t("jobDescription.modelRetrying");
           setTask((current) => ({
             ...(current ?? {
               status: "running",
@@ -284,7 +287,7 @@ export default function JobDescriptionsPage() {
             }),
             status: "success",
             progress: 1,
-            message: "JD 分析完成",
+            message: t("jobDescription.analysisComplete"),
             analysisId: detail?.id ?? current?.analysisId ?? null,
           }));
           runningRef.current = false;
@@ -294,7 +297,7 @@ export default function JobDescriptionsPage() {
           setLocalImages([]);
           setSelectedFileIds([]);
           setImagePickerOpen(false);
-          addToast("JD 分析完成", "success");
+          addToast(t("jobDescription.analysisComplete"), "success");
           refetch();
           break;
         }
@@ -302,7 +305,7 @@ export default function JobDescriptionsPage() {
           const detail =
             typeof event.data.detail === "string"
               ? event.data.detail
-              : "JD 分析失败";
+              : t("jobDescription.analysisFailed");
           setTask((current) => ({
             ...(current ?? {
               status: "running",
@@ -313,7 +316,7 @@ export default function JobDescriptionsPage() {
               analysisId: null,
             }),
             status: "error",
-            message: "JD 分析失败",
+            message: t("jobDescription.analysisFailed"),
             error: detail,
             analysisId:
               typeof event.data.analysis_id === "number"
@@ -349,7 +352,7 @@ export default function JobDescriptionsPage() {
               analysisId: null,
             }),
             status: "error",
-            message: "提交失败",
+            message: t("jobDescription.submitFailed"),
             error: error.message,
           }));
           runningRef.current = false;
@@ -366,11 +369,11 @@ export default function JobDescriptionsPage() {
     setDeleting(confirmDelete.id);
     try {
       await jobDescriptionsApi.delete(confirmDelete.id);
-      addToast("JD 分析记录已删除", "success");
+      addToast(t("jobDescription.deleted"), "success");
       setConfirmDelete(null);
       refetch();
     } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : "删除失败", "error");
+      addToast(err instanceof Error ? err.message : t("errors.deleteFailed"), "error");
     } finally {
       setDeleting(null);
     }
@@ -397,7 +400,7 @@ export default function JobDescriptionsPage() {
         <div className="py-20 text-center">
           <p className="mb-4 text-sm text-error-text">{error}</p>
           <Button variant="secondary" onClick={refetch}>
-            重试
+            {t("common.retry")}
           </Button>
         </div>
       </div>
@@ -408,10 +411,10 @@ export default function JobDescriptionsPage() {
     <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6 lg:py-8">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-semibold text-text-primary">
-          JD 分析
+          {t("jobDescription.title")}
         </h1>
         <p className="mt-1 text-sm text-text-muted">
-          保存并结构化分析岗位描述，支持文本、URL 和图片输入
+          {t("jobDescription.description")}
         </p>
       </div>
 
@@ -429,7 +432,7 @@ export default function JobDescriptionsPage() {
               to="/settings/providers"
               className={buttonClassName({ variant: "secondary", size: "sm" })}
             >
-              模型配置
+              {t("settings.title")}
             </Link>
           )}
         </div>
@@ -439,7 +442,7 @@ export default function JobDescriptionsPage() {
             value={jdText}
             disabled={running}
             onChange={(event) => setJdText(event.target.value)}
-            placeholder="粘贴 JD 原文"
+            placeholder={t("jobDescription.textPlaceholder")}
             className="min-h-40 resize-y rounded-2xl border border-border-light bg-white px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           />
           <input
@@ -454,9 +457,9 @@ export default function JobDescriptionsPage() {
           <div className="rounded-2xl border border-dashed border-border-default bg-surface-primary p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-text-primary">选择图片</p>
+                <p className="text-sm font-medium text-text-primary">{t("jobDescription.chooseImages")}</p>
                 <p className="mt-1 text-xs text-text-muted">
-                  支持上传本地 PNG、JPG、JPEG，也可复用文件库图片
+                  {t("jobDescription.imageDescription")}
                 </p>
               </div>
               <Button
@@ -465,13 +468,13 @@ export default function JobDescriptionsPage() {
                 disabled={running}
                 onClick={() => setImagePickerOpen(true)}
               >
-                选择图片
+                {t("jobDescription.chooseImages")}
               </Button>
             </div>
 
             {localImages.length === 0 && selectedLibraryFiles.length === 0 ? (
               <p className="mt-4 rounded-xl bg-white px-3 py-4 text-center text-xs text-text-muted">
-                尚未选择图片
+                {t("jobDescription.notSelectedImages")}
               </p>
             ) : (
               <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -514,7 +517,7 @@ export default function JobDescriptionsPage() {
             value={sourceUrl}
             disabled={running}
             onChange={(event) => setSourceUrl(event.target.value)}
-            placeholder="来源 URL"
+            placeholder={t("jobDescription.sourceUrl")}
             className="h-11 rounded-2xl border border-border-light bg-white px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           />
 
@@ -529,7 +532,7 @@ export default function JobDescriptionsPage() {
                     to={`/job-descriptions/${task.analysisId}`}
                     className="text-xs font-medium text-primary-600"
                   >
-                    查看详情
+                    {t("jobDescription.detail")}
                   </Link>
                 )}
               </div>
@@ -552,7 +555,7 @@ export default function JobDescriptionsPage() {
 
           <div className="flex justify-end">
             <Button disabled={disabled || !hasInput} onClick={handleSubmit}>
-              {running ? "分析中..." : "开始分析"}
+              {running ? t("jobDescription.analyzing") : t("jobDescription.start")}
             </Button>
           </div>
         </div>
@@ -560,8 +563,8 @@ export default function JobDescriptionsPage() {
 
       {data && data.length === 0 ? (
         <div className="rounded-[20px] border-2 border-dashed border-border-default bg-surface-primary px-4 py-16 text-center">
-          <p className="mb-1 text-sm font-medium text-text-primary">暂无 JD 分析</p>
-          <p className="text-xs text-text-muted">提交第一份 JD 后，这里会显示历史记录</p>
+          <p className="mb-1 text-sm font-medium text-text-primary">{t("jobDescription.noAnalyses")}</p>
+          <p className="text-xs text-text-muted">{t("jobDescription.noAnalysesDescription")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -580,7 +583,7 @@ export default function JobDescriptionsPage() {
                   <p className="text-sm text-text-secondary">
                     {[item.company_name, item.primary_location]
                       .filter(Boolean)
-                      .join(" · ") || "未识别公司和地点"}
+                      .join(" · ") || t("jobDescription.unidentifiedCompany")}
                   </p>
                   {item.summary && (
                     <p className="mt-2 line-clamp-2 text-sm text-text-muted">
@@ -591,8 +594,10 @@ export default function JobDescriptionsPage() {
                     <p className="mt-2 text-sm text-error-text">{item.error_message}</p>
                   )}
                   <p className="mt-2 text-xs text-text-muted">
-                    {formatTime(item.created_at)} · {item.block_count} 个需求块 ·{" "}
-                    {item.fact_count} 条事实
+                    {formatTime(item.created_at)} · {t("jobDescription.countBlocksFacts", {
+                      blocks: formatLocaleNumber(item.block_count),
+                      facts: formatLocaleNumber(item.fact_count),
+                    })}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -600,7 +605,7 @@ export default function JobDescriptionsPage() {
                     to={`/job-descriptions/${item.id}`}
                     className={buttonClassName({ variant: "secondary", size: "sm" })}
                   >
-                    详情
+                    {t("jobDescription.detail")}
                   </Link>
                   <Button
                     variant="danger"
@@ -608,7 +613,7 @@ export default function JobDescriptionsPage() {
                     disabled={deleting === item.id}
                     onClick={() => setConfirmDelete(item)}
                   >
-                    {deleting === item.id ? "删除中..." : "删除"}
+                    {deleting === item.id ? t("jobDescription.deleteInProgress") : t("common.delete")}
                   </Button>
                 </div>
               </div>
@@ -619,9 +624,13 @@ export default function JobDescriptionsPage() {
 
       <ConfirmDialog
         open={!!confirmDelete}
-        title="删除 JD 分析"
-        message={`确定要删除「${confirmDelete?.job_title || `JD #${confirmDelete?.id}`}」吗？此操作不会删除文件库图片。`}
-        confirmLabel="删除"
+        title={t("jobDescription.deleteTitle")}
+        message={t("jobDescription.deleteMessage", {
+          name:
+            confirmDelete?.job_title ||
+            t("jobDescription.defaultTitle", { id: confirmDelete?.id }),
+        })}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(null)}
@@ -638,18 +647,18 @@ export default function JobDescriptionsPage() {
             <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
               <div>
                 <h3 className="font-display text-lg font-semibold text-text-primary">
-                  选择图片
+                  {t("jobDescription.pickerTitle")}
                 </h3>
                 <p className="text-xs text-text-muted">
-                  上传新图片或从文件库选择已有图片
+                  {t("jobDescription.pickerDescription")}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setImagePickerOpen(false)}
                 className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
-                aria-label="关闭选择图片"
-                title="关闭"
+                aria-label={t("jobDescription.closePicker")}
+                title={t("common.close")}
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -665,12 +674,12 @@ export default function JobDescriptionsPage() {
                   disabled={running}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  上传本地图片
+                  {t("jobDescription.uploadLocalImage")}
                 </Button>
                 <input
                   value={imagePickerQuery}
                   onChange={(event) => setImagePickerQuery(event.target.value)}
-                  placeholder="搜索文件库图片"
+                  placeholder={t("jobDescription.searchLibraryImages")}
                   className="h-10 min-w-0 flex-1 rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
                 />
               </div>
@@ -680,15 +689,15 @@ export default function JobDescriptionsPage() {
               {libraryFiles.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border-default px-4 py-10 text-center">
                   <p className="text-sm font-medium text-text-primary">
-                    文件库暂无图片
+                    {t("jobDescription.libraryNoImages")}
                   </p>
                   <p className="mt-1 text-xs text-text-muted">
-                    可以直接上传本地图片，提交后会保存进文件库
+                    {t("jobDescription.libraryNoImagesDescription")}
                   </p>
                 </div>
               ) : filteredLibraryFiles.length === 0 ? (
                 <p className="py-8 text-center text-sm text-text-muted">
-                  没有匹配的文件库图片
+                  {t("jobDescription.noMatchingImages")}
                 </p>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -720,14 +729,18 @@ export default function JobDescriptionsPage() {
 
             <div className="flex items-center justify-between border-t border-border-light px-5 py-4">
               <span className="text-xs text-text-muted">
-                已选 {localImages.length + selectedFileIds.length} 张图片
+                {t("jobDescription.selectedImages", {
+                  count: formatLocaleNumber(
+                    localImages.length + selectedFileIds.length
+                  ),
+                })}
               </span>
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => setImagePickerOpen(false)}
               >
-                完成
+                {t("common.done")}
               </Button>
             </div>
           </div>

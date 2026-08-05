@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import Card from "@/app/components/ui/card";
 import Badge from "@/app/components/ui/badge";
 import Button from "@/app/components/ui/button";
@@ -23,6 +24,7 @@ export default function ProviderCard({
   children,
   highlight = false,
 }: ProviderCardProps) {
+  const { t } = useTranslation();
   const shouldShowBaseUrl =
     provider.provider === "OpenAI Compatible" && !!provider.base_url;
 
@@ -41,7 +43,7 @@ export default function ProviderCard({
                 variant={provider.has_api_key ? "success" : "warning"}
                 size="sm"
               >
-                {provider.has_api_key ? "已配置密钥" : "未配置密钥"}
+                {provider.has_api_key ? t("settings.configuredKey") : t("settings.unconfiguredKey")}
               </Badge>
             </div>
             <p className="text-sm text-text-secondary mb-2">
@@ -60,7 +62,7 @@ export default function ProviderCard({
                 size="sm"
                 onClick={() => onAddModel(provider)}
               >
-                添加模型
+                {t("settings.addModel")}
               </Button>
             )}
             <div className="flex shrink-0 items-center gap-2">
@@ -69,7 +71,7 @@ export default function ProviderCard({
                 size="sm"
                 onClick={() => onEdit(provider)}
               >
-                编辑
+                {t("settings.edit")}
               </Button>
               <Button
                 variant="ghost"
@@ -78,7 +80,7 @@ export default function ProviderCard({
                 disabled={deleting}
                 className="text-error-text hover:bg-error-bg"
               >
-                {deleting ? "删除中..." : "删除"}
+                {deleting ? t("settings.deleting") : t("settings.delete")}
               </Button>
             </div>
           </div>

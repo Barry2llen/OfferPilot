@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { resumesApi } from "@/app/lib/api/resumes";
+import { formatLocaleNumber } from "@/app/lib/i18n";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { useToast } from "@/app/components/ui/toast";
 import ResumeCard from "@/app/components/resumes/resume-card";
@@ -17,6 +19,7 @@ interface ResumeStats {
 }
 
 export default function ResumesPage() {
+  const { t } = useTranslation();
   const fetchResumes = useCallback(() => resumesApi.list(), []);
   const { data, loading, error, refetch } = useAsyncData(fetchResumes, [
     fetchResumes,
@@ -48,11 +51,11 @@ export default function ResumesPage() {
     setDeleting(confirmDelete.id);
     try {
       await resumesApi.delete(confirmDelete.id);
-      addToast("简历已删除", "success");
+      addToast(t("upload.resumeDeleted"), "success");
       setConfirmDelete(null);
       refetch();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "删除失败";
+      const msg = err instanceof Error ? err.message : t("errors.deleteFailed");
       addToast(msg, "error");
     } finally {
       setDeleting(null);
@@ -80,19 +83,22 @@ export default function ResumesPage() {
           <div className="mb-3 flex items-center justify-between gap-4">
             <div>
               <h1 className="font-display text-base font-semibold text-text-primary">
-                最近上传
+                {t("resume.recentUploads")}
               </h1>
               <p className="mt-1 text-xs text-text-muted">
                 {stats.total > 0
-                  ? `共 ${stats.total} 份简历，${stats.parsed} 份已完成解析`
-                  : "上传第一份简历后会显示在这里"}
+                  ? t("resume.stats", {
+                      total: formatLocaleNumber(stats.total),
+                      parsed: formatLocaleNumber(stats.parsed),
+                    })
+                  : t("resume.firstUploadHint")}
               </p>
             </div>
             <div className="flex items-center gap-1 text-text-muted">
-              <IconButton label="筛选">
+              <IconButton label={t("resume.filter")}>
                 <FilterIcon className="h-3.5 w-3.5" />
               </IconButton>
-              <IconButton label="排序">
+              <IconButton label={t("resume.sort")}>
                 <SortIcon className="h-3.5 w-3.5" />
               </IconButton>
             </div>
@@ -117,9 +123,13 @@ export default function ResumesPage() {
 
       <ConfirmDialog
         open={!!confirmDelete}
-        title="删除简历"
-        message={`确定要删除「${confirmDelete?.original_filename || `简历 #${confirmDelete?.id}`}」吗？此操作会删除数据库记录和原始文件。`}
-        confirmLabel="删除"
+        title={t("resume.deleteTitle")}
+        message={t("resume.deleteMessage", {
+          name:
+            confirmDelete?.original_filename ||
+            t("resume.defaultTitle", { id: confirmDelete?.id }),
+        })}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(null)}
@@ -140,16 +150,18 @@ function PageCanvas({ children }: { children: ReactNode }) {
 }
 
 function EmptyState() {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-xl border border-dashed border-[#c3c5d8] bg-white px-6 py-10 text-center shadow-card">
       <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-[#dce1ff] text-primary-700">
         <FileStackIcon className="h-5 w-5" />
       </div>
       <p className="font-display text-base font-medium text-text-primary">
-        暂无简历
+        {t("resume.noResumes")}
       </p>
       <p className="mt-1 text-xs text-text-muted">
-        上传第一份简历后，解析状态和最近上传会同步更新。
+        {t("resume.noResumesDescription")}
       </p>
     </div>
   );
@@ -162,11 +174,13 @@ function ErrorPanel({
   error: string;
   onRetry: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-xl border border-border-light bg-white px-6 py-16 text-center shadow-card">
       <p className="mb-4 text-sm text-error-text">{error}</p>
       <Button variant="secondary" size="sm" onClick={onRetry}>
-        重试
+        {t("common.retry")}
       </Button>
     </div>
   );
