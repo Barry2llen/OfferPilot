@@ -56,6 +56,19 @@ npm run build
 
 The full build runs the Vite frontend build and staging, backend packaging, Electron compilation, and `electron-builder --win --x64`. The packaged app starts only FastAPI; it does not require a Node frontend server.
 
+## Release workflow
+
+The repository-level `Release` workflow creates Windows releases from the
+`main` branch. A `bump-patch`, `bump-minor`, or `bump-major` dispatch creates a
+`release/vX.Y.Z` pull request. After that pull request is merged, the workflow
+creates the tag, runs the full Windows x64 build, and publishes the installer
+with automatically generated GitHub Release notes.
+
+Use the `build-windows` action with an existing `X.Y.Z` version to rebuild a
+Windows installer after a failed build or to replace the same release asset.
+The published compatibility filename is
+`OfferPilot-Windows-x64-vX.Y.Z.exe`.
+
 ## Quality Checks
 
 Run linting before submitting changes:

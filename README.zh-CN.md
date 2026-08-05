@@ -123,6 +123,17 @@ npm run build
 
 在 `electron/` 目录运行 `npm run build` 会依次构建并 staging `frontend/dist`、用 PyInstaller 打包后端、构建 Electron/Vite 输出，并生成 Windows x64 NSIS 安装包。生产版只启动 FastAPI，前端静态文件由 FastAPI 托管。
 
+## Windows 发布
+
+Windows 发布由 `.github/workflows/build-windows-release.yml` 中的
+`Release` workflow 管理。请从 GitHub Actions 的 `main` 分支手动运行：
+
+1. 选择 `bump-patch`、`bump-minor` 或 `bump-major`。
+2. 检查并合并自动创建的 `release/vX.Y.Z` Pull Request。
+3. 合并后 workflow 会创建 `vX.Y.Z` tag，构建 Windows x64 NSIS 安装包，并创建带自动生成说明的 GitHub Release。
+
+版本 bump 会同步根项目、前端、Electron、锁文件和侧边栏版本号；后端包版本独立维护。如需重建已有版本，选择 `build-windows`，并输入不带 `v` 前缀的现有版本号 `X.Y.Z`。上传的安装包名称为 `OfferPilot-Windows-x64-vX.Y.Z.exe`。
+
 ## 运行配置
 
 后端主要配置项位于 `backend/config.example.yaml`：

@@ -156,6 +156,23 @@ packages the backend with PyInstaller, builds the Electron/Vite output, and
 generates a Windows x64 NSIS installer. The packaged application starts only
 FastAPI; FastAPI serves the frontend static files.
 
+## Windows releases
+
+Windows releases are managed by
+`.github/workflows/build-windows-release.yml` through the `Release` workflow.
+Run version bumps from the `main` branch in GitHub Actions:
+
+1. Select `bump-patch`, `bump-minor`, or `bump-major`.
+2. Review and merge the generated `release/vX.Y.Z` pull request.
+3. The merge creates tag `vX.Y.Z`, builds the Windows x64 NSIS installer, and
+   publishes a GitHub Release with automatically generated notes.
+
+The bump keeps the root project, frontend, Electron shell, lockfiles, and
+sidebar version labels synchronized. The backend package version is managed
+independently. To rebuild an existing release asset, run the same workflow with
+`build-windows` and enter the existing version as `X.Y.Z` without the leading
+`v`. The uploaded asset is named `OfferPilot-Windows-x64-vX.Y.Z.exe`.
+
 ## Runtime configuration
 
 Backend configuration is documented in `backend/config.example.yaml`:
