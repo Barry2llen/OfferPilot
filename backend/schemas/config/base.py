@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from ruamel.yaml import YAML
 
 from .database import DatabaseConfig, SQLiteDatabaseConfig
@@ -25,6 +25,62 @@ class CorsConfig(BaseModel):
     allow_headers: tuple[str, ...] = Field(default_factory=lambda: ("*",))
 
 
+class ContextCompactionConfig(BaseModel):
+    """Deterministic context-view compaction settings."""
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = True
+    default_max_context_tokens: int = Field(default=128_000, ge=1)
+    reserved_output_tokens: int = Field(default=16_000, ge=0)
+    safety_margin_tokens: int = Field(default=4_096, ge=0)
+    trigger_ratio: float = Field(default=0.80, gt=0.0, le=1.0)
+    target_ratio: float = Field(default=0.65, gt=0.0, le=1.0)
+    keep_recent_turns: int = Field(default=4, ge=0)
+    keep_recent_reasoning_messages: int = Field(default=1, ge=0)
+    tool_result_max_characters: int = Field(default=6_000, ge=1)
+    compact_historical_attachments: bool = True
+    model_context_windows: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("model_context_windows")
+    @classmethod
+    def _validate_model_context_windows(cls, value: dict[str, int]) -> dict[str, int]:
+        if any(not key.strip() for key in value):
+            raise ValueError("model_context_windows keys must not be blank.")
+        if any(window <= 0 for window in value.values()):
+            raise ValueError("model_context_windows values must be positive.")
+        return dict(value)
+
+    @model_validator(mode="after")
+    def _validate_ratios_and_capacity(self) -> "ContextCompactionConfig":
+        if self.target_ratio >= self.trigger_ratio:
+            raise ValueError("target_ratio must be lower than trigger_ratio.")
+        if self.default_max_context_tokens <= (
+            self.reserved_output_tokens + self.safety_margin_tokens
+        ):
+            raise ValueError(
+                "default_max_context_tokens must leave room for input tokens."
+            )
+        return self
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.enabled,
+                self.default_max_context_tokens,
+                self.reserved_output_tokens,
+                self.safety_margin_tokens,
+                self.trigger_ratio,
+                self.target_ratio,
+                self.keep_recent_turns,
+                self.keep_recent_reasoning_messages,
+                self.tool_result_max_characters,
+                self.compact_historical_attachments,
+                tuple(sorted(self.model_context_windows.items())),
+            )
+        )
+
+
 class Config(BaseModel):
     """Configuration for the application."""
 
@@ -33,6 +89,9 @@ class Config(BaseModel):
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     cors: CorsConfig = Field(default_factory=CorsConfig)
+    context_compaction: ContextCompactionConfig = Field(
+        default_factory=ContextCompactionConfig
+    )
 
     resume_upload_dir: str = "./data/resumes"
     chat_file_upload_dir: str = "./data/chat_files"
@@ -98,4 +157,10 @@ def reload_config(config_path: str = "config.yaml") -> Config:
     load_config.cache_clear()
     return load_config(config_path)
 
-__all__ = ["Config", "CorsConfig", "load_config", "reload_config"]
+__all__ = [
+    "Config",
+    "ContextCompactionConfig",
+    "CorsConfig",
+    "load_config",
+    "reload_config",
+]

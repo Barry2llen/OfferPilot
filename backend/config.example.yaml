@@ -8,6 +8,19 @@ chat_file_upload_dir: "./data/chat_files"
 
 graph_recursion_limit: 100
 
+context_compaction:
+  enabled: true
+  default_max_context_tokens: 128000
+  reserved_output_tokens: 16000
+  safety_margin_tokens: 4096
+  trigger_ratio: 0.80
+  target_ratio: 0.65
+  keep_recent_turns: 4
+  keep_recent_reasoning_messages: 1
+  tool_result_max_characters: 6000
+  compact_historical_attachments: true
+  model_context_windows: {}
+
 cors:
   allow_origins:
     - "*"

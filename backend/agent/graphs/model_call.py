@@ -14,6 +14,13 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
 
 from ..models import load_chat_model
+from ..compaction import (
+    CompactionRequest,
+    Compactor,
+    ContextBudgetPolicy,
+    DefaultContextBudgetPolicy,
+    build_default_compactor,
+)
 from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
 from ..base import (
     BaseGraph,
@@ -35,7 +42,6 @@ from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 from schemas.command import BaseCommand
 from utils.logger import logger
-from utils.json import jsonify
 from utils.custom_events import _adispatch_custom_event_safely
 
 
@@ -144,12 +150,24 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             config: Config | None = None,
             system_prompts: Prompts | PromptBuilder[State] | None = None,
             tools: Tools | ToolsBuilder[State] | None = None,
+            compactor: Compactor[State] | None = None,
+            context_budget_policy: ContextBudgetPolicy | None = None,
             **kwargs
         ):
         
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
         self._interrupt_tools: list[tuple[str, ToolCall, BaseTool]] = []
+        self.compactor = (
+            compactor
+            if compactor is not None
+            else build_default_compactor(self.config)
+        )
+        self.context_budget_policy = (
+            context_budget_policy
+            if context_budget_policy is not None
+            else DefaultContextBudgetPolicy(self.config.context_compaction)
+        )
 
         prompts = normalize_system_prompts(system_prompts)
         self.system_prompts = prompts if callable(prompts) else lambda runtime: prompts
@@ -337,18 +355,46 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     raise ModelCallExecutionError(
                         f"Model loading failed with error: {msg}. Interrupt received with type {resp['type']} and message {resp.get('prompt', '')}"
                     )
-        
+
+        budget = self.context_budget_policy.resolve(model_selection)  # type: ignore[arg-type]
+        compaction_result = await self.compactor.acompact(
+            CompactionRequest(
+                runtime=self.get_runtime(state),
+                messages=tuple(state.get("messages", [])),
+                system_prompts=tuple(system_prompts),
+                tools=tuple(tools),
+                model_selection=model_selection,  # type: ignore[arg-type]
+                budget=budget,
+            )
+        )
+        model_input = [
+            *system_prompts,
+            *compaction_result.model_messages,
+        ]
+        logger.debug(
+            "Context compaction completed: "
+            f"original_tokens={compaction_result.original_tokens}, "
+            f"compacted_tokens={compaction_result.compacted_tokens}, "
+            f"trigger_input_tokens={budget.trigger_input_tokens}, "
+            f"target_input_tokens={budget.target_input_tokens}, "
+            f"applied_layers={compaction_result.applied_layers}, "
+            f"reached_target={compaction_result.reached_target}, "
+            f"original_messages={len(state.get('messages', []))}, "
+            f"model_messages={len(compaction_result.model_messages)}"
+        )
+        if compaction_result.warnings:
+            logger.warning(
+                "Context compaction warnings: "
+                f"{compaction_result.warnings}"
+            )
+
         while True:
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
                 try:
                     started_at = perf_counter()
 
-                    input = system_prompts + state.get('messages', [])
-
-                    #logger.debug(f"Calling model with input messages:\n{jsonify(input)}")
-
-                    response = await model.ainvoke(input)
+                    response = await model.ainvoke(model_input)
 
                     duration_ms = max(0, round((perf_counter() - started_at) * 1000))
                     if _record_reasoning_duration(response, duration_ms):

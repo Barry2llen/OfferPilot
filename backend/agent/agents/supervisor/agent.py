@@ -3,6 +3,7 @@ from typing import override
 from langgraph.graph import StateGraph, START, END
 
 from agent.graphs.model_call import ModelCallGraph
+from agent.compaction import Compactor, ContextBudgetPolicy
 from schemas.config import Config
 from .state import State, BaseAgentState
 from ...prompts import PromptComposer, PromptFragment
@@ -39,6 +40,8 @@ class SupervisorAgent(BaseAgent[State]):
         *args,
         config: Config | None = None,
         tools: Tools | ToolsBuilder | None = None,
+        compactor: Compactor[State] | None = None,
+        context_budget_policy: ContextBudgetPolicy | None = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, config=config, **kwargs)
@@ -49,6 +52,8 @@ class SupervisorAgent(BaseAgent[State]):
             system_prompts=_system_prompt,
             config=config,
             tools=self.tools,
+            compactor=compactor,
+            context_budget_policy=context_budget_policy,
         ).get_compiled_graph()
 
     @override

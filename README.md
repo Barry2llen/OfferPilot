@@ -186,8 +186,10 @@ Backend configuration is documented in `backend/config.example.yaml`:
 - `exa_api_key`: enables the Exa Web Search tool when present; related tools
   are disabled when it is absent.
 - `web_search`, `model_call_retry_attempts`,
-  `graph_recursion_limit`, and `debug`: configure Agent tools, retries,
-  LangGraph recursion limits, and debugging.
+  `graph_recursion_limit`, `context_compaction`, and `debug`: configure Agent
+  tools, retries, LangGraph recursion limits, deterministic model-context
+  compaction, and debugging. The context compaction block is optional and
+  uses validated defaults when omitted.
 
 Frontend and static-hosting runtime settings:
 
