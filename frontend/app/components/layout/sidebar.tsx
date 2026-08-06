@@ -29,7 +29,8 @@ const navItems = [
   },
   {
     href: "/settings/providers",
-    labelKey: "nav.modelConfig",
+    activePath: "/settings",
+    labelKey: "nav.settings",
     icon: SettingsIcon,
     active: true,
   },
@@ -74,7 +75,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             const isActive =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : pathname.startsWith(item.activePath ?? item.href);
             return (
               <Link
                 key={item.href}

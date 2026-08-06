@@ -21,7 +21,9 @@ const ResumesPage = lazy(() => import("@/app/resumes/page"));
 const ResumeDetailPage = lazy(() => import("@/app/resumes/[id]/page"));
 const SettingsPage = lazy(() => import("@/app/settings/page"));
 const ProvidersPage = lazy(() => import("@/app/settings/providers/page"));
-const SelectionsPage = lazy(() => import("@/app/settings/selections/page"));
+const AdvancedSettingsPage = lazy(
+  () => import("@/app/settings/advanced/page"),
+);
 
 export default function AppRouter() {
   return (
@@ -48,15 +50,21 @@ export default function AppRouter() {
                       path="/resumes/:id"
                       element={<ResumeDetailPage />}
                     />
-                    <Route path="/settings" element={<SettingsPage />} />
-                    <Route
-                      path="/settings/providers"
-                      element={<ProvidersPage />}
-                    />
-                    <Route
-                      path="/settings/selections"
-                      element={<SelectionsPage />}
-                    />
+                    <Route path="/settings" element={<SettingsPage />}>
+                      <Route
+                        index
+                        element={<Navigate to="providers" replace />}
+                      />
+                      <Route path="providers" element={<ProvidersPage />} />
+                      <Route
+                        path="advanced"
+                        element={<AdvancedSettingsPage />}
+                      />
+                      <Route
+                        path="selections"
+                        element={<Navigate to="/settings/providers" replace />}
+                      />
+                    </Route>
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Suspense>

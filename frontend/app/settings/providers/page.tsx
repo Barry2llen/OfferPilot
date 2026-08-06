@@ -1,18 +1,17 @@
 import { FileText, Image } from "lucide-react";
-import { useMemo, useState, useCallback, useEffect, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
-import { contextCompactionSettingsApi } from "@/app/lib/api/context-compaction-settings";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { useToast } from "@/app/components/ui/toast";
-import ProviderCard from "@/app/components/settings/provider-card";
 import ProviderForm from "@/app/components/settings/provider-form";
 import SelectionForm from "@/app/components/settings/selection-form";
 import FormDrawer from "@/app/components/ui/form-drawer";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Badge from "@/app/components/ui/badge";
 import Button from "@/app/components/ui/button";
+import Card from "@/app/components/ui/card";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import { formatLocaleNumber } from "@/app/lib/i18n";
 import type {
@@ -22,20 +21,15 @@ import type {
   ModelSelectionResponse,
   ModelSelectionCreate,
   ModelSelectionUpdate,
-  ContextCompactionSettingsResponse,
 } from "@/app/lib/api/types";
 
 interface ModelConfigData {
   providers: ModelProviderResponse[];
   selections: ModelSelectionResponse[];
-  contextCompactionSettings: ContextCompactionSettingsResponse;
 }
 
 const EMPTY_PROVIDERS: ModelProviderResponse[] = [];
 const EMPTY_SELECTIONS: ModelSelectionResponse[] = [];
-const PAGE_CANVAS_CLASS = "electron-titlebar-safe-top min-h-full bg-white";
-const PAGE_INNER_CLASS =
-  "mx-auto max-w-[1040px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6";
 
 export default function ProvidersPage() {
   const { t } = useTranslation();
@@ -45,26 +39,28 @@ export default function ProvidersPage() {
         modelProvidersApi.list(),
         modelSelectionsApi.list(),
       ]);
-      const contextCompactionSettings =
-        await contextCompactionSettingsApi.get();
-      return { providers, selections, contextCompactionSettings };
+      return { providers, selections };
     },
   );
-
   const { addToast } = useToast();
   const providers = data?.providers ?? EMPTY_PROVIDERS;
   const selections = data?.selections ?? EMPTY_SELECTIONS;
-  const [compactionModelSelectionId, setCompactionModelSelectionId] =
-    useState<number | null>(null);
-  const [compactionSettingsSubmitting, setCompactionSettingsSubmitting] =
-    useState(false);
+
+  const [selectedProviderName, setSelectedProviderName] = useState<
+    string | null
+  >(null);
   useEffect(() => {
-    if (data?.contextCompactionSettings) {
-      setCompactionModelSelectionId(
-        data.contextCompactionSettings.model_selection_id,
-      );
-    }
-  }, [data?.contextCompactionSettings]);
+    setSelectedProviderName((current) => {
+      if (current && providers.some((provider) => provider.name === current)) {
+        return current;
+      }
+      return providers[0]?.name ?? null;
+    });
+  }, [providers]);
+
+  const selectedProvider = providers.find(
+    (provider) => provider.name === selectedProviderName,
+  );
   const selectionsByProvider = useMemo(() => {
     const grouped = new Map<string, ModelSelectionResponse[]>();
     for (const selection of selections) {
@@ -75,6 +71,9 @@ export default function ProvidersPage() {
     }
     return grouped;
   }, [selections]);
+  const selectedProviderSelections = selectedProvider
+    ? selectionsByProvider.get(selectedProvider.name) ?? EMPTY_SELECTIONS
+    : EMPTY_SELECTIONS;
 
   const [providerDrawerOpen, setProviderDrawerOpen] = useState(false);
   const [selectionDrawerOpen, setSelectionDrawerOpen] = useState(false);
@@ -96,29 +95,6 @@ export default function ProvidersPage() {
     useState<ModelProviderResponse | null>(null);
   const [confirmSelectionDelete, setConfirmSelectionDelete] =
     useState<ModelSelectionResponse | null>(null);
-
-  const handleCompactionModelChange = async (
-    event: ChangeEvent<HTMLSelectElement>,
-  ) => {
-    const previous = compactionModelSelectionId;
-    const next = event.target.value ? Number(event.target.value) : null;
-    setCompactionModelSelectionId(next);
-    setCompactionSettingsSubmitting(true);
-    try {
-      const updated = await contextCompactionSettingsApi.update({
-        model_selection_id: next,
-      });
-      setCompactionModelSelectionId(updated.model_selection_id);
-      addToast(t("settings.contextCompactionUpdated"), "success");
-    } catch (err: unknown) {
-      setCompactionModelSelectionId(previous);
-      const msg =
-        err instanceof Error ? err.message : t("settings.operationFailed");
-      addToast(msg, "error");
-    } finally {
-      setCompactionSettingsSubmitting(false);
-    }
-  };
 
   const handleProviderCreate = () => {
     setEditingProvider(null);
@@ -143,26 +119,28 @@ export default function ProvidersPage() {
   };
 
   const handleProviderSubmit = useCallback(
-    async (data: ModelProviderCreate | ModelProviderUpdate) => {
+    async (formData: ModelProviderCreate | ModelProviderUpdate) => {
       setProviderSubmitting(true);
       try {
         if (editingProvider) {
           await modelProvidersApi.update(
             editingProvider.name,
-            data as ModelProviderUpdate,
+            formData as ModelProviderUpdate,
           );
           addToast(t("settings.providerUpdated"), "success");
         } else {
-          const createData = data as ModelProviderCreate;
+          const createData = formData as ModelProviderCreate;
           await modelProvidersApi.create(createData);
-          addToast(t("settings.providerCreated"), "success");
+          setSelectedProviderName(createData.name);
           setHighlightProvider(createData.name);
-          setTimeout(() => setHighlightProvider(null), 3000);
+          addToast(t("settings.providerCreated"), "success");
+          window.setTimeout(() => setHighlightProvider(null), 3000);
         }
         setProviderDrawerOpen(false);
         refetch();
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : t("settings.operationFailed");
+        const msg =
+          err instanceof Error ? err.message : t("settings.operationFailed");
         addToast(msg, "error");
       } finally {
         setProviderSubmitting(false);
@@ -172,23 +150,24 @@ export default function ProvidersPage() {
   );
 
   const handleSelectionSubmit = useCallback(
-    async (data: ModelSelectionCreate | ModelSelectionUpdate) => {
+    async (formData: ModelSelectionCreate | ModelSelectionUpdate) => {
       setSelectionSubmitting(true);
       try {
         if (editingSelection) {
           await modelSelectionsApi.update(
             editingSelection.id,
-            data as ModelSelectionUpdate,
+            formData as ModelSelectionUpdate,
           );
           addToast(t("settings.selectionUpdated"), "success");
         } else {
-          await modelSelectionsApi.create(data as ModelSelectionCreate);
+          await modelSelectionsApi.create(formData as ModelSelectionCreate);
           addToast(t("settings.selectionCreated"), "success");
         }
         setSelectionDrawerOpen(false);
         refetch();
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : t("settings.operationFailed");
+        const msg =
+          err instanceof Error ? err.message : t("settings.operationFailed");
         addToast(msg, "error");
       } finally {
         setSelectionSubmitting(false);
@@ -199,9 +178,24 @@ export default function ProvidersPage() {
 
   const handleProviderDelete = async () => {
     if (!confirmProviderDelete) return;
-    setDeletingProvider(confirmProviderDelete.name);
+    const deletedName = confirmProviderDelete.name;
+    const deletedIndex = providers.findIndex(
+      (provider) => provider.name === deletedName,
+    );
+    const fallbackProvider =
+      providers.find(
+        (provider, index) => index > deletedIndex && provider.name !== deletedName,
+      ) ??
+      providers.find(
+        (provider, index) => index < deletedIndex && provider.name !== deletedName,
+      );
+
+    setDeletingProvider(deletedName);
     try {
-      await modelProvidersApi.delete(confirmProviderDelete.name);
+      await modelProvidersApi.delete(deletedName);
+      if (selectedProviderName === deletedName) {
+        setSelectedProviderName(fallbackProvider?.name ?? null);
+      }
       addToast(t("settings.providerDeleted"), "success");
       setConfirmProviderDelete(null);
       refetch();
@@ -231,20 +225,13 @@ export default function ProvidersPage() {
 
   if (loading) {
     return (
-      <div className={PAGE_CANVAS_CLASS}>
-        <div className={PAGE_INNER_CLASS}>
-          <div className="mb-6 flex items-center justify-between">
-            <div>
-              <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
-              <Skeleton className="h-4 w-56 rounded-lg" />
-            </div>
-            <Skeleton className="h-10 w-28 rounded-xl" />
-          </div>
-          <div className="space-y-3">
-            {[1, 2, 3].map((item) => (
-              <Skeleton key={item} className="h-32 rounded-[20px]" />
-            ))}
-          </div>
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <Skeleton className="h-10 w-28 rounded-xl" />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+          <Skeleton className="h-72 rounded-[20px]" />
+          <Skeleton className="h-72 rounded-[20px]" />
         </div>
       </div>
     );
@@ -252,235 +239,368 @@ export default function ProvidersPage() {
 
   if (error) {
     return (
-      <div className={PAGE_CANVAS_CLASS}>
-        <div className={PAGE_INNER_CLASS}>
-          <div className="py-20 text-center">
-            <p className="mb-4 text-sm text-error-text">{error}</p>
-            <Button variant="secondary" onClick={refetch}>
-              {t("common.retry")}
-            </Button>
-          </div>
-        </div>
+      <div className="py-20 text-center">
+        <p className="mb-4 text-sm text-error-text">{error}</p>
+        <Button variant="secondary" onClick={refetch}>
+          {t("common.retry")}
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className={PAGE_CANVAS_CLASS}>
-      <div className={PAGE_INNER_CLASS}>
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-2xl font-semibold text-text-primary">
-              {t("settings.title")}
-            </h1>
-            <p className="text-sm text-text-muted mt-1">
-              {t("settings.description")}
-            </p>
-          </div>
-          <Button onClick={handleProviderCreate}>{t("settings.addProvider")}</Button>
-        </div>
+    <div className="space-y-5">
+      <div className="flex justify-end">
+        <Button onClick={handleProviderCreate}>{t("settings.addProvider")}</Button>
+      </div>
 
-        <section className="mb-6 rounded-[20px] border border-border-light bg-surface-secondary/60 p-5">
-          <div className="mb-3">
-            <h2 className="text-sm font-semibold text-text-primary">
-              {t("settings.contextCompactionTitle")}
-            </h2>
-            <p className="mt-1 text-xs leading-5 text-text-muted">
-              {t("settings.contextCompactionDescription")}
-            </p>
-          </div>
-          <label className="block text-sm font-medium text-text-primary">
-            {t("settings.contextCompactionModel")}
-            <select
-              className="mt-2 h-10 w-full rounded-lg border border-border-default bg-white px-3 text-sm text-text-primary outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 sm:max-w-[520px]"
-              value={compactionModelSelectionId ?? ""}
-              onChange={handleCompactionModelChange}
-              disabled={compactionSettingsSubmitting}
-            >
-              <option value="">
-                {t("settings.followCurrentConversationModel")}
-              </option>
-              {selections.map((selection) => (
-                <option key={selection.id} value={selection.id}>
-                  {selection.provider.name} / {selection.model_name}
-                </option>
+      {providers.length === 0 ? (
+        <div className="rounded-[20px] border-2 border-dashed border-border-default px-5 py-16 text-center">
+          <p className="mb-3 text-sm text-text-muted">{t("settings.noProviders")}</p>
+          <Button variant="secondary" onClick={handleProviderCreate}>
+            {t("settings.createFirstProvider")}
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+          <section aria-labelledby="settings-providers-title" className="min-w-0">
+            <div className="mb-3 flex items-center justify-between gap-3 px-1">
+              <h2
+                id="settings-providers-title"
+                className="text-sm font-semibold text-text-primary"
+              >
+                {t("settings.providersTitle")}
+              </h2>
+              <span className="text-xs text-text-muted">
+                {t("settings.providerCount", {
+                  count: formatLocaleNumber(providers.length),
+                })}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {providers.map((provider) => (
+                <ProviderListItem
+                  key={provider.name}
+                  provider={provider}
+                  modelCount={
+                    selectionsByProvider.get(provider.name)?.length ?? 0
+                  }
+                  selected={selectedProviderName === provider.name}
+                  deleting={deletingProvider === provider.name}
+                  highlight={highlightProvider === provider.name}
+                  onSelect={() => setSelectedProviderName(provider.name)}
+                  onEdit={handleProviderEdit}
+                  onDelete={setConfirmProviderDelete}
+                />
               ))}
-            </select>
-          </label>
-          {compactionSettingsSubmitting ? (
-            <p className="mt-2 text-xs text-text-muted">
-              {t("common.saving")}
+            </div>
+          </section>
+
+          {selectedProvider ? (
+            <ProviderModelsPanel
+              provider={selectedProvider}
+              selections={selectedProviderSelections}
+              deletingSelection={deletingSelection}
+              onAddModel={() => handleSelectionCreate(selectedProvider.name)}
+              onEditProvider={handleProviderEdit}
+              onDeleteProvider={setConfirmProviderDelete}
+              onEditSelection={handleSelectionEdit}
+              onDeleteSelection={setConfirmSelectionDelete}
+            />
+          ) : null}
+        </div>
+      )}
+
+      <FormDrawer
+        open={providerDrawerOpen}
+        title={
+          editingProvider
+            ? t("settings.editProvider")
+            : t("settings.addProviderTitle")
+        }
+        onClose={() => setProviderDrawerOpen(false)}
+      >
+        <ProviderForm
+          initial={editingProvider ?? undefined}
+          onSubmit={handleProviderSubmit}
+          onCancel={() => setProviderDrawerOpen(false)}
+          submitting={providerSubmitting}
+        />
+      </FormDrawer>
+
+      <FormDrawer
+        open={selectionDrawerOpen}
+        title={
+          editingSelection
+            ? t("settings.editSelection")
+            : t("settings.addSelection")
+        }
+        onClose={() => setSelectionDrawerOpen(false)}
+      >
+        <SelectionForm
+          initial={editingSelection ?? undefined}
+          providers={providers}
+          defaultProviderName={defaultProviderName}
+          onSubmit={handleSelectionSubmit}
+          onCancel={() => setSelectionDrawerOpen(false)}
+          submitting={selectionSubmitting}
+        />
+      </FormDrawer>
+
+      <ConfirmDialog
+        open={!!confirmProviderDelete}
+        title={t("settings.deleteProviderTitle")}
+        message={t("settings.deleteProviderMessage", {
+          name: confirmProviderDelete?.name,
+        })}
+        confirmLabel={t("settings.delete")}
+        variant="danger"
+        onConfirm={handleProviderDelete}
+        onCancel={() => setConfirmProviderDelete(null)}
+        loading={!!deletingProvider}
+      />
+
+      <ConfirmDialog
+        open={!!confirmSelectionDelete}
+        title={t("settings.deleteSelectionTitle")}
+        message={t("settings.deleteSelectionMessage", {
+          name: `${confirmSelectionDelete?.provider.name} / ${confirmSelectionDelete?.model_name}`,
+        })}
+        confirmLabel={t("settings.delete")}
+        variant="danger"
+        onConfirm={handleSelectionDelete}
+        onCancel={() => setConfirmSelectionDelete(null)}
+        loading={!!deletingSelection}
+      />
+    </div>
+  );
+}
+
+function ProviderListItem({
+  provider,
+  modelCount,
+  selected,
+  deleting,
+  highlight,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  provider: ModelProviderResponse;
+  modelCount: number;
+  selected: boolean;
+  deleting: boolean;
+  highlight: boolean;
+  onSelect: () => void;
+  onEdit: (provider: ModelProviderResponse) => void;
+  onDelete: (provider: ModelProviderResponse) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Card
+      padding="sm"
+      shadow="none"
+      className={`transition-all duration-300 ${
+        selected
+          ? "border-primary-500 bg-primary-50/60 ring-1 ring-primary-500/20"
+          : "hover:border-border-default hover:bg-surface-secondary/40"
+      } ${highlight ? "ring-2 ring-primary-500 shadow-brand-glow" : ""}`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-text-primary">
+            {provider.name}
+          </h3>
+          <Badge
+            variant={provider.has_api_key ? "success" : "warning"}
+            size="sm"
+          >
+            {provider.has_api_key
+              ? t("settings.configuredKey")
+              : t("settings.unconfiguredKey")}
+          </Badge>
+        </div>
+        <p className="mt-1 truncate text-xs text-text-secondary">
+          {provider.provider}
+        </p>
+        <p className="mt-2 text-xs text-text-muted">
+          {t("settings.modelCount", {
+            count: formatLocaleNumber(modelCount),
+          })}
+        </p>
+      </button>
+      <div className="mt-3 flex justify-end gap-1 border-t border-border-light pt-2">
+        <Button variant="ghost" size="sm" onClick={() => onEdit(provider)}>
+          {t("settings.edit")}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onDelete(provider)}
+          disabled={deleting}
+          className="text-error-text hover:bg-error-bg"
+        >
+          {deleting ? t("settings.deleting") : t("settings.delete")}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function ProviderModelsPanel({
+  provider,
+  selections,
+  deletingSelection,
+  onAddModel,
+  onEditProvider,
+  onDeleteProvider,
+  onEditSelection,
+  onDeleteSelection,
+}: {
+  provider: ModelProviderResponse;
+  selections: ModelSelectionResponse[];
+  deletingSelection: number | null;
+  onAddModel: () => void;
+  onEditProvider: (provider: ModelProviderResponse) => void;
+  onDeleteProvider: (provider: ModelProviderResponse) => void;
+  onEditSelection: (selection: ModelSelectionResponse) => void;
+  onDeleteSelection: (selection: ModelSelectionResponse) => void;
+}) {
+  const { t } = useTranslation();
+  const shouldShowBaseUrl =
+    provider.provider === "OpenAI Compatible" && !!provider.base_url;
+
+  return (
+    <Card className="min-w-0" padding="lg">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="truncate font-display text-lg font-semibold text-text-primary">
+              {provider.name}
+            </h2>
+            <Badge
+              variant={provider.has_api_key ? "success" : "warning"}
+              size="sm"
+            >
+              {provider.has_api_key
+                ? t("settings.configuredKey")
+                : t("settings.unconfiguredKey")}
+            </Badge>
+          </div>
+          <p className="mt-1 text-sm text-text-secondary">{provider.provider}</p>
+          {shouldShowBaseUrl ? (
+            <p className="mt-1 truncate font-mono text-xs text-text-muted">
+              {provider.base_url}
             </p>
           ) : null}
-        </section>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <Button variant="secondary" size="sm" onClick={onAddModel}>
+            {t("settings.addModel")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onEditProvider(provider)}
+          >
+            {t("settings.edit")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDeleteProvider(provider)}
+            className="text-error-text hover:bg-error-bg"
+          >
+            {t("settings.delete")}
+          </Button>
+        </div>
+      </div>
 
-        {providers && providers.length === 0 ? (
-          <div className="text-center py-16 border-2 border-dashed border-border-default rounded-[20px]">
-            <p className="text-text-muted text-sm mb-3">{t("settings.noProviders")}</p>
-            <Button variant="secondary" onClick={handleProviderCreate}>
-              {t("settings.createFirstProvider")}
+      <div className="mt-5 border-t border-border-light pt-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-text-primary">
+            {t("settings.modelSelections")}
+          </h3>
+          <span className="text-xs text-text-muted">
+            {t("settings.modelCount", {
+              count: formatLocaleNumber(selections.length),
+            })}
+          </span>
+        </div>
+
+        {selections.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border-default px-4 py-8 text-center">
+            <p className="mb-3 text-sm text-text-muted">
+              {t("settings.noProviderModels")}
+            </p>
+            <Button variant="secondary" size="sm" onClick={onAddModel}>
+              {t("settings.addModel")}
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
-            {providers.map((provider) => {
-              const providerSelections =
-                selectionsByProvider.get(provider.name) ?? [];
-              return (
-                <ProviderCard
-                  key={provider.name}
-                  provider={provider}
-                  onEdit={handleProviderEdit}
-                  onDelete={setConfirmProviderDelete}
-                  onAddModel={() => handleSelectionCreate(provider.name)}
-                  deleting={deletingProvider === provider.name}
-                  highlight={highlightProvider === provider.name}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-sm font-medium text-text-primary">
-                        {t("settings.modelSelections")}
+          <div className="space-y-2">
+            {selections.map((selection) => (
+              <div
+                key={selection.id}
+                className="group/model-row rounded-xl border border-border-light bg-surface-secondary/60 px-4 py-3"
+              >
+                <div className="flex min-h-8 flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="break-all text-sm font-medium text-text-primary">
+                        {selection.model_name}
                       </h4>
-                      <span className="text-xs text-text-muted">
-                        {t("settings.modelCount", {
-                          count: formatLocaleNumber(providerSelections.length),
-                        })}
-                      </span>
+                      <ModelCapabilityIcon
+                        supportsImage={selection.supports_image_input}
+                      />
+                      {selection.provider.has_api_key ? null : (
+                        <Badge variant="warning" size="sm">
+                          {t("settings.missingKey")}
+                        </Badge>
+                      )}
                     </div>
-
-                    {providerSelections.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-border-default px-4 py-5 text-center">
-                        <p className="text-sm text-text-muted mb-3">
-                          {t("settings.noProviderModels")}
-                        </p>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleSelectionCreate(provider.name)}
-                        >
-                          {t("settings.addModel")}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {providerSelections.map((selection) => (
-                          <div
-                            key={selection.id}
-                            className="group/model-row rounded-xl border border-border-light bg-surface-secondary/60 px-4 py-3"
-                          >
-                            <div className="flex min-h-8 flex-wrap items-center justify-between gap-3">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <h5 className="text-sm font-medium text-text-primary break-all">
-                                    {selection.model_name}
-                                  </h5>
-                                  <ModelCapabilityIcon
-                                    supportsImage={
-                                      selection.supports_image_input
-                                    }
-                                  />
-                                  {selection.provider.has_api_key ? null : (
-                                    <Badge variant="warning" size="sm">
-                                      {t("settings.missingKey")}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/model-row:opacity-100 group-focus-within/model-row:opacity-100">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleSelectionEdit(selection)}
-                                >
-                                  {t("settings.edit")}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() =>
-                                    setConfirmSelectionDelete(selection)
-                                  }
-                                  disabled={deletingSelection === selection.id}
-                                  className="text-error-text hover:bg-error-bg"
-                                >
-                                  {deletingSelection === selection.id
-                                    ? t("settings.deleting")
-                                    : t("settings.delete")}
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-                </ProviderCard>
-              );
-            })}
+                  <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/model-row:opacity-100 sm:group-focus-within/model-row:opacity-100">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEditSelection(selection)}
+                    >
+                      {t("settings.edit")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onDeleteSelection(selection)}
+                      disabled={deletingSelection === selection.id}
+                      className="text-error-text hover:bg-error-bg"
+                    >
+                      {deletingSelection === selection.id
+                        ? t("settings.deleting")
+                        : t("settings.delete")}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
-
-        <FormDrawer
-          open={providerDrawerOpen}
-          title={editingProvider ? t("settings.editProvider") : t("settings.addProviderTitle")}
-          onClose={() => setProviderDrawerOpen(false)}
-        >
-          <ProviderForm
-            initial={editingProvider ?? undefined}
-            onSubmit={handleProviderSubmit}
-            onCancel={() => setProviderDrawerOpen(false)}
-            submitting={providerSubmitting}
-          />
-        </FormDrawer>
-
-        <FormDrawer
-          open={selectionDrawerOpen}
-          title={editingSelection ? t("settings.editSelection") : t("settings.addSelection")}
-          onClose={() => setSelectionDrawerOpen(false)}
-        >
-          <SelectionForm
-            initial={editingSelection ?? undefined}
-            providers={providers}
-            defaultProviderName={defaultProviderName}
-            onSubmit={handleSelectionSubmit}
-            onCancel={() => setSelectionDrawerOpen(false)}
-            submitting={selectionSubmitting}
-          />
-        </FormDrawer>
-
-        <ConfirmDialog
-          open={!!confirmProviderDelete}
-          title={t("settings.deleteProviderTitle")}
-          message={t("settings.deleteProviderMessage", {
-            name: confirmProviderDelete?.name,
-          })}
-          confirmLabel={t("settings.delete")}
-          variant="danger"
-          onConfirm={handleProviderDelete}
-          onCancel={() => setConfirmProviderDelete(null)}
-          loading={!!deletingProvider}
-        />
-
-        <ConfirmDialog
-          open={!!confirmSelectionDelete}
-          title={t("settings.deleteSelectionTitle")}
-          message={t("settings.deleteSelectionMessage", {
-            name: `${confirmSelectionDelete?.provider.name} / ${confirmSelectionDelete?.model_name}`,
-          })}
-          confirmLabel={t("settings.delete")}
-          variant="danger"
-          onConfirm={handleSelectionDelete}
-          onCancel={() => setConfirmSelectionDelete(null)}
-          loading={!!deletingSelection}
-        />
       </div>
-    </div>
+    </Card>
   );
 }
 
 function ModelCapabilityIcon({ supportsImage }: { supportsImage: boolean }) {
   const { t } = useTranslation();
-  const label = supportsImage ? t("settings.imageSupported") : t("settings.textOnly");
+  const label = supportsImage
+    ? t("settings.imageSupported")
+    : t("settings.textOnly");
   const Icon = supportsImage ? Image : FileText;
   const className = supportsImage
     ? "bg-success-bg text-success-text"
