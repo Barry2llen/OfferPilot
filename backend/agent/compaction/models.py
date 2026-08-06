@@ -47,8 +47,6 @@ class ContextBudget:
     max_context_tokens: int
     reserved_output_tokens: int
     safety_margin_tokens: int
-    trigger_input_tokens: int
-    target_input_tokens: int
 
     @property
     def available_input_tokens(self) -> int:
@@ -68,14 +66,6 @@ class ContextBudget:
         if self.reserved_output_tokens + self.safety_margin_tokens >= self.max_context_tokens:
             raise ValueError(
                 "reserved_output_tokens and safety_margin_tokens must leave input capacity."
-            )
-        if self.trigger_input_tokens <= self.target_input_tokens:
-            raise ValueError("trigger_input_tokens must be greater than target_input_tokens.")
-        if self.target_input_tokens < 0:
-            raise ValueError("target_input_tokens must be non-negative.")
-        if self.trigger_input_tokens > self.available_input_tokens:
-            raise ValueError(
-                "trigger_input_tokens cannot exceed available input capacity."
             )
 
 
@@ -166,7 +156,6 @@ class CompactionResult:
     original_tokens: int
     compacted_tokens: int
     applied_layers: tuple[str, ...]
-    reached_target: bool
     warnings: tuple[str, ...] = ()
     source_message_count: int = 0
     source_message_ids: tuple[str | None, ...] = ()

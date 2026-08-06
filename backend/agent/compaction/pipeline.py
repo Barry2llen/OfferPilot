@@ -31,6 +31,7 @@ from .protocols import (
 )
 from .protection import protect_entries
 from .token_counter import ApproximateTokenCounter
+from utils.logger import logger
 
 
 def _message_ref(index: int, message: BaseMessage) -> MessageRef:
@@ -101,10 +102,17 @@ def _read_snapshot(
         or status not in {"complete", "pending_auto_compact"}
         or not isinstance(auto_compacted, bool)
     ):
+        logger.debug(
+            "Compaction snapshot ignored: persisted sidecar failed validation."
+        )
         return None
 
     for index, expected_id in enumerate(source_ids):
         if expected_id is not None and _message_id(messages[index]) != expected_id:
+            logger.debug(
+                "Compaction snapshot ignored: source message identity mismatch "
+                f"at index={index}."
+            )
             return None
 
     return cast(
@@ -151,7 +159,17 @@ def model_messages_for_state(state: Mapping[str, Any]) -> list[BaseMessage]:
     raw_messages = tuple(message for message in messages if isinstance(message, BaseMessage))
     snapshot = _read_snapshot(state, raw_messages)
     if snapshot is None:
+        logger.debug(
+            "Compaction model view built without sidecar: "
+            f"raw_messages={len(raw_messages)}."
+        )
         return list(raw_messages)
+    logger.debug(
+        "Compaction model view reused sidecar: "
+        f"snapshot_messages={len(snapshot['messages'])}, "
+        f"source_message_count={snapshot['source_message_count']}, "
+        f"raw_suffix={len(raw_messages) - snapshot['source_message_count']}."
+    )
     return [
         *snapshot["messages"],
         *raw_messages[snapshot["source_message_count"] :],
@@ -181,6 +199,12 @@ class PipelineCompactor(Compactor):
             if isinstance(message, BaseMessage)
         )
         snapshot = _read_snapshot(request.runtime.state, raw_messages)
+        logger.debug(
+            "Compaction pipeline started: "
+            f"raw_messages={len(raw_messages)}, "
+            f"snapshot_status={snapshot['status'] if snapshot else 'none'}, "
+            f"snapshot_messages={len(snapshot['messages']) if snapshot else 0}."
+        )
         if snapshot is None:
             entries = _identity_entries(raw_messages)
         else:
@@ -192,6 +216,13 @@ class PipelineCompactor(Compactor):
                 ),
             )
         entries = protect_entries(entries, keep_recent_turns=self.keep_recent_turns)
+        logger.debug(
+            "Compaction entries prepared: "
+            f"entries={len(entries)}, "
+            f"protected_entries={sum(entry.protected for entry in entries)}, "
+            f"summary_entries={sum(entry.kind == 'summary' for entry in entries)}, "
+            f"keep_recent_turns={self.keep_recent_turns}."
+        )
         context = CompactionContext(
             request=request,
             entries=entries,
@@ -202,18 +233,39 @@ class PipelineCompactor(Compactor):
         try:
             original_tokens = await self._count(context)
         except Exception as error:
+            logger.debug(
+                "Initial compaction token count failed: "
+                f"error_type={type(error).__name__}."
+            )
             raise ContextCompactionError(
                 f"Initial context token counting failed: {error}"
             ) from error
         context = context.with_current_tokens(original_tokens)
+        logger.debug(
+            "Compaction token snapshot: "
+            f"stage=initial, tokens={original_tokens}, "
+            f"available_input={request.budget.available_input_tokens}."
+        )
 
         for layer in self.layers:
             before_entries = context.entries
             before_actions = len(context.actions)
+            before_tokens = context.current_tokens
+            logger.debug(
+                "Compaction layer started: "
+                f"layer={layer.name}, entries={len(before_entries)}, "
+                f"tokens={before_tokens}, actions={before_actions}."
+            )
             try:
                 context = await layer.apply(context)
                 compacted_tokens = await self._count(context)
             except ContextCompactionError as error:
+                logger.debug(
+                    "Compaction layer blocked: "
+                    f"layer={layer.name}, error_type={type(error).__name__}, "
+                    f"partial_entries={len(context.entries)}, "
+                    f"partial_actions={len(context.actions)}."
+                )
                 partial = self._result(
                     context,
                     original_tokens=original_tokens,
@@ -223,6 +275,12 @@ class PipelineCompactor(Compactor):
                 )
                 raise error.with_partial_result(partial) from error
             except Exception as error:
+                logger.debug(
+                    "Compaction layer failed: "
+                    f"layer={layer.name}, error_type={type(error).__name__}, "
+                    f"partial_entries={len(context.entries)}, "
+                    f"partial_actions={len(context.actions)}."
+                )
                 partial = self._result(
                     context,
                     original_tokens=original_tokens,
@@ -242,8 +300,21 @@ class PipelineCompactor(Compactor):
             )
             if changed:
                 context = context.mark_layer(layer.name)
+            logger.debug(
+                "Compaction layer finished: "
+                f"layer={layer.name}, entries_before={len(before_entries)}, "
+                f"entries_after={len(context.entries)}, tokens_before={before_tokens}, "
+                f"tokens_after={compacted_tokens}, "
+                f"actions_added={len(context.actions) - before_actions}, "
+                f"changed={changed}."
+            )
 
         if context.current_tokens > request.budget.available_input_tokens:
+            logger.debug(
+                "Compaction pipeline blocked by capacity: "
+                f"tokens={context.current_tokens}, "
+                f"available_input={request.budget.available_input_tokens}."
+            )
             partial = self._result(
                 context,
                 original_tokens=original_tokens,
@@ -257,12 +328,22 @@ class PipelineCompactor(Compactor):
                 partial_result=partial,
             )
 
-        return self._result(
+        result = self._result(
             context,
             original_tokens=original_tokens,
             raw_messages=raw_messages,
             snapshot_status="complete",
         )
+        logger.debug(
+            "Compaction pipeline finished: "
+            f"original_tokens={result.original_tokens}, "
+            f"compacted_tokens={result.compacted_tokens}, "
+            f"applied_layers={result.applied_layers}, "
+            f"actions={len(result.actions)}, "
+            f"warnings={len(result.warnings)}, "
+            f"should_persist_snapshot={result.should_persist_snapshot}."
+        )
+        return result
 
     @staticmethod
     def _message_ids(messages: Sequence[BaseMessage]) -> tuple[str | None, ...]:
@@ -290,9 +371,6 @@ class PipelineCompactor(Compactor):
             original_tokens=original_tokens,
             compacted_tokens=context.current_tokens,
             applied_layers=context.applied_layers,
-            reached_target=(
-                context.current_tokens <= context.request.budget.target_input_tokens
-            ),
             warnings=context.warnings,
             source_message_count=len(raw_messages),
             source_message_ids=self._message_ids(raw_messages),

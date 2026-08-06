@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 
 from ..models import CompactedMessage, CompactionAction, CompactionContext
+from utils.logger import logger
 
 
 _PREFERRED_KEYS = (
@@ -179,30 +180,47 @@ class ToolResultCompactor:
     async def apply(self, context: CompactionContext) -> CompactionContext:
         actions: list[CompactionAction] = []
         rewritten_entries: list[CompactedMessage] = []
+        tool_entries = 0
+        protected_skips = 0
+        already_compacted_skips = 0
+        within_limit_skips = 0
+        no_reduction_skips = 0
+
+        logger.debug(
+            "Tool result compaction started: "
+            f"entries={len(context.entries)}, max_characters={self.max_characters}."
+        )
 
         for entry in context.entries:
             message = entry.rendered
-            if entry.protected or not isinstance(message, ToolMessage):
+            if not isinstance(message, ToolMessage):
+                rewritten_entries.append(entry)
+                continue
+            tool_entries += 1
+            if entry.protected:
+                protected_skips += 1
                 rewritten_entries.append(entry)
                 continue
 
             content = _content_as_text(message.content)
             if content.startswith("[Historical tool result compacted]"):
+                already_compacted_skips += 1
                 rewritten_entries.append(entry)
                 continue
             if len(content) <= self.max_characters:
+                within_limit_skips += 1
                 rewritten_entries.append(entry)
                 continue
 
-            compacted = (
-                _compact_json_content(content, self.max_characters)
-                or _compact_text_content(
-                    content,
-                    tool_name=str(message.name or "unknown"),
-                    max_characters=self.max_characters,
-                )
+            compacted_json = _compact_json_content(content, self.max_characters)
+            compacted_mode = "json" if compacted_json is not None else "text"
+            compacted = compacted_json or _compact_text_content(
+                content,
+                tool_name=str(message.name or "unknown"),
+                max_characters=self.max_characters,
             )
             if len(compacted) >= len(content):
+                no_reduction_skips += 1
                 rewritten_entries.append(entry)
                 continue
 
@@ -225,7 +243,21 @@ class ToolResultCompactor:
                     ),
                 )
             )
+            logger.debug(
+                "Tool result compacted: "
+                f"source_indexes={[source.index for source in entry.sources]}, "
+                f"mode={compacted_mode}, original_characters={len(content)}, "
+                f"compacted_characters={len(compacted)}."
+            )
 
+        logger.debug(
+            "Tool result compaction finished: "
+            f"tool_entries={tool_entries}, rewritten={len(actions)}, "
+            f"protected_skips={protected_skips}, "
+            f"already_compacted_skips={already_compacted_skips}, "
+            f"within_limit_skips={within_limit_skips}, "
+            f"no_reduction_skips={no_reduction_skips}."
+        )
         return context.with_entries(tuple(rewritten_entries)).add_actions(*actions)
 
 

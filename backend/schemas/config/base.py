@@ -32,10 +32,8 @@ class ContextCompactionConfig(BaseModel):
 
     enabled: bool = True
     default_max_context_tokens: int = Field(default=128_000, ge=1)
-    reserved_output_tokens: int = Field(default=16_000, ge=0)
-    safety_margin_tokens: int = Field(default=4_096, ge=0)
-    trigger_ratio: float = Field(default=0.80, gt=0.0, le=1.0)
-    target_ratio: float = Field(default=0.65, gt=0.0, le=1.0)
+    reserved_output_tokens: int = Field(default=20_000, ge=0)
+    safety_margin_tokens: int = Field(default=10_000, ge=0)
     keep_recent_turns: int = Field(default=4, ge=0)
     tool_result_max_characters: int = Field(default=6_000, ge=1)
     compact_historical_attachments: bool = True
@@ -51,9 +49,7 @@ class ContextCompactionConfig(BaseModel):
         return dict(value)
 
     @model_validator(mode="after")
-    def _validate_ratios_and_capacity(self) -> "ContextCompactionConfig":
-        if self.target_ratio >= self.trigger_ratio:
-            raise ValueError("target_ratio must be lower than trigger_ratio.")
+    def _validate_capacity(self) -> "ContextCompactionConfig":
         if self.default_max_context_tokens <= (
             self.reserved_output_tokens + self.safety_margin_tokens
         ):
@@ -69,8 +65,6 @@ class ContextCompactionConfig(BaseModel):
                 self.default_max_context_tokens,
                 self.reserved_output_tokens,
                 self.safety_margin_tokens,
-                self.trigger_ratio,
-                self.target_ratio,
                 self.keep_recent_turns,
                 self.tool_result_max_characters,
                 self.compact_historical_attachments,

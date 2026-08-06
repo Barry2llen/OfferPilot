@@ -227,10 +227,8 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             "Context compaction completed: "
             f"original_tokens={result.original_tokens}, "
             f"compacted_tokens={result.compacted_tokens}, "
-            f"trigger_input_tokens={budget.trigger_input_tokens}, "
-            f"target_input_tokens={budget.target_input_tokens}, "
+            f"available_input_tokens={budget.available_input_tokens}, "
             f"applied_layers={result.applied_layers}, "
-            f"reached_target={result.reached_target}, "
             f"original_messages={len(state.get('messages', []))}, "
             f"model_messages={len(result.model_messages)}"
         )

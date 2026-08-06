@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from langchain_core.messages import HumanMessage
 
 from ..models import CompactedMessage, CompactionAction, CompactionContext
+from utils.logger import logger
 
 
 _ATTACHMENT_LAYER = "historical_attachments"
@@ -90,10 +91,20 @@ class HistoricalAttachmentCompactor:
 
     async def apply(self, context: CompactionContext) -> CompactionContext:
         if not self.enabled:
+            logger.debug("Historical attachment compaction skipped: layer disabled.")
             return context
 
         actions: list[CompactionAction] = []
         rewritten_entries: list[CompactedMessage] = []
+        attachment_messages = 0
+        protected_skips = 0
+        invalid_or_missing_skips = 0
+        already_compacted_skips = 0
+
+        logger.debug(
+            "Historical attachment compaction started: "
+            f"entries={len(context.entries)}."
+        )
 
         for entry in context.entries:
             message = entry.rendered
@@ -102,13 +113,20 @@ class HistoricalAttachmentCompactor:
                 if isinstance(message, HumanMessage)
                 else None
             )
-            if entry.protected or attachments is None:
+            if attachments is None:
+                invalid_or_missing_skips += 1
+                rewritten_entries.append(entry)
+                continue
+            attachment_messages += 1
+            if entry.protected:
+                protected_skips += 1
                 rewritten_entries.append(entry)
                 continue
 
             if isinstance(message.content, str) and message.content.startswith(
                 "[Historical attachment context compacted]"
             ):
+                already_compacted_skips += 1
                 rewritten_entries.append(entry)
                 continue
 
@@ -135,7 +153,19 @@ class HistoricalAttachmentCompactor:
                     ),
                 )
             )
+            logger.debug(
+                "Historical attachment context compacted: "
+                f"source_indexes={[source.index for source in entry.sources]}, "
+                f"attachment_count={len(attachments)}."
+            )
 
+        logger.debug(
+            "Historical attachment compaction finished: "
+            f"attachment_messages={attachment_messages}, rewritten={len(actions)}, "
+            f"protected_skips={protected_skips}, "
+            f"invalid_or_missing_skips={invalid_or_missing_skips}, "
+            f"already_compacted_skips={already_compacted_skips}."
+        )
         return context.with_entries(tuple(rewritten_entries)).add_actions(*actions)
 
 

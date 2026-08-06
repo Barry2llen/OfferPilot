@@ -48,6 +48,22 @@ class CharacterTokenCounter:
         )
 
 
+class SummaryMergeTokenCounter(CharacterTokenCounter):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def acount(
+        self,
+        *,
+        system_prompts: Sequence[SystemMessage],
+        messages: Sequence[object],
+        tools: Sequence[object],
+    ) -> int:
+        del system_prompts, messages, tools
+        self.calls += 1
+        return 20 if self.calls == 1 else 5
+
+
 def make_selection(
     *,
     provider: str = "OpenAI",
@@ -90,8 +106,6 @@ def make_request(
             max_context_tokens=1_000,
             reserved_output_tokens=100,
             safety_margin_tokens=0,
-            trigger_input_tokens=100,
-            target_input_tokens=50,
         ),
     )
 
@@ -182,8 +196,6 @@ async def test_pipeline_calls_every_layer_without_global_budget_gate() -> None:
         max_context_tokens=1_000,
         reserved_output_tokens=100,
         safety_margin_tokens=0,
-        trigger_input_tokens=500,
-        target_input_tokens=100,
     )))
 
     assert recorder.calls == 1
@@ -357,8 +369,8 @@ async def test_auto_compact_summarizes_unprotected_history_with_structured_model
         AIMessage(content="old answer"),
         HumanMessage(content="latest request"),
     ]
-    context = make_context(messages, keep_recent_turns=1, current_tokens=200)
-    context = context.with_current_tokens(200)
+    context = make_context(messages, keep_recent_turns=1, current_tokens=100_000)
+    context = context.with_current_tokens(100_000)
     policy = DefaultContextBudgetPolicy(ContextCompactionConfig())
 
     result = await AutoCompactLayer(
@@ -398,7 +410,7 @@ async def test_auto_compact_summarizes_unprotected_history_with_structured_model
 
 async def test_auto_compact_requires_unprotected_history() -> None:
     messages = [HumanMessage(content="only current")]
-    context = make_context(messages, keep_recent_turns=1, current_tokens=200)
+    context = make_context(messages, keep_recent_turns=1, current_tokens=100_000)
 
     with pytest.raises(ContextCompactionError, match="no unprotected"):
         await AutoCompactLayer(
@@ -422,7 +434,7 @@ async def test_auto_compact_does_not_retry_structured_output_failure() -> None:
     context = make_context(
         [HumanMessage(content="old"), HumanMessage(content="latest")],
         keep_recent_turns=1,
-        current_tokens=200,
+        current_tokens=100_000,
     )
 
     with pytest.raises(ContextCompactionError, match="structured output failed"):
@@ -440,6 +452,10 @@ def test_context_compaction_config_no_longer_contains_reasoning_setting() -> Non
 
     assert not hasattr(settings, "keep_recent_reasoning_messages")
     assert settings.keep_recent_turns == 4
+    assert settings.reserved_output_tokens == 20_000
+    assert settings.safety_margin_tokens == 10_000
+    assert not hasattr(settings, "trigger_ratio")
+    assert not hasattr(settings, "target_ratio")
 
 
 def test_only_enabled_supervisor_path_builds_the_fixed_compaction_pipeline() -> None:
@@ -498,8 +514,6 @@ async def test_auto_compact_blocks_when_summary_model_has_insufficient_capacity(
             max_context_tokens=100,
             reserved_output_tokens=10,
             safety_margin_tokens=0,
-            trigger_input_tokens=70,
-            target_input_tokens=50,
         ),
     )
 
@@ -556,17 +570,20 @@ def _snapshot_state(
     )
 
 
-def _snapshot_request(runtime: GraphRuntime, *, trigger: int = 1) -> CompactionRequest:
+def _snapshot_request(
+    runtime: GraphRuntime,
+    *,
+    budget: ContextBudget | None = None,
+) -> CompactionRequest:
     return CompactionRequest(
         runtime=runtime,
         system_prompts=(),
         tools=(),
-        budget=ContextBudget(
+        budget=budget
+        or ContextBudget(
             max_context_tokens=10_000,
             reserved_output_tokens=100,
             safety_margin_tokens=0,
-            trigger_input_tokens=trigger,
-            target_input_tokens=0,
         ),
     )
 
@@ -655,17 +672,26 @@ async def test_pipeline_merges_existing_summary_with_new_historical_messages() -
     loader = FakeStructuredModelLoader(runnable)
 
     result = await PipelineCompactor(
-        token_counter=CharacterTokenCounter(),
+        token_counter=SummaryMergeTokenCounter(),
         keep_recent_turns=1,
         layers=(
             AutoCompactLayer(
                 model_resolver=StaticResolver(make_selection(model_name="compact")),
                 budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
-                token_counter=CharacterTokenCounter(),
+                token_counter=SummaryMergeTokenCounter(),
                 structured_model_loader=loader,
             ),
         ),
-    ).acompact(_snapshot_request(_snapshot_state(raw_messages, snapshot)))
+    ).acompact(
+        _snapshot_request(
+            _snapshot_state(raw_messages, snapshot),
+            budget=ContextBudget(
+                max_context_tokens=10,
+                reserved_output_tokens=0,
+                safety_margin_tokens=0,
+            ),
+        )
+    )
 
     assert runnable.calls == 1
     assert result.auto_compacted_this_run is True
@@ -681,7 +707,7 @@ async def test_pipeline_merges_existing_summary_with_new_historical_messages() -
     assert result.model_messages[-1] == raw_messages[-1]
 
 
-async def test_pending_snapshot_retries_summary_even_below_trigger() -> None:
+async def test_pending_snapshot_retries_summary_even_below_threshold() -> None:
     raw_messages = [
         HumanMessage(content="old user", id="human-old"),
         HumanMessage(content="latest", id="human-latest"),
@@ -708,7 +734,7 @@ async def test_pending_snapshot_retries_summary_even_below_trigger() -> None:
             ),
         ),
     ).acompact(
-        _snapshot_request(_snapshot_state(raw_messages, snapshot), trigger=9_000)
+        _snapshot_request(_snapshot_state(raw_messages, snapshot))
     )
 
     assert runnable.calls == 1

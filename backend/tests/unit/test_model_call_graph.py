@@ -1194,8 +1194,6 @@ class FixedContextBudgetPolicy:
             max_context_tokens=10_000,
             reserved_output_tokens=100,
             safety_margin_tokens=0,
-            trigger_input_tokens=100,
-            target_input_tokens=50,
         )
 
 
@@ -1220,7 +1218,6 @@ class PersistedViewCompactor:
             original_tokens=100,
             compacted_tokens=20,
             applied_layers=("test",),
-            reached_target=True,
             source_message_count=len(raw_messages),
             source_message_ids=tuple(getattr(message, "id", None) for message in raw_messages),
             snapshot_status="complete",

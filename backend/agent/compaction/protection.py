@@ -6,6 +6,7 @@ from dataclasses import replace
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from .models import CompactedMessage
+from utils.logger import logger
 
 
 def protect_entries(
@@ -22,7 +23,7 @@ def protect_entries(
         entries,
         keep_recent_turns=keep_recent_turns,
     )
-    return tuple(
+    protected_entries = tuple(
         replace(
             entry,
             protected=entry.protected
@@ -30,6 +31,13 @@ def protect_entries(
         )
         for entry in entries
     )
+    logger.debug(
+        "Compaction protection applied: "
+        f"entries={len(entries)}, protected_source_indexes={len(protected_indexes)}, "
+        f"protected_entries={sum(entry.protected for entry in protected_entries)}, "
+        f"keep_recent_turns={keep_recent_turns}."
+    )
+    return protected_entries
 
 
 def _protected_source_indexes(
@@ -75,6 +83,24 @@ def _protected_source_indexes(
     for index, entry in enumerate(entries):
         if isinstance(entry.rendered, ToolMessage) and index not in consumed_tool_indexes:
             protected_indexes.update(source.index for source in entry.sources)
+
+    incomplete_or_latest_exchanges = sum(
+        not complete or (start, end) == exchanges[-1][:2]
+        for start, end, complete in exchanges
+    )
+    orphan_tool_messages = sum(
+        isinstance(entry.rendered, ToolMessage)
+        and index not in consumed_tool_indexes
+        for index, entry in enumerate(entries)
+    )
+    logger.debug(
+        "Compaction protection scan: "
+        f"entries={len(entries)}, human_messages={len(human_indexes)}, "
+        f"tool_exchanges={len(exchanges)}, "
+        f"incomplete_or_latest_exchanges={incomplete_or_latest_exchanges}, "
+        f"orphan_tool_messages={orphan_tool_messages}, "
+        f"protected_source_indexes={len(protected_indexes)}."
+    )
 
     return protected_indexes
 
