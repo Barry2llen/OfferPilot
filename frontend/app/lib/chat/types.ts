@@ -84,6 +84,8 @@ export interface ChatStreamState {
   streamError: string | null;
   isStreaming: boolean;
   agentStatus: AgentStatus;
+  contextCompactionStatus: ContextCompactionStatus;
+  contextCompacted: boolean;
   accepted: boolean;
   terminal: boolean;
   userMessageId: string | null;
@@ -95,6 +97,12 @@ export interface ChatStreamState {
   pendingQueryResumeMerge: boolean;
   nextMessageId: number;
 }
+
+export type ContextCompactionStatus =
+  | "idle"
+  | "running"
+  | "completed"
+  | "failed";
 
 export type ChatStreamEffect =
   | { type: "accepted" }

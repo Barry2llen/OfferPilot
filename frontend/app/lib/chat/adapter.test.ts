@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   beginChat,
+  clearCommittedMessages,
   createChatState,
+  mapChatHistory,
   reduceChatEof,
   reduceChatEvent,
   reduceChatTransportError,
@@ -109,5 +111,70 @@ describe("chat stream adapter", () => {
     const transport = reduceChatTransportError(state, "网络断开");
     expect(transport.state.streamError).toBe("网络断开");
     expect(transport.state.agentStatus).toBe("error");
+  });
+
+  it("tracks compaction lifecycle without adding a chat message", () => {
+    const initial = beginChat(createChatState(), "整理上下文", undefined);
+    const started = reduceChatEvent(
+      initial,
+      event("context_compaction", { phase: "started" }),
+      labels,
+    );
+
+    expect(started.state.contextCompactionStatus).toBe("running");
+    expect(started.state.agentStatus).toBe("compacting");
+    expect(started.state.messages).toHaveLength(1);
+    expect(started.effects).toContainEqual({
+      type: "agent_status",
+      value: "compacting",
+    });
+
+    const completed = reduceChatEvent(
+      started.state,
+      event("context_compaction", { phase: "completed" }),
+      labels,
+    );
+    expect(completed.state.contextCompactionStatus).toBe("completed");
+    expect(completed.state.contextCompacted).toBe(true);
+    expect(completed.state.agentStatus).toBe("generating");
+
+    const continued = beginChat(completed.state, "继续", undefined);
+    expect(continued.contextCompactionStatus).toBe("completed");
+    expect(continued.contextCompacted).toBe(true);
+  });
+
+  it("restores completed compaction from history and clears it for a new thread", () => {
+    const history = mapChatHistory(
+      [{ role: "user", type: "human", content: "历史消息" }],
+      createChatState(),
+      undefined,
+      true,
+    );
+
+    expect(history.state.contextCompactionStatus).toBe("completed");
+    expect(history.state.contextCompacted).toBe(true);
+    expect(history.state.messages).toHaveLength(1);
+
+    const newThread = clearCommittedMessages(history.state);
+    expect(newThread.contextCompactionStatus).toBe("idle");
+    expect(newThread.contextCompacted).toBe(false);
+    expect(newThread.messages).toEqual([]);
+  });
+
+  it("moves the header to error state when compaction fails", () => {
+    const started = reduceChatEvent(
+      beginChat(createChatState(), "整理上下文", undefined),
+      event("context_compaction", { phase: "started" }),
+      labels,
+    ).state;
+    const failed = reduceChatEvent(
+      started,
+      event("context_compaction", { phase: "failed" }),
+      labels,
+    );
+
+    expect(failed.state.contextCompactionStatus).toBe("failed");
+    expect(failed.state.agentStatus).toBe("error");
+    expect(failed.effects).toContainEqual({ type: "agent_status", value: "error" });
   });
 });

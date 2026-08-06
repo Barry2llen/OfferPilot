@@ -93,6 +93,8 @@ export function createChatState(
     streamError: null,
     isStreaming: false,
     agentStatus: "idle",
+    contextCompactionStatus: "idle",
+    contextCompacted: false,
     accepted: false,
     terminal: false,
     userMessageId: null,
@@ -165,7 +167,12 @@ export function beginChat(
 }
 
 export function clearCommittedMessages(state: ChatStreamState): ChatStreamState {
-  return { ...resetChatTransient(state), messages: [] };
+  return {
+    ...resetChatTransient(state),
+    messages: [],
+    contextCompactionStatus: "idle",
+    contextCompacted: false,
+  };
 }
 
 function findLastRunningToolCallIndex(
@@ -528,6 +535,35 @@ export function reduceChatEvent(
       break;
     }
 
+    case "context_compaction": {
+      const phase = data.phase;
+      if (phase === "started") {
+        next = {
+          ...next,
+          contextCompactionStatus: "running",
+          streamError: null,
+          agentStatus: "compacting",
+        };
+        addAgentStatusEffect(effects, "compacting");
+      } else if (phase === "completed") {
+        next = {
+          ...next,
+          contextCompactionStatus: "completed",
+          contextCompacted: true,
+          agentStatus: "generating",
+        };
+        addAgentStatusEffect(effects, "generating");
+      } else if (phase === "failed") {
+        next = {
+          ...next,
+          contextCompactionStatus: "failed",
+          agentStatus: "error",
+        };
+        addAgentStatusEffect(effects, "error");
+      }
+      break;
+    }
+
     case "token": {
       const token = extractTextContent(data.content ?? data.token ?? "");
       if (!token) break;
@@ -694,8 +730,11 @@ export function reduceChatEvent(
     }
 
     case "interrupt": {
-      addAgentStatusEffect(effects, "interrupted");
       const interrupt = makeInterrupt(data, labels);
+      addAgentStatusEffect(
+        effects,
+        next.contextCompactionStatus === "failed" ? "error" : "interrupted",
+      );
       if (interrupt.type === "query") {
         const queryCallIndex = findLastRunningToolCallIndex(next.toolCalls, "query");
         if (queryCallIndex >= 0) {
@@ -840,8 +879,19 @@ export function reduceChatEof(
 }
 
 export function reduceChatAbort(state: ChatStreamState): ChatReducerResult {
+  const contextCompactionStatus =
+    state.contextCompactionStatus === "running"
+      ? state.contextCompacted
+        ? "completed"
+        : "idle"
+      : state.contextCompactionStatus;
   return {
-    state: removeUnacceptedUserMessage({ ...state, isStreaming: false }),
+    state: removeUnacceptedUserMessage({
+      ...state,
+      isStreaming: false,
+      contextCompactionStatus,
+      agentStatus: "idle",
+    }),
     effects: [],
   };
 }
@@ -855,6 +905,7 @@ export function mapChatHistory(
   historyMessages: AIChatHistoryMessage[] | ChatHistoryMessage[],
   state: ChatStreamState,
   rawUrl?: (fileId: string) => string,
+  contextCompacted = false,
 ): ChatReducerResult {
   let next = resetChatTransient(state);
   const messages: ChatMessage[] = [];
@@ -877,5 +928,13 @@ export function mapChatHistory(
     };
     if (shouldDisplayHistoryMessage(mapped)) messages.push(mapped);
   }
-  return { state: { ...next, messages }, effects: [] };
+  return {
+    state: {
+      ...next,
+      messages,
+      contextCompactionStatus: contextCompacted ? "completed" : "idle",
+      contextCompacted,
+    },
+    effects: [],
+  };
 }

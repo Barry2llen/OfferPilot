@@ -35,6 +35,20 @@ from schemas.config import load_config
 from utils.stream import render_stream_events, StreamEventHandler
 from schemas.model_selection import ModelSelection
 
+
+ContextCompactionStatus = Literal["complete", "pending_auto_compact"]
+
+
+class ContextCompactionSnapshot(TypedDict):
+    """Persisted Supervisor-only model-view cache metadata."""
+
+    messages: list[BaseMessage]
+    source_message_count: int
+    source_message_ids: list[str | None]
+    status: ContextCompactionStatus
+    auto_compacted: bool
+
+
 class BaseAgentState(TypedDict, total=False):
     """
     Base class for agent state. All agent states should inherit from this class.
@@ -42,6 +56,9 @@ class BaseAgentState(TypedDict, total=False):
 
     model: Displace[MaybeCallable[ModelSelection]]
     messages: Annotated[list[BaseMessage], add_messages]
+    context_compaction: NotRequired[ContextCompactionSnapshot]
+    context_compaction_error: NotRequired[str | None]
+    context_compaction_event_pending: NotRequired[bool]
 
 class GraphRuntime[State: StateLike = BaseAgentState](NamedTuple):
     state: State
@@ -250,6 +267,8 @@ __all__ = [
     "BaseGraph",
     "BaseWorkflow",
     "BaseAgent",
+    "ContextCompactionSnapshot",
+    "ContextCompactionStatus",
     "InteruptType",
     "BaseInterupt",
     "get"

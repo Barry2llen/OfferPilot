@@ -5,12 +5,19 @@ import time
 
 import pytest
 from langgraph.errors import GraphInterrupt
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.runtime import Runtime
 from langgraph.types import Interrupt
 from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent.graphs.model_call import ModelCallGraph
+from agent.compaction import (
+    CompactedMessage,
+    CompactionResult,
+    ContextBudget,
+    MessageRef,
+)
 from agent.prompts import PromptComposer, PromptFragment
 from agent.tools.query import query as query_tool
 from exceptions import AgentStateError, ModelCallExecutionError
@@ -1178,3 +1185,134 @@ async def test_model_call_node_preserves_tool_resolution_error(
     assert custom_events[0][0] == "on_model_load_error"
     assert "tool resolution failed" in custom_events[0][1]["error"]
     assert custom_events[0][1]["model"] is selected_model
+
+
+class FixedContextBudgetPolicy:
+    def resolve(self, model_selection: object) -> ContextBudget:
+        del model_selection
+        return ContextBudget(
+            max_context_tokens=10_000,
+            reserved_output_tokens=100,
+            safety_margin_tokens=0,
+            trigger_input_tokens=100,
+            target_input_tokens=50,
+        )
+
+
+class PersistedViewCompactor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def acompact(self, request) -> CompactionResult:
+        self.calls += 1
+        raw_messages = request.runtime.state["messages"]
+        view = HumanMessage(content="compact model view", id="compact-view")
+        return CompactionResult(
+            entries=(
+                CompactedMessage(
+                    rendered=view,
+                    sources=(MessageRef(index=0, message_id="raw"),),
+                    kind="identity",
+                    layer="test",
+                ),
+            ),
+            actions=(),
+            original_tokens=100,
+            compacted_tokens=20,
+            applied_layers=("test",),
+            reached_target=True,
+            source_message_count=len(raw_messages),
+            source_message_ids=tuple(getattr(message, "id", None) for message in raw_messages),
+            snapshot_status="complete",
+            auto_compacted=True,
+            auto_compacted_this_run=True,
+            should_persist_snapshot=True,
+        )
+
+
+async def test_compaction_sidecar_is_checkpointed_before_business_model_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_model_inputs: list[object] = []
+
+    class FakeModel:
+        def bind_tools(self, tools: object) -> "FakeModel":
+            del tools
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            seen_model_inputs.append(messages)
+            return AIMessage(content="business response")
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FakeModel(),
+    )
+    compactor = PersistedViewCompactor()
+    saver = InMemorySaver()
+    graph = ModelCallGraph(
+        config=Config(),
+        tools=None,
+        compactor=compactor,
+        context_budget_policy=FixedContextBudgetPolicy(),
+    ).get_compiled_graph(checkpointer=saver)
+    config = {"configurable": {"thread_id": "sidecar-before-model"}}
+
+    result = await graph.ainvoke(
+        make_state([HumanMessage(content="raw history")], model="test-model"),
+        config,
+    )
+
+    assert compactor.calls == 1
+    assert seen_model_inputs == [[HumanMessage(content="compact model view", id="compact-view")]]
+    assert result["messages"][0].content == "raw history"
+    assert result["messages"][-1].content == "business response"
+    checkpoint = saver.get_tuple(config)
+    assert checkpoint is not None
+    stored_snapshot = checkpoint.checkpoint["channel_values"]["context_compaction"]
+    assert stored_snapshot["status"] == "complete"
+    assert stored_snapshot["auto_compacted"] is True
+    assert stored_snapshot["messages"][0].content == "compact model view"
+
+
+async def test_successful_compaction_sidecar_survives_business_model_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingModel:
+        def bind_tools(self, tools: object) -> "FailingModel":
+            del tools
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            del messages
+            raise RuntimeError("business model failed")
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model",
+        lambda model_selection: FailingModel(),
+    )
+    monkeypatch.setattr(
+        "agent.graphs.model_call.interrupt",
+        lambda payload: {"type": "abort", "prompt": "stop"},
+    )
+    compactor = PersistedViewCompactor()
+    saver = InMemorySaver()
+    graph = ModelCallGraph(
+        config=Config(model_call_retry_attempts=1),
+        tools=None,
+        compactor=compactor,
+        context_budget_policy=FixedContextBudgetPolicy(),
+    ).get_compiled_graph(checkpointer=saver)
+    config = {"configurable": {"thread_id": "sidecar-model-failure"}}
+
+    with pytest.raises(ModelCallExecutionError, match="Model call failed after 1 retries"):
+        await graph.ainvoke(
+            make_state([HumanMessage(content="raw history")], model="test-model"),
+            config,
+        )
+
+    checkpoint = saver.get_tuple(config)
+    assert checkpoint is not None
+    stored_snapshot = checkpoint.checkpoint["channel_values"]["context_compaction"]
+    assert stored_snapshot["status"] == "complete"
+    assert stored_snapshot["messages"][0].content == "compact model view"

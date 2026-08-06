@@ -28,6 +28,7 @@ export default function Home() {
     interrupt,
     streamError,
     isStreaming,
+    contextCompactionStatus,
     startChat,
     stopStream,
     retry,
@@ -137,7 +138,7 @@ export default function Home() {
       try {
         const history = await aiChatApi.getHistory(threadId);
         setThreadRequiresImageInput(history.requires_image_input);
-        loadHistory(history.messages);
+        loadHistory(history.messages, history.context_compacted);
       } catch {
         resetStreamingState();
         clearMessages();
@@ -237,6 +238,7 @@ export default function Home() {
           historyLoading={historyLoading}
           interrupt={interrupt}
           streamError={streamError}
+          contextCompactionStatus={contextCompactionStatus}
           threadModelMismatchMessage={threadModelMismatchMessage}
           hasNoModel={hasNoModel}
           onRetry={handleRetry}

@@ -20,9 +20,15 @@ from .models import (
     CompactionRequest,
     CompactionResult,
     ContextBudget,
+    ContextCompactionSnapshot,
+    ContextCompactionStatus,
     MessageRef,
 )
-from .pipeline import PipelineCompactor, build_supervisor_compactor
+from .pipeline import (
+    PipelineCompactor,
+    build_supervisor_compactor,
+    model_messages_for_state,
+)
 from .protocols import (
     CompactionLayer,
     CompactionModelResolver,
@@ -43,6 +49,8 @@ __all__ = [
     "CompactionModelResolver",
     "CompactionRequest",
     "CompactionResult",
+    "ContextCompactionSnapshot",
+    "ContextCompactionStatus",
     "Compactor",
     "ContextBudget",
     "ContextBudgetPolicy",
@@ -58,5 +66,6 @@ __all__ = [
     "ToolResultCompactor",
     "ToolResultSummary",
     "build_supervisor_compactor",
+    "model_messages_for_state",
     "resolve_runtime_model_selection",
 ]

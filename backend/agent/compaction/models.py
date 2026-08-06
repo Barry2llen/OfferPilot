@@ -7,7 +7,12 @@ from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 from langgraph._internal._typing import StateLike
 
-from ..base import BaseAgentState, GraphRuntime
+from ..base import (
+    BaseAgentState,
+    ContextCompactionSnapshot,
+    ContextCompactionStatus,
+    GraphRuntime,
+)
 
 
 CompactionEntryKind = Literal["identity", "rewrite", "summary"]
@@ -102,6 +107,8 @@ class CompactionContext[State: StateLike = BaseAgentState]:
     actions: tuple[CompactionAction, ...] = ()
     applied_layers: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    raw_message_count: int = 0
+    snapshot: ContextCompactionSnapshot | None = None
 
     @property
     def model_messages(self) -> list[BaseMessage]:
@@ -110,6 +117,12 @@ class CompactionContext[State: StateLike = BaseAgentState]:
     @property
     def protected_entries(self) -> tuple[CompactedMessage, ...]:
         return tuple(entry for entry in self.entries if entry.protected)
+
+    @property
+    def has_new_messages_since_snapshot(self) -> bool:
+        if self.snapshot is None:
+            return True
+        return self.raw_message_count > self.snapshot["source_message_count"]
 
     def map_entries(
         self,
@@ -155,10 +168,25 @@ class CompactionResult:
     applied_layers: tuple[str, ...]
     reached_target: bool
     warnings: tuple[str, ...] = ()
+    source_message_count: int = 0
+    source_message_ids: tuple[str | None, ...] = ()
+    snapshot_status: ContextCompactionStatus = "complete"
+    auto_compacted: bool = False
+    auto_compacted_this_run: bool = False
+    should_persist_snapshot: bool = False
 
     @property
     def model_messages(self) -> list[BaseMessage]:
         return [entry.rendered for entry in self.entries]
+
+    def build_snapshot(self) -> ContextCompactionSnapshot:
+        return {
+            "messages": list(self.model_messages),
+            "source_message_count": self.source_message_count,
+            "source_message_ids": list(self.source_message_ids),
+            "status": self.snapshot_status,
+            "auto_compacted": self.auto_compacted,
+        }
 
 
 __all__ = [
@@ -168,6 +196,8 @@ __all__ = [
     "CompactionEntryKind",
     "CompactionRequest",
     "CompactionResult",
+    "ContextCompactionSnapshot",
+    "ContextCompactionStatus",
     "ContextBudget",
     "CompactedMessage",
     "MessageRef",

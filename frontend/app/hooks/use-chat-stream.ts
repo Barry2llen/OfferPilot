@@ -211,12 +211,13 @@ export function useChatStream() {
   );
 
   const loadHistory = useCallback(
-    (historyMessages: AIChatHistoryMessage[]) => {
+    (historyMessages: AIChatHistoryMessage[], contextCompacted = false) => {
       cancelPendingFrame();
       const result = mapChatHistory(
         historyMessages,
         stateRef.current,
         chatFilesApi.rawUrl,
+        contextCompacted,
       );
       publish(result.state);
     },
@@ -232,6 +233,8 @@ export function useChatStream() {
     interrupt: state.interrupt as ChatInterrupt | null,
     streamError: state.streamError,
     isStreaming: state.isStreaming,
+    contextCompactionStatus: state.contextCompactionStatus,
+    contextCompacted: state.contextCompacted,
     startChat,
     stopStream,
     retry,

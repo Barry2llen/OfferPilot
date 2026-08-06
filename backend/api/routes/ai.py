@@ -677,7 +677,8 @@ async def chat(
         200: {
             "description": (
                 "Returns SSE events including thread, token, reasoning, reasoning_done, tool_start, "
-                "tool_end, tool_error, interrupt, and final; failures use error. Query interrupts include "
+                "tool_end, tool_error, context_compaction, interrupt, and final; failures use error. "
+                "The context_compaction event reports started, completed, or failed phases. Query interrupts include "
                 "question, firstChoice, firstChoiceDescription, secondChoice, secondChoiceDescription, "
                 "thirdChoice, and thirdChoiceDescription. Search tool output contains only the safe frontend "
                 "summary fields url, title, and favicon. The thread event also includes resolved_attachments, "
@@ -856,6 +857,18 @@ async def chat_stream(
                             {
                                 "thread_id": thread_id,
                                 "duration_ms": duration_ms,
+                            },
+                        )
+                    continue
+
+                if event_name == "on_custom_event" and tool_name == "on_context_compaction":
+                    phase = data.get("phase")
+                    if phase in {"started", "completed", "failed"}:
+                        yield render_sse_event(
+                            "context_compaction",
+                            {
+                                "thread_id": thread_id,
+                                "phase": phase,
                             },
                         )
                     continue

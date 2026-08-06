@@ -209,6 +209,7 @@ export interface AIChatHistorySummary {
   message_count: number;
   attachment_count: number;
   requires_image_input: boolean;
+  context_compacted: boolean;
   updated_at: string;
 }
 
@@ -237,6 +238,7 @@ export interface AIChatHistoryDetailResponse {
   message_count: number;
   attachment_count: number;
   requires_image_input: boolean;
+  context_compacted: boolean;
   updated_at: string;
   messages: AIChatHistoryMessage[];
 }
@@ -275,6 +277,7 @@ export interface AIChatStreamRequest {
 export type AgentStatus =
   | "idle"
   | "generating"
+  | "compacting"
   | "tool_calling"
   | "interrupted"
   | "error";

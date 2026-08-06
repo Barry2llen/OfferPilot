@@ -187,6 +187,11 @@ class AIChatHistorySummary(BaseModel):
         description="Whether the current thread contains image-mode attachments, so the frontend can warn that a text-only model may not use the original images.",
         examples=[True],
     )
+    context_compacted: bool = Field(
+        default=False,
+        description="Whether Supervisor has successfully created a reusable auto-compacted context view for this thread.",
+        examples=[True],
+    )
     updated_at: datetime = Field(
         description="Creation time of the latest conversation checkpoint.",
         examples=["2026-04-25T20:00:00"],
@@ -206,6 +211,7 @@ class AIChatHistoryListResponse(BaseModel):
                             "message_count": 2,
                             "attachment_count": 1,
                             "requires_image_input": True,
+                            "context_compacted": True,
                             "updated_at": "2026-04-25T20:00:00",
                         }
                     ],
@@ -240,6 +246,7 @@ class AIChatHistoryDetailResponse(AIChatHistorySummary):
                     "message_count": 2,
                     "attachment_count": 1,
                     "requires_image_input": False,
+                    "context_compacted": True,
                     "updated_at": "2026-04-25T20:00:00",
                     "messages": [
                         {

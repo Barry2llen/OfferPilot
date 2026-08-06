@@ -15,6 +15,7 @@ from ..models import CompactedMessage, CompactionAction, CompactionContext
 from ..model_resolver import RuntimeCompactionModelResolver
 from ..protocols import CompactionModelResolver, ContextBudgetPolicy, TokenCounter
 from ...models import load_chat_model
+from utils.custom_events import _adispatch_custom_event_safely
 
 
 class ToolResultSummary(BaseModel):
@@ -83,16 +84,43 @@ class AutoCompactLayer:
         self.model_loader = model_loader
 
     async def apply(self, context: CompactionContext) -> CompactionContext:
-        if context.current_tokens <= context.request.budget.trigger_input_tokens:
+        pending_snapshot = (
+            context.snapshot is not None
+            and context.snapshot["status"] == "pending_auto_compact"
+        )
+        if (
+            context.current_tokens <= context.request.budget.trigger_input_tokens
+            and not pending_snapshot
+        ):
             return context
 
-        historical_entries = tuple(
-            entry for entry in context.entries if not entry.protected
+        if (
+            context.snapshot is not None
+            and context.snapshot["status"] == "complete"
+            and context.snapshot["auto_compacted"]
+            and not context.has_new_messages_since_snapshot
+        ):
+            return context
+
+        prior_summaries = tuple(
+            entry for entry in context.entries if entry.kind == "summary"
         )
-        if not historical_entries:
+        historical_entries = tuple(
+            entry
+            for entry in context.entries
+            if not entry.protected and entry.kind != "summary"
+        )
+        if prior_summaries and not historical_entries:
+            return context
+        if not prior_summaries and not historical_entries:
             raise ContextCompactionError(
                 "Auto-compaction has no unprotected historical messages to summarize."
             )
+
+        await _adispatch_custom_event_safely(
+            "on_context_compaction",
+            {"phase": "started"},
+        )
 
         try:
             model_selection = await self.model_resolver.aresolve(
@@ -105,7 +133,8 @@ class AutoCompactLayer:
             raise ContextCompactionError(
                 f"Auto-compaction model resolution failed: {error}"
             ) from error
-        summary_messages = [entry.rendered for entry in historical_entries]
+        summary_entries = (*prior_summaries, *historical_entries)
+        summary_messages = [entry.rendered for entry in summary_entries]
         summary_prompt = SystemMessage(content=_AUTO_COMPACT_SYSTEM_PROMPT)
         summary_input_tokens = await self.token_counter.acount(
             system_prompts=(summary_prompt,),
@@ -137,17 +166,29 @@ class AutoCompactLayer:
 
         summary_content = _render_summary(summary)
         summary_entry = CompactedMessage(
-            rendered=SystemMessage(content=summary_content),
+            rendered=SystemMessage(
+                content=summary_content,
+                additional_kwargs={
+                    "_offerpilot_context_compaction": "summary",
+                },
+            ),
             sources=tuple(
                 source
-                for entry in historical_entries
+                for entry in summary_entries
                 for source in entry.sources
             ),
             kind="summary",
             layer=self.name,
             protected=True,
         )
-        compacted_entries = (summary_entry, *context.protected_entries)
+        compacted_entries = (
+            summary_entry,
+            *tuple(
+                entry
+                for entry in context.protected_entries
+                if entry.kind != "summary"
+            ),
+        )
         compacted_tokens = await self.token_counter.acount(
             system_prompts=context.request.system_prompts,
             messages=[entry.rendered for entry in compacted_entries],

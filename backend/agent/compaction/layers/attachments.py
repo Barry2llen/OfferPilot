@@ -106,6 +106,12 @@ class HistoricalAttachmentCompactor:
                 rewritten_entries.append(entry)
                 continue
 
+            if isinstance(message.content, str) and message.content.startswith(
+                "[Historical attachment context compacted]"
+            ):
+                rewritten_entries.append(entry)
+                continue
+
             rewritten_entries.append(
                 CompactedMessage(
                     rendered=message.model_copy(

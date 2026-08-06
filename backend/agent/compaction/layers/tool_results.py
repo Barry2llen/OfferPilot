@@ -187,6 +187,9 @@ class ToolResultCompactor:
                 continue
 
             content = _content_as_text(message.content)
+            if content.startswith("[Historical tool result compacted]"):
+                rewritten_entries.append(entry)
+                continue
             if len(content) <= self.max_characters:
                 rewritten_entries.append(entry)
                 continue

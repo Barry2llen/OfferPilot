@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 from langgraph.types import Command
 
 from agent.tools import get_all_tools
@@ -397,6 +397,60 @@ def test_ai_chat_history_endpoint_returns_normalized_messages(
             "content": "OfferPilot 是一个求职辅助服务。",
         },
     ]
+
+
+def test_ai_chat_history_hides_compaction_sidecar_and_reports_success_marker(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="原始用户消息"),
+                AIMessage(content="原始助手消息"),
+            ],
+        )
+        checkpoint["channel_values"]["context_compaction"] = {
+            "messages": [
+                SystemMessage(content="[Historical context summary]\n隐藏摘要"),
+                HumanMessage(content="紧凑视图中的最近消息"),
+            ],
+            "source_message_count": 2,
+            "source_message_ids": [None, None],
+            "status": "complete",
+            "auto_compacted": True,
+        }
+        context_version = f"context.{uuid4().hex[:16]}"
+        checkpoint["channel_versions"]["context_compaction"] = context_version
+        checkpoint["updated_channels"].append("context_compaction")
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history-compacted"}},
+            checkpoint,
+            {"source": "input", "step": -1, "run_id": "run-history-compacted", "parents": {}},
+            checkpoint["channel_versions"],
+        )
+
+        list_response = client.get("/ai/chats", params={"limit": 10, "offset": 0})
+        detail_response = client.get("/ai/chats/thread-history-compacted/history")
+
+    assert list_response.status_code == 200
+    compacted_item = next(
+        item
+        for item in list_response.json()["items"]
+        if item["thread_id"] == "thread-history-compacted"
+    )
+    assert compacted_item["context_compacted"] is True
+    assert detail_response.status_code == 200
+    payload = detail_response.json()
+    assert payload["context_compacted"] is True
+    assert [message["content"] for message in payload["messages"]] == [
+        "原始用户消息",
+        "原始助手消息",
+    ]
+    assert "隐藏摘要" not in detail_response.text
 
 
 def test_ai_chat_history_returns_reasoning_content_when_assistant_content_is_empty(
@@ -1320,6 +1374,53 @@ def test_ai_chat_stream_endpoint_returns_reasoning_event(
         '"content": "最终答案"}'
         in response.text
     )
+
+
+def test_ai_chat_stream_endpoint_returns_context_compaction_lifecycle_events(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                del state, config, version
+                for phase in ("started", "completed", "failed"):
+                    yield {
+                        "event": "on_custom_event",
+                        "name": "on_context_compaction",
+                        "data": {"phase": phase},
+                    }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-context-compaction-events",
+            },
+        )
+
+    assert response.status_code == 200
+    for phase in ("started", "completed", "failed"):
+        assert (
+            f'event: context_compaction\ndata: {{"thread_id": "thread-context-compaction-events", "phase": "{phase}"}}'
+            in response.text
+        )
 
 
 def test_ai_chat_stream_endpoint_falls_back_to_reasoning_content_when_final_content_is_empty(
@@ -2596,6 +2697,8 @@ def test_ai_chat_history_openapi_documents_history_endpoints(
     )
     history_message_schema = payload["components"]["schemas"]["AIChatHistoryMessage"]
     assert "reasoning_duration_ms" in history_message_schema["properties"]
+    history_summary_schema = payload["components"]["schemas"]["AIChatHistorySummary"]
+    assert "context_compacted" in history_summary_schema["properties"]
 
 
 def test_base_command_accepts_retry_without_prompt() -> None:

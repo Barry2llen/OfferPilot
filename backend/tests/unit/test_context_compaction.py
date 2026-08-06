@@ -4,8 +4,11 @@ from collections.abc import Sequence
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
 
-from agent.base import GraphRuntime
+from agent.base import BaseAgentState, GraphRuntime
+from agent.agents.supervisor.agent import SupervisorAgent
 from agent.compaction import (
     AutoCompactLayer,
     CompactedMessage,
@@ -20,6 +23,7 @@ from agent.compaction import (
     PipelineCompactor,
     ToolResultCompactor,
     build_supervisor_compactor,
+    model_messages_for_state,
 )
 from agent.graphs.model_call import ModelCallGraph
 from agent.compaction.protection import protect_entries
@@ -436,6 +440,8 @@ def test_only_enabled_supervisor_path_builds_the_fixed_compaction_pipeline() -> 
         "auto_compact",
     ]
     assert ModelCallGraph(config=enabled_config).compactor is None
+    assert "compact" in SupervisorAgent(config=enabled_config)._model_call_node.nodes
+    assert "compact" not in SupervisorAgent(config=disabled_config)._model_call_node.nodes
 
 
 def test_context_summary_rejects_unknown_fields() -> None:
@@ -500,3 +506,207 @@ async def test_token_counter_ignores_historical_reasoning_metadata() -> None:
     )
 
     assert with_reasoning == without_reasoning
+
+
+def _snapshot_state(
+    messages: list[object],
+    snapshot: dict[str, object],
+) -> GraphRuntime:
+    return GraphRuntime(
+        state={
+            "messages": messages,
+            "model": make_selection(),
+            "context_compaction": snapshot,
+        },
+        additional_args=(),
+        additional_keywords={},
+    )
+
+
+def _snapshot_request(runtime: GraphRuntime, *, trigger: int = 1) -> CompactionRequest:
+    return CompactionRequest(
+        runtime=runtime,
+        system_prompts=(),
+        tools=(),
+        budget=ContextBudget(
+            max_context_tokens=10_000,
+            reserved_output_tokens=100,
+            safety_margin_tokens=0,
+            trigger_input_tokens=trigger,
+            target_input_tokens=0,
+        ),
+    )
+
+
+async def test_pipeline_reuses_snapshot_and_appends_only_raw_suffix() -> None:
+    raw_messages = [
+        HumanMessage(content="old user", id="human-old"),
+        AIMessage(content="old answer", id="ai-old"),
+        HumanMessage(content="new request", id="human-new"),
+    ]
+    summary = SystemMessage(content="[Historical context summary]\nold context")
+    snapshot = {
+        "messages": [summary, raw_messages[1]],
+        "source_message_count": 2,
+        "source_message_ids": ["human-old", "ai-old"],
+        "status": "complete",
+        "auto_compacted": True,
+    }
+    runtime = _snapshot_state(raw_messages, snapshot)
+    original_messages = list(raw_messages)
+
+    result = await PipelineCompactor(
+        token_counter=CharacterTokenCounter(),
+        keep_recent_turns=1,
+        layers=(RecordingLayer(),),
+    ).acompact(_snapshot_request(runtime))
+
+    assert result.model_messages == [summary, raw_messages[1], raw_messages[2]]
+    assert model_messages_for_state(runtime.state) == result.model_messages
+    assert runtime.state["messages"] == original_messages
+    assert result.source_message_count == len(raw_messages)
+    assert result.source_message_ids == ("human-old", "ai-old", "human-new")
+
+
+async def test_pipeline_does_not_repeat_summary_without_new_raw_history() -> None:
+    raw_messages = [
+        HumanMessage(content="old user", id="human-old"),
+        AIMessage(content="old answer", id="ai-old"),
+    ]
+    summary = SystemMessage(content="[Historical context summary]\nold context")
+    snapshot = {
+        "messages": [summary, raw_messages[1]],
+        "source_message_count": 2,
+        "source_message_ids": ["human-old", "ai-old"],
+        "status": "complete",
+        "auto_compacted": True,
+    }
+    runnable = FakeStructuredRunnable(summary_result())
+    model = FakeSummaryModel(runnable)
+    runtime = _snapshot_state(raw_messages, snapshot)
+
+    result = await PipelineCompactor(
+        token_counter=CharacterTokenCounter(),
+        keep_recent_turns=1,
+        layers=(
+            AutoCompactLayer(
+                model_resolver=StaticResolver(make_selection(model_name="compact")),
+                budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
+                token_counter=CharacterTokenCounter(),
+                model_loader=lambda selection: model,
+            ),
+        ),
+    ).acompact(_snapshot_request(runtime))
+
+    assert runnable.calls == 0
+    assert [message for message in result.model_messages if isinstance(message, SystemMessage)] == [summary]
+    assert result.auto_compacted is True
+    assert result.auto_compacted_this_run is False
+
+
+async def test_pipeline_merges_existing_summary_with_new_historical_messages() -> None:
+    raw_messages = [
+        HumanMessage(content="old user", id="human-old"),
+        AIMessage(content="old answer", id="ai-old"),
+        HumanMessage(content="new request", id="human-new"),
+    ]
+    old_summary = SystemMessage(content="[Historical context summary]\nold context")
+    snapshot = {
+        "messages": [old_summary, raw_messages[1]],
+        "source_message_count": 2,
+        "source_message_ids": ["human-old", "ai-old"],
+        "status": "complete",
+        "auto_compacted": True,
+    }
+    runnable = FakeStructuredRunnable(summary_result())
+    model = FakeSummaryModel(runnable)
+
+    result = await PipelineCompactor(
+        token_counter=CharacterTokenCounter(),
+        keep_recent_turns=1,
+        layers=(
+            AutoCompactLayer(
+                model_resolver=StaticResolver(make_selection(model_name="compact")),
+                budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
+                token_counter=CharacterTokenCounter(),
+                model_loader=lambda selection: model,
+            ),
+        ),
+    ).acompact(_snapshot_request(_snapshot_state(raw_messages, snapshot)))
+
+    assert runnable.calls == 1
+    assert result.auto_compacted_this_run is True
+    assert sum(
+        isinstance(message, SystemMessage)
+        and message.content.startswith("[Historical context summary]")
+        for message in result.model_messages
+    ) == 1
+    summary_input = runnable.inputs[0]
+    assert isinstance(summary_input, list)
+    assert summary_input[1] == old_summary
+    assert summary_input[2] == raw_messages[1]
+    assert result.model_messages[-1] == raw_messages[-1]
+
+
+async def test_pending_snapshot_retries_summary_even_below_trigger() -> None:
+    raw_messages = [
+        HumanMessage(content="old user", id="human-old"),
+        HumanMessage(content="latest", id="human-latest"),
+    ]
+    snapshot = {
+        "messages": list(raw_messages),
+        "source_message_count": 2,
+        "source_message_ids": ["human-old", "human-latest"],
+        "status": "pending_auto_compact",
+        "auto_compacted": False,
+    }
+    runnable = FakeStructuredRunnable(summary_result())
+    model = FakeSummaryModel(runnable)
+
+    result = await PipelineCompactor(
+        token_counter=CharacterTokenCounter(),
+        keep_recent_turns=1,
+        layers=(
+            AutoCompactLayer(
+                model_resolver=StaticResolver(make_selection(model_name="compact")),
+                budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
+                token_counter=CharacterTokenCounter(),
+                model_loader=lambda selection: model,
+            ),
+        ),
+    ).acompact(
+        _snapshot_request(_snapshot_state(raw_messages, snapshot), trigger=9_000)
+    )
+
+    assert runnable.calls == 1
+    assert result.snapshot_status == "complete"
+    assert result.auto_compacted is True
+
+
+async def test_context_compaction_snapshot_round_trips_through_langgraph_checkpoint() -> None:
+    summary = SystemMessage(content="[Historical context summary]\ncheckpoint")
+    snapshot = {
+        "messages": [summary, HumanMessage(content="latest", id="latest")],
+        "source_message_count": 2,
+        "source_message_ids": ["old", "latest"],
+        "status": "complete",
+        "auto_compacted": True,
+    }
+    saver = InMemorySaver()
+    graph = StateGraph(BaseAgentState)
+    graph.add_node("persist", lambda state: {"context_compaction": snapshot})
+    graph.add_edge(START, "persist")
+    graph.add_edge("persist", END)
+    compiled = graph.compile(checkpointer=saver)
+
+    await compiled.ainvoke(
+        {"messages": [HumanMessage(content="old", id="old"), HumanMessage(content="latest", id="latest")]},
+        {"configurable": {"thread_id": "context-sidecar"}},
+    )
+
+    checkpoint = saver.get_tuple({"configurable": {"thread_id": "context-sidecar"}})
+    assert checkpoint is not None
+    stored = checkpoint.checkpoint["channel_values"]["context_compaction"]
+    assert stored["source_message_count"] == 2
+    assert stored["auto_compacted"] is True
+    assert isinstance(stored["messages"][0], SystemMessage)

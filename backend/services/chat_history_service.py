@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from langchain_core.messages import BaseMessage
@@ -57,9 +58,15 @@ class ChatHistoryService:
         if row is None:
             return None
 
-        messages = self._get_messages(row.thread_id)
+        checkpoint_state = self._get_checkpoint_state(row.thread_id)
+        messages = self._messages_from_state(checkpoint_state)
         normalized_messages = _to_history_messages(messages)
-        summary = _build_summary(row, messages, self._thread_file_repository)
+        summary = _build_summary(
+            row,
+            messages,
+            self._thread_file_repository,
+            context_compacted=_has_auto_compacted_context(checkpoint_state),
+        )
         return AIChatHistoryDetailResponse(
             **summary.model_dump(),
             messages=normalized_messages,
@@ -74,20 +81,28 @@ class ChatHistoryService:
         return True
 
     def _to_summary(self, row: GraphCheckpointORM) -> AIChatHistorySummary:
+        checkpoint_state = self._get_checkpoint_state(row.thread_id)
+        messages = self._messages_from_state(checkpoint_state)
         return _build_summary(
             row,
-            self._get_messages(row.thread_id),
+            messages,
             self._thread_file_repository,
+            context_compacted=_has_auto_compacted_context(checkpoint_state),
         )
 
-    def _get_messages(self, thread_id: str) -> list[Any]:
+    def _get_checkpoint_state(self, thread_id: str) -> dict[str, Any]:
         checkpoint_tuple = self._checkpointer.get_tuple(
             {"configurable": {"thread_id": thread_id}}
         )
         if checkpoint_tuple is None:
-            return []
+            return {}
 
-        messages = checkpoint_tuple.checkpoint.get("channel_values", {}).get("messages")
+        channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+        return channel_values if isinstance(channel_values, dict) else {}
+
+    @staticmethod
+    def _messages_from_state(state: Mapping[str, Any]) -> list[Any]:
+        messages = state.get("messages")
         return messages if isinstance(messages, list) else []
 
 
@@ -95,6 +110,8 @@ def _build_summary(
     row: GraphCheckpointORM,
     messages: list[Any],
     thread_file_repository: ChatThreadFileRepository | None = None,
+    *,
+    context_compacted: bool = False,
 ) -> AIChatHistorySummary:
     attachment_count = (
         thread_file_repository.count_by_thread(row.thread_id)
@@ -115,8 +132,14 @@ def _build_summary(
         message_count=len(messages),
         attachment_count=attachment_count,
         requires_image_input=requires_image_input,
+        context_compacted=context_compacted,
         updated_at=row.created_at,
     )
+
+
+def _has_auto_compacted_context(state: Mapping[str, Any]) -> bool:
+    snapshot = state.get("context_compaction")
+    return isinstance(snapshot, Mapping) and snapshot.get("auto_compacted") is True
 
 
 def _build_title(thread_id: str, messages: list[Any]) -> str:
