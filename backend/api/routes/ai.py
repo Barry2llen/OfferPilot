@@ -44,6 +44,7 @@ from services import (
 )
 from utils.tool_outputs import summarize_tool_output
 from utils.i18n import localize_error, request_locale
+from utils.stream import render_sse_event, to_jsonable
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -265,13 +266,13 @@ def _extract_content(messages: list[BaseMessage]) -> Any:
     if _has_display_content(content):
         if isinstance(content, str):
             return content
-        return _to_jsonable(content)
+        return to_jsonable(content)
 
     reasoning_content = _extract_message_reasoning(last_message)
     if reasoning_content:
         return reasoning_content
 
-    return _to_jsonable(content)
+    return to_jsonable(content)
 
 
 def _has_display_content(content: Any) -> bool:
@@ -291,29 +292,6 @@ def _extract_message_reasoning(message: Any) -> str:
     if isinstance(reasoning_content, str) and reasoning_content.strip():
         return reasoning_content
     return ""
-
-
-def _to_jsonable(value: Any) -> Any:
-    if isinstance(value, BaseMessage):
-        payload: dict[str, Any] = {
-            "type": value.type,
-            "content": value.content,
-        }
-        for attr in ("name", "tool_call_id", "status"):
-            attr_value = getattr(value, attr, None)
-            if attr_value is not None:
-                payload[attr] = attr_value
-        return payload
-    if isinstance(value, dict):
-        return {str(key): _to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_to_jsonable(item) for item in value]
-
-    try:
-        json.dumps(value)
-    except TypeError:
-        return str(value)
-    return value
 
 
 def _extract_chunk_text(chunk: Any) -> str:
@@ -412,10 +390,6 @@ def _is_query_interrupt_tool_error(tool_name: str, detail: str) -> bool:
     if tool_name != "query":
         return False
     return "Interrupt(" in detail and "type" in detail and "query" in detail
-
-
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(_to_jsonable(data), ensure_ascii=False)}\n\n"
 
 
 def _get_model_selection(selection_id: int, session: Session):
@@ -783,7 +757,7 @@ async def chat_stream(
         session.commit()
 
     async def event_stream() -> AsyncGenerator[str, None]:
-        yield _sse(
+        yield render_sse_event(
             "thread",
             {
                 "thread_id": thread_id,
@@ -815,7 +789,7 @@ async def chat_stream(
                                 message,
                                 request_locale(request),
                             )
-                        yield _sse(
+                        yield render_sse_event(
                             "interrupt",
                             {
                                 "thread_id": thread_id,
@@ -825,7 +799,7 @@ async def chat_stream(
                     return
 
                 if event_name == "on_tool_start":
-                    yield _sse(
+                    yield render_sse_event(
                         "tool_start",
                         {
                             "thread_id": thread_id,
@@ -838,7 +812,7 @@ async def chat_stream(
                 if event_name == "on_tool_end":
                     output = data.get("output")
                     if _is_tool_error_output(output):
-                        yield _sse(
+                        yield render_sse_event(
                             "tool_error",
                             {
                                 "thread_id": thread_id,
@@ -850,7 +824,7 @@ async def chat_stream(
                         )
                         continue
 
-                    yield _sse(
+                    yield render_sse_event(
                         "tool_end",
                         {
                             "thread_id": thread_id,
@@ -864,7 +838,7 @@ async def chat_stream(
                     detail = str(data.get("error") or data.get("output") or "")
                     if _is_query_interrupt_tool_error(tool_name, detail):
                         continue
-                    yield _sse(
+                    yield render_sse_event(
                         "tool_error",
                         {
                             "thread_id": thread_id,
@@ -877,7 +851,7 @@ async def chat_stream(
                 if event_name == "on_custom_event" and tool_name == "on_reasoning_done":
                     duration_ms = _extract_reasoning_duration_ms(data.get("duration_ms"))
                     if duration_ms is not None:
-                        yield _sse(
+                        yield render_sse_event(
                             "reasoning_done",
                             {
                                 "thread_id": thread_id,
@@ -890,7 +864,7 @@ async def chat_stream(
                     chunk = data.get("chunk")
                     text = _extract_chunk_text(chunk)
                     if text:
-                        yield _sse(
+                        yield render_sse_event(
                             "token",
                             {
                                 "thread_id": thread_id,
@@ -900,7 +874,7 @@ async def chat_stream(
                     else:
                         reasoning = _extract_chunk_reasoning(chunk)
                         if reasoning:
-                            yield _sse(
+                            yield render_sse_event(
                                 "reasoning",
                                 {
                                     "thread_id": thread_id,
@@ -912,13 +886,13 @@ async def chat_stream(
                 if output is not None:
                     final_state = output
         except Exception as error:
-            yield _sse(
+            yield render_sse_event(
                 "error",
                 {"detail": localize_error(error, request_locale(request))},
             )
             return
 
-        yield _sse(
+        yield render_sse_event(
             "final",
             {
                 "thread_id": thread_id,

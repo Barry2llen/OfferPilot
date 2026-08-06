@@ -15,7 +15,7 @@ import type { ChatFileListItem, QueryChoice } from "@/app/lib/api/types";
 import type {
   ChatAttachmentItem,
   ChatInterrupt,
-} from "@/app/hooks/use-chat-stream";
+} from "@/app/lib/chat/types";
 
 interface LocalUploadItem {
   key: string;

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type {
   ChatMessage as ChatMessageType,
   ToolCallEntry,
-} from "@/app/hooks/use-chat-stream";
+} from "@/app/lib/chat/types";
 import ChatAttachmentCard from "@/app/components/chat/chat-attachment-card";
 import MarkdownContent from "@/app/components/chat/markdown-content";
 import ToolCallCard from "@/app/components/chat/tool-call-card";

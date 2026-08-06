@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
-import type { ToolCallEntry } from "@/app/hooks/use-chat-stream";
+import type { ToolCallEntry } from "@/app/lib/chat/types";
 import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 
 type ToolStatus = ToolCallEntry["status"];

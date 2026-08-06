@@ -7,6 +7,27 @@ from typing import Any
 _CONNECTION_RESET_WINERROR = 10054
 _PROACTOR_CONNECTION_LOST_CALLBACK = "_call_connection_lost"
 _HANDLER_MARKER = "_offerpilot_windows_connection_reset_filter"
+_SELECTOR_LOOP_FACTORY = "utils.asyncio_windows:selector_event_loop_factory"
+
+
+def selector_event_loop_factory(
+    use_subprocess: bool = False,
+) -> asyncio.AbstractEventLoop:
+    """Create the selector loop required by Psycopg on Windows.
+
+    The optional Uvicorn flag is accepted for compatibility with its loop
+    setup factories. The selector loop is required for Psycopg in both modes.
+    """
+
+    return asyncio.SelectorEventLoop()
+
+
+def resolve_uvicorn_loop() -> str:
+    """Return a Uvicorn loop factory compatible with the current platform."""
+
+    if sys.platform == "win32":
+        return _SELECTOR_LOOP_FACTORY
+    return "auto"
 
 
 def install_windows_connection_reset_filter(
@@ -71,4 +92,8 @@ def _is_proactor_connection_reset(context: dict[str, Any]) -> bool:
     return _PROACTOR_CONNECTION_LOST_CALLBACK in repr(handle)
 
 
-__all__ = ["install_windows_connection_reset_filter"]
+__all__ = [
+    "install_windows_connection_reset_filter",
+    "resolve_uvicorn_loop",
+    "selector_event_loop_factory",
+]

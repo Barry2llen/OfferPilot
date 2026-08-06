@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
 import utils.asyncio_windows as asyncio_windows
+from uvicorn.config import Config
 
 
 class FakeLoop:
@@ -34,6 +36,52 @@ class OtherWinConnectionResetError(ConnectionResetError):
     @property
     def winerror(self) -> int:
         return 10053
+
+
+def test_selector_event_loop_factory_returns_selector_loop() -> None:
+    loop = asyncio_windows.selector_event_loop_factory()
+    try:
+        assert isinstance(loop, asyncio.SelectorEventLoop)
+    finally:
+        loop.close()
+
+
+def test_selector_event_loop_factory_accepts_uvicorn_setup_argument() -> None:
+    loop = asyncio_windows.selector_event_loop_factory(use_subprocess=False)
+    try:
+        assert isinstance(loop, asyncio.SelectorEventLoop)
+    finally:
+        loop.close()
+
+
+def test_selector_event_loop_factory_matches_uvicorn_contract() -> None:
+    config = Config(
+        "main:app",
+        loop="utils.asyncio_windows:selector_event_loop_factory",
+    )
+    loop_factory = config.get_loop_factory()
+    assert loop_factory is not None
+
+    loop = loop_factory()
+    try:
+        assert isinstance(loop, asyncio.SelectorEventLoop)
+    finally:
+        loop.close()
+
+
+def test_resolve_uvicorn_loop_uses_selector_factory_on_windows(monkeypatch) -> None:
+    monkeypatch.setattr(asyncio_windows.sys, "platform", "win32")
+
+    assert (
+        asyncio_windows.resolve_uvicorn_loop()
+        == "utils.asyncio_windows:selector_event_loop_factory"
+    )
+
+
+def test_resolve_uvicorn_loop_uses_auto_elsewhere(monkeypatch) -> None:
+    monkeypatch.setattr(asyncio_windows.sys, "platform", "linux")
+
+    assert asyncio_windows.resolve_uvicorn_loop() == "auto"
 
 
 def test_windows_proactor_connection_reset_is_suppressed(monkeypatch) -> None:

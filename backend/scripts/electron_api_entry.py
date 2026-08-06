@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 
 
 def main() -> None:
@@ -14,6 +19,7 @@ def main() -> None:
     os.chdir(runtime_dir)
 
     from main import create_app
+    from utils.asyncio_windows import resolve_uvicorn_loop
 
     fastapi_app = create_app(frontend_dist=args.frontend_dist)
 
@@ -22,6 +28,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         log_level=args.log_level,
+        loop=resolve_uvicorn_loop(),
     )
 
 

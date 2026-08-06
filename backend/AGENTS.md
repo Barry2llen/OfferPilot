@@ -52,7 +52,7 @@ be overridden with `OFFER_PILOT_FRONTEND_DIST` or Electron's
 Use `uv` for dependency management and command execution:
 
 - `uv sync`: install and lock dependencies.
-- `uv run uvicorn main:app --reload`: start the local FastAPI server.
+- `uv run python run_server.py --reload`: start the local FastAPI server with the Windows-compatible Psycopg event loop.
 - `uv run pytest`: run the complete test suite.
 - `uv run pytest tests/unit/test_resume_api.py`: test resume APIs and
   OpenAPI documentation.
@@ -132,7 +132,7 @@ transitions, or compatibility decisions.
 
 ## Testing guidelines
 
-Use `pytest), with new files named `test_*.py` under `tests/unit/`.
+Use `pytest`, with new files named `test_*.py` under `tests/unit/`.
 Add coverage for:
 
 - configuration parsing, including current and legacy configuration shapes;
