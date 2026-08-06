@@ -47,6 +47,7 @@ class DefaultContextBudgetPolicy(ContextBudgetPolicy):
 
         for key in (
             f"{provider_name}:{model_name}",
+            f"{provider_name.lower()}:{model_name}",
             f"{provider_config_name}:{model_name}",
             model_name,
         ):

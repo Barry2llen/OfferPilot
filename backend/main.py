@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent.agents.supervisor import SupervisorAgent, get_supervisor_tools
+from agent.compaction import DatabaseCompactionModelResolver
 from agent.checkpointers import DatabaseCheckpointer
 from api import ai_router, job_description_router, model_config_router, resume_router
 from db.engine import (
@@ -65,6 +66,9 @@ def create_app(
             checkpointer=app.state.checkpointer,
             config=target_config,
             tools=await get_supervisor_tools(config=target_config),
+            compaction_model_resolver=DatabaseCompactionModelResolver(
+                app.state.database
+            ),
         ).get_agent()
         yield
         await app.state.resume_extraction_jobs.shutdown()
@@ -90,7 +94,7 @@ def create_app(
             },
             {
                 "name": "model-config",
-                "description": "Model provider and model selection configuration for available AI services.",
+                "description": "Model provider, model selection, and Supervisor context compaction configuration for available AI services.",
             },
             {
                 "name": "ai",

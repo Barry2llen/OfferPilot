@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -54,18 +53,6 @@ def _tool_schema(tool: BaseTool) -> dict[str, Any]:
     return canonical
 
 
-def _reasoning_token_count(messages: Sequence[BaseMessage]) -> int:
-    reasoning_chars = 0
-    for message in messages:
-        additional_kwargs = getattr(message, "additional_kwargs", None)
-        if not isinstance(additional_kwargs, dict):
-            continue
-        reasoning_content = additional_kwargs.get("reasoning_content")
-        if isinstance(reasoning_content, str):
-            reasoning_chars += len(reasoning_content)
-    return math.ceil(reasoning_chars / 4.0)
-
-
 class ApproximateTokenCounter(TokenCounter):
     """Use LangChain's approximate counter with stable tool schemas."""
 
@@ -81,7 +68,7 @@ class ApproximateTokenCounter(TokenCounter):
         return count_tokens_approximately(
             all_messages,
             tools=stable_tools,
-        ) + _reasoning_token_count(all_messages)
+        )
 
 
 __all__ = ["ApproximateTokenCounter"]

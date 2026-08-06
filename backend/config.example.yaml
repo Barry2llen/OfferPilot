@@ -16,7 +16,6 @@ context_compaction:
   trigger_ratio: 0.80
   target_ratio: 0.65
   keep_recent_turns: 4
-  keep_recent_reasoning_messages: 1
   tool_result_max_characters: 6000
   compact_historical_attachments: true
   model_context_windows: {}

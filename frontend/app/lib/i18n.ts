@@ -342,6 +342,11 @@ const zhCN = {
   settings: {
     title: "模型配置",
     description: "按供应商管理 API 密钥、模型选择和多模态能力",
+    contextCompactionTitle: "上下文压缩模型",
+    contextCompactionDescription: "选择用于超长对话历史总结的模型；不指定时跟随当前对话模型。",
+    contextCompactionModel: "Auto-compact 模型",
+    followCurrentConversationModel: "跟随当前对话模型",
+    contextCompactionUpdated: "上下文压缩模型已更新",
     addProvider: "添加供应商",
     noProviders: "暂无模型供应商配置",
     createFirstProvider: "创建第一个供应商",
@@ -750,6 +755,11 @@ const enUS = {
   settings: {
     title: "Model Settings",
     description: "Manage API keys, model selections, and multimodal capabilities by provider",
+    contextCompactionTitle: "Context compaction model",
+    contextCompactionDescription: "Choose the model used to summarize long conversation history, or follow the current conversation model.",
+    contextCompactionModel: "Auto-compact model",
+    followCurrentConversationModel: "Follow current conversation model",
+    contextCompactionUpdated: "Context compaction model updated",
     addProvider: "Add provider",
     noProviders: "No model providers configured",
     createFirstProvider: "Create your first provider",

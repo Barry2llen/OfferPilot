@@ -26,7 +26,7 @@ class CorsConfig(BaseModel):
 
 
 class ContextCompactionConfig(BaseModel):
-    """Deterministic context-view compaction settings."""
+    """Temporary model-view context compaction settings."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -37,7 +37,6 @@ class ContextCompactionConfig(BaseModel):
     trigger_ratio: float = Field(default=0.80, gt=0.0, le=1.0)
     target_ratio: float = Field(default=0.65, gt=0.0, le=1.0)
     keep_recent_turns: int = Field(default=4, ge=0)
-    keep_recent_reasoning_messages: int = Field(default=1, ge=0)
     tool_result_max_characters: int = Field(default=6_000, ge=1)
     compact_historical_attachments: bool = True
     model_context_windows: dict[str, int] = Field(default_factory=dict)
@@ -73,7 +72,6 @@ class ContextCompactionConfig(BaseModel):
                 self.trigger_ratio,
                 self.target_ratio,
                 self.keep_recent_turns,
-                self.keep_recent_reasoning_messages,
                 self.tool_result_max_characters,
                 self.compact_historical_attachments,
                 tuple(sorted(self.model_context_windows.items())),

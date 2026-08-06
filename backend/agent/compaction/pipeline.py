@@ -7,11 +7,9 @@ from langchain_core.messages import BaseMessage
 from schemas.config.base import Config, ContextCompactionConfig
 
 from .budget import DefaultContextBudgetPolicy
-from .grouping import ContextGrouper
 from .layers import (
-    HardTrimLayer,
+    AutoCompactLayer,
     HistoricalAttachmentCompactor,
-    HistoricalReasoningPruner,
     ToolResultCompactor,
 )
 from .models import (
@@ -22,7 +20,13 @@ from .models import (
     CompactionResult,
     MessageRef,
 )
-from .protocols import CompactionLayer, Compactor, TokenCounter
+from .protocols import (
+    CompactionLayer,
+    CompactionModelResolver,
+    Compactor,
+    TokenCounter,
+)
+from .protection import protect_entries
 from .token_counter import ApproximateTokenCounter
 
 
@@ -46,87 +50,60 @@ def _identity_entries(messages: Sequence[BaseMessage]) -> tuple[CompactedMessage
     )
 
 
-def _identity_actions(
-    entries: Sequence[CompactedMessage],
-) -> tuple[CompactionAction, ...]:
-    return tuple(
-        CompactionAction(
-            layer="identity",
-            kind="keep",
-            sources=entry.sources,
-            reason="Preserved the original message in the model view.",
-        )
-        for entry in entries
-    )
-
-
-class IdentityCompactor(Compactor):
-    def __init__(self, *, token_counter: TokenCounter | None = None) -> None:
-        self.token_counter = (
-            token_counter
-            if token_counter is not None
-            else ApproximateTokenCounter()
-        )
-
-    async def acompact(self, request: CompactionRequest) -> CompactionResult:
-        entries = _identity_entries(request.messages)
-        tokens = await self.token_counter.acount(
-            system_prompts=request.system_prompts,
-            messages=[entry.rendered for entry in entries],
-            tools=request.tools,
-        )
-        return CompactionResult(
-            entries=entries,
-            actions=_identity_actions(entries),
-            original_tokens=tokens,
-            compacted_tokens=tokens,
-            applied_layers=(),
-            reached_target=tokens <= request.budget.target_input_tokens,
-        )
-
-
 class PipelineCompactor(Compactor):
-    """Run deterministic compaction layers over deletion-safe context units."""
+    """Deep orchestration module for a flat, temporary model context view."""
 
     def __init__(
         self,
         *,
         token_counter: TokenCounter,
-        grouper: ContextGrouper,
+        keep_recent_turns: int,
         layers: Sequence[CompactionLayer],
     ) -> None:
+        if keep_recent_turns < 0:
+            raise ValueError("keep_recent_turns must be non-negative.")
         self.token_counter = token_counter
-        self.grouper = grouper
+        self.keep_recent_turns = keep_recent_turns
         self.layers = tuple(layers)
 
     async def acompact(self, request: CompactionRequest) -> CompactionResult:
-        entries = _identity_entries(request.messages)
+        messages = tuple(request.runtime.state.get("messages", ()))
+        entries = protect_entries(
+            _identity_entries(messages),
+            keep_recent_turns=self.keep_recent_turns,
+        )
         context = CompactionContext(
             request=request,
-            units=self.grouper.group(entries),
-            actions=_identity_actions(entries),
+            entries=entries,
+            current_tokens=0,
         )
         original_tokens = await self._count(context)
+        context = context.with_current_tokens(original_tokens)
 
-        if original_tokens <= request.budget.trigger_input_tokens:
-            return self._result(
-                context,
-                original_tokens=original_tokens,
-                compacted_tokens=original_tokens,
-            )
-
-        compacted_tokens = original_tokens
         for layer in self.layers:
+            before_entries = context.entries
+            before_actions = len(context.actions)
             context = await layer.apply(context)
-            context = context.mark_layer(layer.name)
             compacted_tokens = await self._count(context)
-            if compacted_tokens <= request.budget.target_input_tokens:
-                break
+            context = context.with_current_tokens(compacted_tokens)
 
-        return self._result(
-            context,
+            changed = (
+                context.entries != before_entries
+                or len(context.actions) > before_actions
+            )
+            if changed:
+                context = context.mark_layer(layer.name)
+
+        return CompactionResult(
+            entries=context.entries,
+            actions=context.actions,
             original_tokens=original_tokens,
-            compacted_tokens=compacted_tokens,
+            compacted_tokens=context.current_tokens,
+            applied_layers=context.applied_layers,
+            reached_target=(
+                context.current_tokens <= request.budget.target_input_tokens
+            ),
+            warnings=context.warnings,
         )
 
     async def _count(self, context: CompactionContext) -> int:
@@ -136,50 +113,36 @@ class PipelineCompactor(Compactor):
             tools=context.request.tools,
         )
 
-    @staticmethod
-    def _result(
-        context: CompactionContext,
-        *,
-        original_tokens: int,
-        compacted_tokens: int,
-    ) -> CompactionResult:
-        return CompactionResult(
-            entries=context.entries,
-            actions=context.actions,
-            original_tokens=original_tokens,
-            compacted_tokens=compacted_tokens,
-            applied_layers=context.applied_layers,
-            reached_target=compacted_tokens <= context.request.budget.target_input_tokens,
-            warnings=context.warnings,
-        )
 
-
-def build_default_compactor(config: Config) -> Compactor:
+def build_supervisor_compactor(
+    config: Config,
+    *,
+    model_resolver: CompactionModelResolver | None = None,
+    token_counter: TokenCounter | None = None,
+) -> Compactor | None:
     settings: ContextCompactionConfig = config.context_compaction
-    token_counter = ApproximateTokenCounter()
     if not settings.enabled:
-        return IdentityCompactor(token_counter=token_counter)
+        return None
 
+    counter = token_counter if token_counter is not None else ApproximateTokenCounter()
+    budget_policy = DefaultContextBudgetPolicy(settings)
     return PipelineCompactor(
-        token_counter=token_counter,
-        grouper=ContextGrouper(keep_recent_turns=settings.keep_recent_turns),
+        token_counter=counter,
+        keep_recent_turns=settings.keep_recent_turns,
         layers=(
-            HistoricalReasoningPruner(
-                keep_recent_reasoning_messages=settings.keep_recent_reasoning_messages
-            ),
             ToolResultCompactor(
                 max_characters=settings.tool_result_max_characters,
             ),
             HistoricalAttachmentCompactor(
                 enabled=settings.compact_historical_attachments,
             ),
-            HardTrimLayer(token_counter=token_counter),
+            AutoCompactLayer(
+                model_resolver=model_resolver,
+                budget_policy=budget_policy,
+                token_counter=counter,
+            ),
         ),
     )
 
 
-__all__ = [
-    "IdentityCompactor",
-    "PipelineCompactor",
-    "build_default_compactor",
-]
+__all__ = ["PipelineCompactor", "build_supervisor_compactor"]

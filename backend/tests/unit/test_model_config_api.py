@@ -130,6 +130,46 @@ def test_model_selection_api_crud_and_provider_reference_conflict(
     assert missing_provider.status_code == 404
 
 
+def test_context_compaction_settings_follow_current_or_use_selected_model(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        client.post(
+            "/model-providers",
+            json={"provider": "OpenAI", "name": "default-openai"},
+        )
+        selection = client.post(
+            "/model-selections",
+            json={
+                "provider_name": "default-openai",
+                "model_name": "gpt-4o-mini",
+            },
+        )
+        initial = client.get("/context-compaction-settings")
+        updated = client.patch(
+            "/context-compaction-settings",
+            json={"model_selection_id": selection.json()["id"]},
+        )
+        cleared = client.patch(
+            "/context-compaction-settings",
+            json={"model_selection_id": None},
+        )
+        invalid = client.patch(
+            "/context-compaction-settings",
+            json={"model_selection_id": 999},
+        )
+
+    assert initial.status_code == 200
+    assert initial.json() == {"model_selection_id": None}
+    assert updated.status_code == 200
+    assert updated.json()["model_selection_id"] == selection.json()["id"]
+    assert cleared.status_code == 200
+    assert cleared.json() == {"model_selection_id": None}
+    assert invalid.status_code == 404
+
+
 def test_model_provider_api_accepts_deepseek(
     temporary_app_config: Config,
 ) -> None:
@@ -164,6 +204,7 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     payload = response.json()
     assert "/model-providers" in payload["paths"]
     assert "/model-selections" in payload["paths"]
+    assert "/context-compaction-settings" in payload["paths"]
     assert payload["paths"]["/model-providers"]["post"]["summary"] == "Create a model provider"
     assert payload["paths"]["/model-selections"]["post"]["summary"] == "Create a model selection"
     assert "ModelProviderResponse" in payload["components"]["schemas"]

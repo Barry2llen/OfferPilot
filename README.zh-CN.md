@@ -143,7 +143,7 @@ Windows 发布由 `.github/workflows/build-windows-release.yml` 中的
 - `chat_file_upload_dir`：默认 `./data/chat_files`，用于 AI 对话附件和文件库。
 - `cors`：本地开发默认允许跨域。
 - `exa_api_key`：存在时启用 Exa Web Search 工具；缺失时禁用相关工具。
-- `web_search`、`model_call_retry_attempts`、`graph_recursion_limit`、`context_compaction`、`debug`：用于 Agent 工具、重试、LangGraph 递归上限、确定性模型上下文压缩和调试行为。`context_compaction` 配置块可以省略，缺失字段会使用经过校验的默认值。
+- `web_search`、`model_call_retry_attempts`、`graph_recursion_limit`、`context_compaction`、`debug`：用于 Agent 工具、重试、LangGraph 递归上限、分层模型上下文压缩和调试行为。`context_compaction` 配置块可以省略，缺失字段会使用经过校验的默认值。Supervisor 的 auto-compact 模型可以跟随当前对话模型，也可以在模型配置页单独指定。
 
 前端和静态托管运行时配置：
 

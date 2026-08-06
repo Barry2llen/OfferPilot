@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db.repositories import ModelProviderRepository, ModelSelectionRepository
+from db.repositories import ContextCompactionSettingsRepository
 from exceptions import (
     ModelProviderAlreadyExistsError,
     ModelProviderNotFoundError,
@@ -24,7 +25,15 @@ from schemas.model_selection import (
     ModelSelectionResponse,
     ModelSelectionUpdate,
 )
-from services import ModelProviderService, ModelSelectionService
+from schemas.context_compaction import (
+    ContextCompactionSettingsResponse,
+    ContextCompactionSettingsUpdate,
+)
+from services import (
+    ContextCompactionSettingsService,
+    ModelProviderService,
+    ModelSelectionService,
+)
 
 router = APIRouter(tags=["model-config"])
 
@@ -107,6 +116,59 @@ async def list_model_providers(
 ) -> list[ModelProviderResponse]:
     service = ModelProviderService(ModelProviderRepository(session))
     return [_provider_response(provider) for provider in service.list_all()]
+
+
+@router.get(
+    "/context-compaction-settings",
+    response_model=ContextCompactionSettingsResponse,
+    summary="Get context compaction settings",
+    description=(
+        "Return the optional auto-compaction model selection. A null selection "
+        "follows the model selected for the current conversation."
+    ),
+    response_description="Returns the current context compaction setting.",
+)
+async def get_context_compaction_settings(
+    session: Session = Depends(_get_request_db_session),
+) -> ContextCompactionSettingsResponse:
+    service = ContextCompactionSettingsService(
+        ContextCompactionSettingsRepository(session),
+        ModelSelectionRepository(session),
+    )
+    return service.get()
+
+
+@router.patch(
+    "/context-compaction-settings",
+    response_model=ContextCompactionSettingsResponse,
+    summary="Update context compaction settings",
+    description=(
+        "Set the optional auto-compaction model selection, or pass null to "
+        "follow the model selected for the current conversation."
+    ),
+    response_description="Returns the updated context compaction setting.",
+    responses={
+        404: _error_response(
+            "The requested model selection was not found.",
+            example="Model selection not found: 1",
+        ),
+    },
+)
+async def update_context_compaction_settings(
+    payload: ContextCompactionSettingsUpdate,
+    session: Session = Depends(_get_request_db_session),
+) -> ContextCompactionSettingsResponse:
+    service = ContextCompactionSettingsService(
+        ContextCompactionSettingsRepository(session),
+        ModelSelectionRepository(session),
+    )
+    try:
+        updated = service.update(payload.model_selection_id)
+        _commit_or_rollback(session)
+        return updated
+    except ModelSelectionNotFoundError as error:
+        session.rollback()
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get(

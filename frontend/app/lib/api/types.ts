@@ -172,6 +172,15 @@ export interface ModelSelectionUpdate {
   supports_image_input?: boolean | null;
 }
 
+// ─── Context Compaction Settings ───
+export interface ContextCompactionSettingsResponse {
+  model_selection_id: number | null;
+}
+
+export interface ContextCompactionSettingsUpdate {
+  model_selection_id: number | null;
+}
+
 // ─── Chat Files ───
 export interface ChatAttachmentRef {
   file_id: string;

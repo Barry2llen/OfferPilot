@@ -1,8 +1,9 @@
 import { FileText, Image } from "lucide-react";
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
+import { contextCompactionSettingsApi } from "@/app/lib/api/context-compaction-settings";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { useToast } from "@/app/components/ui/toast";
 import ProviderCard from "@/app/components/settings/provider-card";
@@ -21,11 +22,13 @@ import type {
   ModelSelectionResponse,
   ModelSelectionCreate,
   ModelSelectionUpdate,
+  ContextCompactionSettingsResponse,
 } from "@/app/lib/api/types";
 
 interface ModelConfigData {
   providers: ModelProviderResponse[];
   selections: ModelSelectionResponse[];
+  contextCompactionSettings: ContextCompactionSettingsResponse;
 }
 
 const EMPTY_PROVIDERS: ModelProviderResponse[] = [];
@@ -42,13 +45,26 @@ export default function ProvidersPage() {
         modelProvidersApi.list(),
         modelSelectionsApi.list(),
       ]);
-      return { providers, selections };
+      const contextCompactionSettings =
+        await contextCompactionSettingsApi.get();
+      return { providers, selections, contextCompactionSettings };
     },
   );
 
   const { addToast } = useToast();
   const providers = data?.providers ?? EMPTY_PROVIDERS;
   const selections = data?.selections ?? EMPTY_SELECTIONS;
+  const [compactionModelSelectionId, setCompactionModelSelectionId] =
+    useState<number | null>(null);
+  const [compactionSettingsSubmitting, setCompactionSettingsSubmitting] =
+    useState(false);
+  useEffect(() => {
+    if (data?.contextCompactionSettings) {
+      setCompactionModelSelectionId(
+        data.contextCompactionSettings.model_selection_id,
+      );
+    }
+  }, [data?.contextCompactionSettings]);
   const selectionsByProvider = useMemo(() => {
     const grouped = new Map<string, ModelSelectionResponse[]>();
     for (const selection of selections) {
@@ -80,6 +96,29 @@ export default function ProvidersPage() {
     useState<ModelProviderResponse | null>(null);
   const [confirmSelectionDelete, setConfirmSelectionDelete] =
     useState<ModelSelectionResponse | null>(null);
+
+  const handleCompactionModelChange = async (
+    event: ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const previous = compactionModelSelectionId;
+    const next = event.target.value ? Number(event.target.value) : null;
+    setCompactionModelSelectionId(next);
+    setCompactionSettingsSubmitting(true);
+    try {
+      const updated = await contextCompactionSettingsApi.update({
+        model_selection_id: next,
+      });
+      setCompactionModelSelectionId(updated.model_selection_id);
+      addToast(t("settings.contextCompactionUpdated"), "success");
+    } catch (err: unknown) {
+      setCompactionModelSelectionId(previous);
+      const msg =
+        err instanceof Error ? err.message : t("settings.operationFailed");
+      addToast(msg, "error");
+    } finally {
+      setCompactionSettingsSubmitting(false);
+    }
+  };
 
   const handleProviderCreate = () => {
     setEditingProvider(null);
@@ -240,6 +279,40 @@ export default function ProvidersPage() {
           </div>
           <Button onClick={handleProviderCreate}>{t("settings.addProvider")}</Button>
         </div>
+
+        <section className="mb-6 rounded-[20px] border border-border-light bg-surface-secondary/60 p-5">
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold text-text-primary">
+              {t("settings.contextCompactionTitle")}
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              {t("settings.contextCompactionDescription")}
+            </p>
+          </div>
+          <label className="block text-sm font-medium text-text-primary">
+            {t("settings.contextCompactionModel")}
+            <select
+              className="mt-2 h-10 w-full rounded-lg border border-border-default bg-white px-3 text-sm text-text-primary outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 sm:max-w-[520px]"
+              value={compactionModelSelectionId ?? ""}
+              onChange={handleCompactionModelChange}
+              disabled={compactionSettingsSubmitting}
+            >
+              <option value="">
+                {t("settings.followCurrentConversationModel")}
+              </option>
+              {selections.map((selection) => (
+                <option key={selection.id} value={selection.id}>
+                  {selection.provider.name} / {selection.model_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {compactionSettingsSubmitting ? (
+            <p className="mt-2 text-xs text-text-muted">
+              {t("common.saving")}
+            </p>
+          ) : null}
+        </section>
 
         {providers && providers.length === 0 ? (
           <div className="text-center py-16 border-2 border-dashed border-border-default rounded-[20px]">

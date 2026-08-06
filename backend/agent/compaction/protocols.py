@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 from langgraph._internal._typing import StateLike
 
-from ..base import BaseAgentState
+from ..base import BaseAgentState, GraphRuntime
 from schemas.model_selection import ModelSelection
 
 from .models import (
@@ -49,9 +49,15 @@ class ContextBudgetPolicy(Protocol):
         ...
 
 
+class CompactionModelResolver[State: StateLike = BaseAgentState](Protocol):
+    async def aresolve(self, runtime: "GraphRuntime[State]") -> ModelSelection:
+        ...
+
+
 __all__ = [
     "CompactionLayer",
     "Compactor",
+    "CompactionModelResolver",
     "ContextBudgetPolicy",
     "TokenCounter",
 ]

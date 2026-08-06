@@ -15,11 +15,11 @@ from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
 
 from ..models import load_chat_model
 from ..compaction import (
+    ContextCompactionError,
     CompactionRequest,
     Compactor,
     ContextBudgetPolicy,
     DefaultContextBudgetPolicy,
-    build_default_compactor,
 )
 from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
 from ..base import (
@@ -158,11 +158,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
         self._interrupt_tools: list[tuple[str, ToolCall, BaseTool]] = []
-        self.compactor = (
-            compactor
-            if compactor is not None
-            else build_default_compactor(self.config)
-        )
+        self.compactor = compactor
         self.context_budget_policy = (
             context_budget_policy
             if context_budget_policy is not None
@@ -356,37 +352,66 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                         f"Model loading failed with error: {msg}. Interrupt received with type {resp['type']} and message {resp.get('prompt', '')}"
                     )
 
-        budget = self.context_budget_policy.resolve(model_selection)  # type: ignore[arg-type]
-        compaction_result = await self.compactor.acompact(
-            CompactionRequest(
-                runtime=self.get_runtime(state),
-                messages=tuple(state.get("messages", [])),
-                system_prompts=tuple(system_prompts),
-                tools=tuple(tools),
-                model_selection=model_selection,  # type: ignore[arg-type]
-                budget=budget,
-            )
-        )
         model_input = [
             *system_prompts,
-            *compaction_result.model_messages,
+            *state.get("messages", []),
         ]
-        logger.debug(
-            "Context compaction completed: "
-            f"original_tokens={compaction_result.original_tokens}, "
-            f"compacted_tokens={compaction_result.compacted_tokens}, "
-            f"trigger_input_tokens={budget.trigger_input_tokens}, "
-            f"target_input_tokens={budget.target_input_tokens}, "
-            f"applied_layers={compaction_result.applied_layers}, "
-            f"reached_target={compaction_result.reached_target}, "
-            f"original_messages={len(state.get('messages', []))}, "
-            f"model_messages={len(compaction_result.model_messages)}"
-        )
-        if compaction_result.warnings:
-            logger.warning(
-                "Context compaction warnings: "
-                f"{compaction_result.warnings}"
+        if self.compactor is not None:
+            try:
+                budget = self.context_budget_policy.resolve(model_selection)  # type: ignore[arg-type]
+                compaction_result = await self.compactor.acompact(
+                    CompactionRequest(
+                        runtime=self.get_runtime(state),
+                        system_prompts=tuple(system_prompts),
+                        tools=tuple(tools),
+                        budget=budget,
+                    )
+                )
+            except ContextCompactionError as error:
+                message = f"Context compaction failed: {error}"
+                logger.error(message)
+                await _adispatch_custom_event_safely(
+                    "on_model_call_error",
+                    ModelCallErrorEvent(
+                        error=message,
+                        attempt=1,
+                        max_attempts=1,
+                    ),
+                )
+                raise ModelCallExecutionError(message) from error
+            except Exception as error:
+                message = f"Context compaction failed: {error}"
+                logger.error(message)
+                await _adispatch_custom_event_safely(
+                    "on_model_call_error",
+                    ModelCallErrorEvent(
+                        error=message,
+                        attempt=1,
+                        max_attempts=1,
+                    ),
+                )
+                raise ModelCallExecutionError(message) from error
+
+            model_input = [
+                *system_prompts,
+                *compaction_result.model_messages,
+            ]
+            logger.debug(
+                "Context compaction completed: "
+                f"original_tokens={compaction_result.original_tokens}, "
+                f"compacted_tokens={compaction_result.compacted_tokens}, "
+                f"trigger_input_tokens={budget.trigger_input_tokens}, "
+                f"target_input_tokens={budget.target_input_tokens}, "
+                f"applied_layers={compaction_result.applied_layers}, "
+                f"reached_target={compaction_result.reached_target}, "
+                f"original_messages={len(state.get('messages', []))}, "
+                f"model_messages={len(compaction_result.model_messages)}"
             )
+            if compaction_result.warnings:
+                logger.warning(
+                    "Context compaction warnings: "
+                    f"{compaction_result.warnings}"
+                )
 
         while True:
             max_retries = self.config.model_call_retry_attempts

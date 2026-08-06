@@ -17,7 +17,6 @@ from utils.custom_events import (
     _dispatch_custom_event_safely,
 )
 from schemas.config import Config
-from ...compaction import Compactor, ContextBudgetPolicy
 from schemas.command import BaseCommand
 from schemas.model_selection import ModelSelection
 from schemas.job_description import (
@@ -106,8 +105,6 @@ class JdAnalyzerAgent(BaseAgent[State]):
         self,
         *args,
         config: Config | None = None,
-        compactor: Compactor[State] | None = None,
-        context_budget_policy: ContextBudgetPolicy | None = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, config=config, **kwargs)
@@ -118,8 +115,6 @@ class JdAnalyzerAgent(BaseAgent[State]):
             system_prompts=jd_web_search_system_prompt,
             config=config,
             tools=lambda runtime: _get_jd_source_tools(config),
-            compactor=compactor,
-            context_budget_policy=context_budget_policy,
         ).get_compiled_graph()
 
     def _prepare_jd_source_node(self, state: State) -> State:

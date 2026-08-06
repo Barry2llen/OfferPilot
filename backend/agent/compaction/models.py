@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Callable, Literal, TypeAlias
+from typing import Callable, Literal
 
 from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 from langgraph._internal._typing import StateLike
 
 from ..base import BaseAgentState, GraphRuntime
-from schemas.model_selection import ModelSelection
 
 
 CompactionEntryKind = Literal["identity", "rewrite", "summary"]
@@ -29,12 +28,13 @@ class MessageRef:
 
 @dataclass(frozen=True, slots=True)
 class CompactedMessage:
-    """A traceable rendered message, not a message sent to LangGraph state."""
+    """A traceable model-view message, never written back to graph state."""
 
     rendered: BaseMessage
     sources: tuple[MessageRef, ...]
     kind: CompactionEntryKind
     layer: str
+    protected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +44,14 @@ class ContextBudget:
     safety_margin_tokens: int
     trigger_input_tokens: int
     target_input_tokens: int
+
+    @property
+    def available_input_tokens(self) -> int:
+        return (
+            self.max_context_tokens
+            - self.reserved_output_tokens
+            - self.safety_margin_tokens
+        )
 
     def __post_init__(self) -> None:
         if self.max_context_tokens <= 0:
@@ -60,8 +68,10 @@ class ContextBudget:
             raise ValueError("trigger_input_tokens must be greater than target_input_tokens.")
         if self.target_input_tokens < 0:
             raise ValueError("target_input_tokens must be non-negative.")
-        if self.trigger_input_tokens > self.max_context_tokens:
-            raise ValueError("trigger_input_tokens cannot exceed max_context_tokens.")
+        if self.trigger_input_tokens > self.available_input_tokens:
+            raise ValueError(
+                "trigger_input_tokens cannot exceed available input capacity."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,61 +84,49 @@ class CompactionAction:
 
 @dataclass(frozen=True, slots=True)
 class CompactionRequest[State: StateLike = BaseAgentState]:
+    """Inputs resolved by ModelCallGraph and runtime-visible state."""
+
     runtime: GraphRuntime[State]
-    messages: tuple[BaseMessage, ...]
     system_prompts: tuple[BaseMessage, ...]
     tools: tuple[BaseTool, ...]
-    model_selection: ModelSelection
     budget: ContextBudget
 
 
 @dataclass(frozen=True, slots=True)
-class SingleMessageUnit:
-    entries: tuple[CompactedMessage, ...]
-    protected: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class ToolExchangeUnit:
-    entries: tuple[CompactedMessage, ...]
-    tool_call_ids: tuple[str, ...]
-    complete: bool
-    protected: bool = False
-
-
-ContextUnit: TypeAlias = SingleMessageUnit | ToolExchangeUnit
-
-
-@dataclass(frozen=True, slots=True)
 class CompactionContext[State: StateLike = BaseAgentState]:
+    """The immutable temporary model view passed through all layers."""
+
     request: CompactionRequest[State]
-    units: tuple[ContextUnit, ...]
+    entries: tuple[CompactedMessage, ...]
+    current_tokens: int
     actions: tuple[CompactionAction, ...] = ()
     applied_layers: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
 
     @property
-    def entries(self) -> tuple[CompactedMessage, ...]:
-        return tuple(entry for unit in self.units for entry in unit.entries)
-
-    @property
     def model_messages(self) -> list[BaseMessage]:
         return [entry.rendered for entry in self.entries]
+
+    @property
+    def protected_entries(self) -> tuple[CompactedMessage, ...]:
+        return tuple(entry for entry in self.entries if entry.protected)
 
     def map_entries(
         self,
         transform: Callable[[CompactedMessage], CompactedMessage],
     ) -> CompactionContext[State]:
-        return replace(
-            self,
-            units=tuple(
-                replace(unit, entries=tuple(transform(entry) for entry in unit.entries))
-                for unit in self.units
-            ),
-        )
+        return replace(self, entries=tuple(transform(entry) for entry in self.entries))
 
-    def with_units(self, units: tuple[ContextUnit, ...]) -> CompactionContext[State]:
-        return replace(self, units=units)
+    def with_entries(
+        self,
+        entries: tuple[CompactedMessage, ...],
+    ) -> CompactionContext[State]:
+        return replace(self, entries=entries)
+
+    def with_current_tokens(self, current_tokens: int) -> CompactionContext[State]:
+        if current_tokens < 0:
+            raise ValueError("current_tokens must be non-negative.")
+        return replace(self, current_tokens=current_tokens)
 
     def add_actions(
         self,
@@ -142,7 +140,10 @@ class CompactionContext[State: StateLike = BaseAgentState]:
         return replace(self, applied_layers=(*self.applied_layers, name))
 
     def add_warnings(self, *warnings: str) -> CompactionContext[State]:
-        return replace(self, warnings=(*self.warnings, *warnings))
+        new_warnings = tuple(warning for warning in warnings if warning)
+        if not new_warnings:
+            return self
+        return replace(self, warnings=(*self.warnings, *new_warnings))
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,8 +169,6 @@ __all__ = [
     "CompactionRequest",
     "CompactionResult",
     "ContextBudget",
-    "ContextUnit",
+    "CompactedMessage",
     "MessageRef",
-    "SingleMessageUnit",
-    "ToolExchangeUnit",
 ]

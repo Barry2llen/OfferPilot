@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 
 from langchain_core.messages import HumanMessage
 
@@ -48,16 +47,18 @@ def _content_preview(content: object) -> str:
             return block[:800]
         if not isinstance(block, Mapping):
             continue
-        block_type = block.get("type")
-        text = block.get("text")
-        if block_type == "text" and isinstance(text, str) and text.strip():
-            return text[:800]
+        if block.get("type") == "text":
+            text = block.get("text")
+            if isinstance(text, str) and text.strip():
+                return text[:800]
     return ""
 
 
-def _attachment_reference_view(message: HumanMessage, attachments: list[dict[str, str]]) -> str:
-    additional_kwargs = message.additional_kwargs
-    display_content = additional_kwargs.get("display_content")
+def _attachment_reference_view(
+    message: HumanMessage,
+    attachments: list[dict[str, str]],
+) -> str:
+    display_content = message.additional_kwargs.get("display_content")
     visible_text = (
         display_content
         if isinstance(display_content, str) and display_content.strip()
@@ -65,19 +66,19 @@ def _attachment_reference_view(message: HumanMessage, attachments: list[dict[str
     )
     visible_text = visible_text.strip()[:800]
     if not visible_text:
-        visible_text = "（未提供可见用户文本）"
+        visible_text = "No visible user text was provided."
 
     references = "\n".join(
         f"- {item['file_id']} ({item['filename']}, mode={item['injection_mode']})"
         for item in attachments
     )
     return (
-        "[历史附件上下文已压缩]\n\n"
-        "用户当时的消息：\n"
+        "[Historical attachment context compacted]\n\n"
+        "User message at that time:\n"
         f"{visible_text}\n\n"
-        "附件引用：\n"
+        "Attachment references:\n"
         f"{references}\n\n"
-        "完整附件内容未重复放入本次模型上下文。"
+        "Full attachment content is not repeated in this model context."
     )
 
 
@@ -92,59 +93,44 @@ class HistoricalAttachmentCompactor:
             return context
 
         actions: list[CompactionAction] = []
+        rewritten_entries: list[CompactedMessage] = []
 
-        def rewrite(entry: CompactedMessage) -> CompactedMessage:
+        for entry in context.entries:
             message = entry.rendered
-            if not isinstance(message, HumanMessage):
-                return entry
-            attachments = _valid_attachments(message.additional_kwargs.get("attachments"))
-            if attachments is None:
-                return entry
+            attachments = (
+                _valid_attachments(message.additional_kwargs.get("attachments"))
+                if isinstance(message, HumanMessage)
+                else None
+            )
+            if entry.protected or attachments is None:
+                rewritten_entries.append(entry)
+                continue
 
-            rewritten_message = message.model_copy(
-                update={"content": _attachment_reference_view(message, attachments)}
+            rewritten_entries.append(
+                CompactedMessage(
+                    rendered=message.model_copy(
+                        update={
+                            "content": _attachment_reference_view(message, attachments)
+                        }
+                    ),
+                    sources=entry.sources,
+                    kind="rewrite",
+                    layer=self.name,
+                    protected=entry.protected,
+                )
             )
             actions.append(
                 CompactionAction(
                     layer=self.name,
                     kind="rewrite",
                     sources=entry.sources,
-                    reason="Replaced historical attachment bodies with deterministic file references.",
+                    reason=(
+                        "Replaced historical attachment bodies with deterministic file references."
+                    ),
                 )
             )
-            return CompactedMessage(
-                rendered=rewritten_message,
-                sources=entry.sources,
-                kind="rewrite",
-                layer=self.name,
-            )
 
-        units = context.units
-        # Protection is evaluated at the unit level so the latest user turn and
-        # recent turns cannot be rewritten as historical attachment context.
-        protected_entry_sources = {
-            source
-            for unit in units
-            if unit.protected
-            for entry in unit.entries
-            for source in entry.sources
-        }
-
-        def rewrite_if_old(entry: CompactedMessage) -> CompactedMessage:
-            if any(source in protected_entry_sources for source in entry.sources):
-                return entry
-            return rewrite(entry)
-
-        compacted_units = tuple(
-            unit
-            if unit.protected
-            else replace(
-                unit,
-                entries=tuple(rewrite_if_old(entry) for entry in unit.entries),
-            )
-            for unit in units
-        )
-        return context.with_units(compacted_units).add_actions(*actions)
+        return context.with_entries(tuple(rewritten_entries)).add_actions(*actions)
 
 
 __all__ = ["HistoricalAttachmentCompactor"]

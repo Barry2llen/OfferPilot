@@ -18,6 +18,14 @@ CREATE TABLE IF NOT EXISTS tb_model_selection (
     FOREIGN KEY (provider_name) REFERENCES tb_model_provider(name)
 );
 
+CREATE TABLE IF NOT EXISTS tb_context_compaction_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    model_selection_id INTEGER,
+    FOREIGN KEY (model_selection_id)
+        REFERENCES tb_model_selection(id)
+        ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS tb_chat (
     id INTEGER PRIMARY KEY,
     title VARCHAR(255) NOT NULL,

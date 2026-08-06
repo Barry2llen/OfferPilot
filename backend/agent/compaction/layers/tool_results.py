@@ -6,12 +6,7 @@ from typing import Any
 
 from langchain_core.messages import ToolMessage
 
-from ..models import (
-    CompactedMessage,
-    CompactionAction,
-    CompactionContext,
-    ToolExchangeUnit,
-)
+from ..models import CompactedMessage, CompactionAction, CompactionContext
 
 
 _PREFERRED_KEYS = (
@@ -33,7 +28,7 @@ def _shorten_text(value: str, limit: int) -> str:
     if limit <= 12:
         return value[: max(1, limit)]
     omitted = len(value) - limit
-    marker = f"...[省略 {omitted} 个字符]..."
+    marker = f"...[omitted {omitted} characters]..."
     if len(marker) >= limit:
         return value[:limit]
     remaining = limit - len(marker)
@@ -42,7 +37,12 @@ def _shorten_text(value: str, limit: int) -> str:
     return f"{value[:head]}{marker}{value[-tail:]}"
 
 
-def _compact_json_value(value: Any, *, string_limit: int = 320, array_limit: int = 5) -> Any:
+def _compact_json_value(
+    value: Any,
+    *,
+    string_limit: int = 320,
+    array_limit: int = 5,
+) -> Any:
     if isinstance(value, str):
         return _shorten_text(value, string_limit)
     if isinstance(value, list):
@@ -59,7 +59,11 @@ def _compact_json_value(value: Any, *, string_limit: int = 320, array_limit: int
         remaining: list[tuple[str, Any]] = []
         normalized_preferred = {key.lower().replace("_", " ") for key in _PREFERRED_KEYS}
         for key, item in value.items():
-            target = preferred if str(key).lower().replace("_", " ") in normalized_preferred else remaining
+            target = (
+                preferred
+                if str(key).lower().replace("_", " ") in normalized_preferred
+                else remaining
+            )
             target.append((str(key), item))
 
         selected = [*preferred, *remaining[:4]]
@@ -76,7 +80,11 @@ def _compact_json_value(value: Any, *, string_limit: int = 320, array_limit: int
             result["_omitted_keys"] = omitted
         return result
     if isinstance(value, tuple):
-        return _compact_json_value(list(value), string_limit=string_limit, array_limit=array_limit)
+        return _compact_json_value(
+            list(value),
+            string_limit=string_limit,
+            array_limit=array_limit,
+        )
     return value
 
 
@@ -130,11 +138,11 @@ def _content_as_text(content: object) -> str:
 
 def _compact_text_content(content: str, *, tool_name: str, max_characters: int) -> str:
     header = (
-        "[历史工具结果已压缩]\n"
-        f"工具: {tool_name}\n"
-        f"原始字符数: {len(content)}\n\n"
+        "[Historical tool result compacted]\n"
+        f"Tool: {tool_name}\n"
+        f"Original characters: {len(content)}\n\n"
     )
-    footer_template = "\n\n...[省略 {omitted} 个字符]...\n\n"
+    footer_template = "\n\n...[omitted {omitted} characters]...\n\n"
     available = max_characters - len(header) - len(footer_template.format(omitted=0))
     if available > 2:
         head_limit = max(1, round(available * 0.62))
@@ -153,11 +161,11 @@ def _compact_text_content(content: str, *, tool_name: str, max_characters: int) 
         if len(candidate) > max_characters:
             candidate = candidate[:max_characters]
     else:
-        candidate = "[历史工具结果已压缩]"[:max_characters]
+        candidate = "[Historical tool result compacted]"[:max_characters]
 
     if len(candidate) < len(content):
         return candidate
-    return "[历史工具结果已压缩]"
+    return "[Historical tool result compacted]"[:max_characters]
 
 
 class ToolResultCompactor:
@@ -170,65 +178,52 @@ class ToolResultCompactor:
 
     async def apply(self, context: CompactionContext) -> CompactionContext:
         actions: list[CompactionAction] = []
+        rewritten_entries: list[CompactedMessage] = []
 
-        def rewrite_unit(unit: ToolExchangeUnit) -> ToolExchangeUnit:
-            if unit.protected or not unit.complete:
-                return unit
+        for entry in context.entries:
+            message = entry.rendered
+            if entry.protected or not isinstance(message, ToolMessage):
+                rewritten_entries.append(entry)
+                continue
 
-            rewritten_entries: list[CompactedMessage] = []
-            for entry in unit.entries:
-                message = entry.rendered
-                if not isinstance(message, ToolMessage):
-                    rewritten_entries.append(entry)
-                    continue
+            content = _content_as_text(message.content)
+            if len(content) <= self.max_characters:
+                rewritten_entries.append(entry)
+                continue
 
-                content = _content_as_text(message.content)
-                if len(content) <= self.max_characters:
-                    rewritten_entries.append(entry)
-                    continue
-
-                compacted = (
-                    _compact_json_content(content, self.max_characters)
-                    or _compact_text_content(
-                        content,
-                        tool_name=str(message.name or "unknown"),
-                        max_characters=self.max_characters,
-                    )
+            compacted = (
+                _compact_json_content(content, self.max_characters)
+                or _compact_text_content(
+                    content,
+                    tool_name=str(message.name or "unknown"),
+                    max_characters=self.max_characters,
                 )
-                if len(compacted) >= len(content):
-                    rewritten_entries.append(entry)
-                    continue
+            )
+            if len(compacted) >= len(content):
+                rewritten_entries.append(entry)
+                continue
 
-                rewritten_message = message.model_copy(update={"content": compacted})
-                rewritten_entries.append(
-                    CompactedMessage(
-                        rendered=rewritten_message,
-                        sources=entry.sources,
-                        kind="rewrite",
-                        layer=self.name,
-                    )
+            rewritten_entries.append(
+                CompactedMessage(
+                    rendered=message.model_copy(update={"content": compacted}),
+                    sources=entry.sources,
+                    kind="rewrite",
+                    layer=self.name,
+                    protected=entry.protected,
                 )
-                actions.append(
-                    CompactionAction(
-                        layer=self.name,
-                        kind="rewrite",
-                        sources=entry.sources,
-                        reason="Compacted an old tool result without changing its tool-call identity.",
-                    )
+            )
+            actions.append(
+                CompactionAction(
+                    layer=self.name,
+                    kind="rewrite",
+                    sources=entry.sources,
+                    reason=(
+                        "Compacted an old tool result without changing its tool-call identity."
+                    ),
                 )
-
-            return ToolExchangeUnit(
-                entries=tuple(rewritten_entries),
-                tool_call_ids=unit.tool_call_ids,
-                complete=unit.complete,
-                protected=unit.protected,
             )
 
-        units = tuple(
-            rewrite_unit(unit) if isinstance(unit, ToolExchangeUnit) else unit
-            for unit in context.units
-        )
-        return context.with_units(units).add_actions(*actions)
+        return context.with_entries(tuple(rewritten_entries)).add_actions(*actions)
 
 
 __all__ = ["ToolResultCompactor"]
