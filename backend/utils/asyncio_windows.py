@@ -10,8 +10,14 @@ _HANDLER_MARKER = "_offerpilot_windows_connection_reset_filter"
 _SELECTOR_LOOP_FACTORY = "utils.asyncio_windows:selector_event_loop_factory"
 
 
-def selector_event_loop_factory() -> asyncio.AbstractEventLoop:
-    """Create the selector loop required by Psycopg async connections on Windows."""
+def selector_event_loop_factory(
+    use_subprocess: bool = False,
+) -> asyncio.AbstractEventLoop:
+    """Create the selector loop required by Psycopg on Windows.
+
+    The optional Uvicorn flag is accepted for compatibility with its loop
+    setup factories. The selector loop is required for Psycopg in both modes.
+    """
 
     return asyncio.SelectorEventLoop()
 
