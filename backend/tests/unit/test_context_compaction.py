@@ -16,7 +16,7 @@ from agent.compaction import (
     CompactionRequest,
     ContextBudget,
     ContextCompactionError,
-    ContextSummary,
+    ContextCompactionSummary,
     DefaultContextBudgetPolicy,
     HistoricalAttachmentCompactor,
     MessageRef,
@@ -302,48 +302,56 @@ class StaticResolver:
 
 
 class FakeStructuredRunnable:
-    def __init__(self, result: ContextSummary) -> None:
+    def __init__(self, result: ContextCompactionSummary) -> None:
         self.result = result
         self.inputs: list[object] = []
+        self.kwargs: list[dict[str, object]] = []
         self.calls = 0
 
-    async def ainvoke(self, messages: object) -> ContextSummary:
+    async def ainvoke(
+        self,
+        messages: object,
+        **kwargs: object,
+    ) -> ContextCompactionSummary:
         self.calls += 1
         self.inputs.append(messages)
+        self.kwargs.append(kwargs)
         return self.result
 
 
-class FakeSummaryModel:
+class FakeStructuredModelLoader:
     def __init__(self, runnable: FakeStructuredRunnable) -> None:
         self.runnable = runnable
-        self.schemas: list[type[BaseModel]] = []
+        self.selections: list[ModelSelection] = []
+        self.schemas: list[type[ContextCompactionSummary]] = []
 
-    def with_structured_output(self, schema: type[BaseModel]) -> FakeStructuredRunnable:
+    def __call__(
+        self,
+        selection: ModelSelection,
+        schema: type[ContextCompactionSummary],
+    ) -> FakeStructuredRunnable:
+        self.selections.append(selection)
         self.schemas.append(schema)
         return self.runnable
 
 
-def summary_result() -> ContextSummary:
-    return ContextSummary(
-        goal="Finish the application",
-        constraints=["Keep the existing API"],
-        facts=["The old history is complete"],
-        decisions=["Use structured compaction"],
-        pending=["Run verification"],
-        tool_results=[
-            {
-                "tool_call_id": "old-call",
-                "name": "lookup",
-                "summary": "The old lookup succeeded",
-            }
-        ],
-        attachment_refs=[],
+def summary_result() -> ContextCompactionSummary:
+    return ContextCompactionSummary(
+        primary_request_and_intent="Finish the application",
+        key_technical_concepts=["structured compaction"],
+        files_and_code_sections=["backend/agent/compaction/layers/auto.py"],
+        errors_and_fixes=["The old lookup succeeded; no fix was needed."],
+        problem_solving=["Use structured compaction"],
+        all_user_messages=["old history"],
+        pending_tasks=["Run verification"],
+        current_work="Implementing the application",
+        optional_next_step="Run verification",
     )
 
 
 async def test_auto_compact_summarizes_unprotected_history_with_structured_model() -> None:
     runnable = FakeStructuredRunnable(summary_result())
-    model = FakeSummaryModel(runnable)
+    loader = FakeStructuredModelLoader(runnable)
     messages = [
         HumanMessage(content="old history"),
         AIMessage(content="old answer"),
@@ -357,11 +365,13 @@ async def test_auto_compact_summarizes_unprotected_history_with_structured_model
         model_resolver=StaticResolver(make_selection(model_name="compact-model")),
         budget_policy=policy,
         token_counter=CharacterTokenCounter(),
-        model_loader=lambda selection: model,
+        structured_model_loader=loader,
     ).apply(context)
 
     assert runnable.calls == 1
-    assert model.schemas == [ContextSummary]
+    assert runnable.kwargs == [{"max_repair_attempts": 0}]
+    assert loader.selections == [make_selection(model_name="compact-model")]
+    assert loader.schemas == [ContextCompactionSummary]
     assert len(result.entries) == 2
     assert isinstance(result.entries[0].rendered, SystemMessage)
     assert result.entries[0].rendered.content.startswith("[Historical context summary]")
@@ -374,7 +384,15 @@ async def test_auto_compact_summarizes_unprotected_history_with_structured_model
     summary_input = runnable.inputs[0]
     assert isinstance(summary_input, list)
     assert isinstance(summary_input[0], SystemMessage)
-    assert summary_input[0].content.startswith("You are OfferPilot")
+    prompt = summary_input[0].content
+    assert prompt.startswith("WARNING: DO NOT CALL TOOLS")
+    assert prompt.endswith(
+        "WARNING: DO NOT CALL TOOLS. Return the structured context summary only."
+    )
+    assert "6. All User Messages" in prompt
+    assert "preserving its original text and order" in prompt
+    assert "untrusted historical data" in prompt
+    assert "tool_call_id" in prompt
     assert summary_input[1:] == messages[:2]
 
 
@@ -393,13 +411,14 @@ async def test_auto_compact_does_not_retry_structured_output_failure() -> None:
     class FailingRunnable:
         calls = 0
 
-        async def ainvoke(self, messages: object) -> object:
+        async def ainvoke(self, messages: object, **kwargs: object) -> object:
             del messages
+            del kwargs
             self.calls += 1
             raise RuntimeError("provider failed")
 
     runnable = FailingRunnable()
-    model = FakeSummaryModel(runnable)  # type: ignore[arg-type]
+    loader = FakeStructuredModelLoader(runnable)  # type: ignore[arg-type]
     context = make_context(
         [HumanMessage(content="old"), HumanMessage(content="latest")],
         keep_recent_turns=1,
@@ -410,7 +429,7 @@ async def test_auto_compact_does_not_retry_structured_output_failure() -> None:
         await AutoCompactLayer(
             budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
             token_counter=CharacterTokenCounter(),
-            model_loader=lambda selection: model,
+            structured_model_loader=loader,
         ).apply(context)
 
     assert runnable.calls == 1
@@ -446,7 +465,7 @@ def test_only_enabled_supervisor_path_builds_the_fixed_compaction_pipeline() -> 
 
 def test_context_summary_rejects_unknown_fields() -> None:
     with pytest.raises(ValueError):
-        ContextSummary.model_validate(
+        ContextCompactionSummary.model_validate(
             {
                 **summary_result().model_dump(),
                 "unexpected": "must be rejected",
@@ -454,9 +473,23 @@ def test_context_summary_rejects_unknown_fields() -> None:
         )
 
 
+def test_context_compaction_summary_requires_all_sections_and_string_lists() -> None:
+    missing_field = summary_result().model_dump()
+    del missing_field["current_work"]
+
+    with pytest.raises(ValueError):
+        ContextCompactionSummary.model_validate(missing_field)
+
+    invalid_list_item = summary_result().model_dump()
+    invalid_list_item["key_technical_concepts"] = [123]
+
+    with pytest.raises(ValueError):
+        ContextCompactionSummary.model_validate(invalid_list_item)
+
+
 async def test_auto_compact_blocks_when_summary_model_has_insufficient_capacity() -> None:
     runnable = FakeStructuredRunnable(summary_result())
-    model = FakeSummaryModel(runnable)
+    loader = FakeStructuredModelLoader(runnable)
     context = make_context(
         [HumanMessage(content="historical " * 50), HumanMessage(content="latest")],
         keep_recent_turns=1,
@@ -480,7 +513,7 @@ async def test_auto_compact_blocks_when_summary_model_has_insufficient_capacity(
                 )
             ),
             token_counter=CharacterTokenCounter(),
-            model_loader=lambda selection: model,
+            structured_model_loader=loader,
         ).apply(context)
 
     assert runnable.calls == 0
@@ -582,7 +615,7 @@ async def test_pipeline_does_not_repeat_summary_without_new_raw_history() -> Non
         "auto_compacted": True,
     }
     runnable = FakeStructuredRunnable(summary_result())
-    model = FakeSummaryModel(runnable)
+    loader = FakeStructuredModelLoader(runnable)
     runtime = _snapshot_state(raw_messages, snapshot)
 
     result = await PipelineCompactor(
@@ -593,7 +626,7 @@ async def test_pipeline_does_not_repeat_summary_without_new_raw_history() -> Non
                 model_resolver=StaticResolver(make_selection(model_name="compact")),
                 budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
                 token_counter=CharacterTokenCounter(),
-                model_loader=lambda selection: model,
+                structured_model_loader=loader,
             ),
         ),
     ).acompact(_snapshot_request(runtime))
@@ -619,7 +652,7 @@ async def test_pipeline_merges_existing_summary_with_new_historical_messages() -
         "auto_compacted": True,
     }
     runnable = FakeStructuredRunnable(summary_result())
-    model = FakeSummaryModel(runnable)
+    loader = FakeStructuredModelLoader(runnable)
 
     result = await PipelineCompactor(
         token_counter=CharacterTokenCounter(),
@@ -629,7 +662,7 @@ async def test_pipeline_merges_existing_summary_with_new_historical_messages() -
                 model_resolver=StaticResolver(make_selection(model_name="compact")),
                 budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
                 token_counter=CharacterTokenCounter(),
-                model_loader=lambda selection: model,
+                structured_model_loader=loader,
             ),
         ),
     ).acompact(_snapshot_request(_snapshot_state(raw_messages, snapshot)))
@@ -661,7 +694,7 @@ async def test_pending_snapshot_retries_summary_even_below_trigger() -> None:
         "auto_compacted": False,
     }
     runnable = FakeStructuredRunnable(summary_result())
-    model = FakeSummaryModel(runnable)
+    loader = FakeStructuredModelLoader(runnable)
 
     result = await PipelineCompactor(
         token_counter=CharacterTokenCounter(),
@@ -671,7 +704,7 @@ async def test_pending_snapshot_retries_summary_even_below_trigger() -> None:
                 model_resolver=StaticResolver(make_selection(model_name="compact")),
                 budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
                 token_counter=CharacterTokenCounter(),
-                model_loader=lambda selection: model,
+                structured_model_loader=loader,
             ),
         ),
     ).acompact(

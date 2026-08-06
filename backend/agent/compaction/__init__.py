@@ -1,12 +1,11 @@
 from .budget import DefaultContextBudgetPolicy
 from .errors import ContextCompactionError
 from .layers import (
-    AttachmentReferenceSummary,
     AutoCompactLayer,
+    ContextCompactionSummary,
     ContextSummary,
     HistoricalAttachmentCompactor,
     ToolResultCompactor,
-    ToolResultSummary,
 )
 from .model_resolver import (
     DatabaseCompactionModelResolver,
@@ -40,7 +39,6 @@ from .token_counter import ApproximateTokenCounter
 
 __all__ = [
     "ApproximateTokenCounter",
-    "AttachmentReferenceSummary",
     "AutoCompactLayer",
     "CompactedMessage",
     "CompactionAction",
@@ -55,6 +53,7 @@ __all__ = [
     "ContextBudget",
     "ContextBudgetPolicy",
     "ContextCompactionError",
+    "ContextCompactionSummary",
     "ContextSummary",
     "DatabaseCompactionModelResolver",
     "DefaultContextBudgetPolicy",
@@ -64,7 +63,6 @@ __all__ = [
     "RuntimeCompactionModelResolver",
     "TokenCounter",
     "ToolResultCompactor",
-    "ToolResultSummary",
     "build_supervisor_compactor",
     "model_messages_for_state",
     "resolve_runtime_model_selection",
