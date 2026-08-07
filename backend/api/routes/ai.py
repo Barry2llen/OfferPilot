@@ -414,6 +414,19 @@ def _tool_call_id(event: dict[str, Any], data: dict[str, Any]) -> str | None:
     return None
 
 
+def _event_parent_ids(event: dict[str, Any]) -> set[str]:
+    parent_ids = event.get("parent_ids")
+    if not isinstance(parent_ids, list):
+        return set()
+    return {parent_id for parent_id in parent_ids if isinstance(parent_id, str)}
+
+
+def _is_nested_analysis_tool_event(
+    event: dict[str, Any], analysis_tool_run_ids: set[str]
+) -> bool:
+    return bool(analysis_tool_run_ids.intersection(_event_parent_ids(event)))
+
+
 def _is_query_interrupt_tool_error(tool_name: str, detail: str) -> bool:
     if tool_name != "query":
         return False
@@ -850,6 +863,7 @@ async def chat_stream(
             },
         )
         final_state: dict[str, Any] | None = None
+        analysis_tool_run_ids: set[str] = set()
         try:
             async for event in request.app.state.supervisor_agent.astream_events(
                 agent_input,
@@ -882,8 +896,20 @@ async def chat_stream(
                         )
                     return
 
+                if (
+                    event_name in {"on_tool_start", "on_tool_end", "on_tool_error"}
+                    and _is_nested_analysis_tool_event(
+                        event, analysis_tool_run_ids
+                    )
+                ):
+                    continue
+
                 if event_name == "on_tool_start":
                     tool_call_id = _tool_call_id(event, data)
+                    if tool_name in ANALYSIS_TOOL_NAMES:
+                        run_id = event.get("run_id")
+                        if isinstance(run_id, str) and run_id:
+                            analysis_tool_run_ids.add(run_id)
                     tool_start_data = {
                         "thread_id": thread_id,
                         "tool_name": tool_name,
@@ -918,6 +944,9 @@ async def chat_stream(
                             "tool_error",
                             error_data,
                         )
+                        run_id = event.get("run_id")
+                        if isinstance(run_id, str):
+                            analysis_tool_run_ids.discard(run_id)
                         continue
 
                     tool_end_data = {
@@ -931,11 +960,17 @@ async def chat_stream(
                         "tool_end",
                         tool_end_data,
                     )
+                    run_id = event.get("run_id")
+                    if isinstance(run_id, str):
+                        analysis_tool_run_ids.discard(run_id)
                     continue
 
                 if event_name == "on_tool_error":
                     detail = str(data.get("error") or data.get("output") or "")
                     if _is_query_interrupt_tool_error(tool_name, detail):
+                        run_id = event.get("run_id")
+                        if isinstance(run_id, str):
+                            analysis_tool_run_ids.discard(run_id)
                         continue
                     tool_error_data = {
                         "thread_id": thread_id,
@@ -956,6 +991,9 @@ async def chat_stream(
                         "tool_error",
                         tool_error_data,
                     )
+                    run_id = event.get("run_id")
+                    if isinstance(run_id, str):
+                        analysis_tool_run_ids.discard(run_id)
                     continue
 
                 if event_name == "on_custom_event" and tool_name == "on_reasoning_done":

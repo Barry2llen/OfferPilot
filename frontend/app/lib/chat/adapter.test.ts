@@ -158,7 +158,7 @@ describe("chat stream adapter", () => {
       state,
       event("tool_progress", {
         tool_name: "analyze_resume",
-        tool_call_id: "analysis-call",
+        tool_call_id: "runtime-call",
         resource_type: "resume",
         resource_id: 3,
         event: "progress",
@@ -168,6 +168,7 @@ describe("chat stream adapter", () => {
       labels,
     ).state;
 
+    expect(state.toolCalls).toHaveLength(1);
     expect(state.toolCalls[0]).toMatchObject({
       name: "analyze_resume",
       toolCallId: "analysis-call",
@@ -196,6 +197,7 @@ describe("chat stream adapter", () => {
       labels,
     ).state;
 
+    expect(state.toolCalls).toHaveLength(1);
     expect(state.toolCalls[0]).toMatchObject({
       status: "success",
       analysis: { status: "parsed", progress: 1 },

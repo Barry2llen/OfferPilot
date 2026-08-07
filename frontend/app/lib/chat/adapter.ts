@@ -180,11 +180,22 @@ function findLastRunningToolCallIndex(
   name: string,
   toolCallId?: string,
 ): number {
+  if (toolCallId) {
+    for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
+      if (
+        toolCalls[index].name === name &&
+        toolCalls[index].status === "running" &&
+        toolCalls[index].toolCallId === toolCallId
+      ) {
+        return index;
+      }
+    }
+  }
+
   for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
     if (
       toolCalls[index].name === name &&
-      toolCalls[index].status === "running" &&
-      (!toolCallId || toolCalls[index].toolCallId === toolCallId)
+      toolCalls[index].status === "running"
     ) {
       return index;
     }
@@ -197,13 +208,26 @@ function findLastRunningToolMessageIndex(
   name: string,
   toolCallId?: string,
 ): number {
+  if (toolCallId) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (
+        message.role === "tool" &&
+        message.toolName === name &&
+        message.toolStatus === "running" &&
+        message.toolCallId === toolCallId
+      ) {
+        return index;
+      }
+    }
+  }
+
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (
       message.role === "tool" &&
       message.toolName === name &&
-      message.toolStatus === "running" &&
-      (!toolCallId || message.toolCallId === toolCallId)
+      message.toolStatus === "running"
     ) {
       return index;
     }
@@ -775,7 +799,7 @@ export function reduceChatEvent(
         );
         toolCalls[index] = {
           ...toolCalls[index],
-          toolCallId: toolCallId ?? toolCalls[index].toolCallId,
+          toolCallId: toolCalls[index].toolCallId ?? toolCallId,
           output,
           analysis,
           status: analysis?.status === "failed" ? "error" : "success",
@@ -809,7 +833,7 @@ export function reduceChatEvent(
 
       const entry: ToolCallEntry = {
         ...(previous ?? { name, status: "running" as const }),
-        toolCallId: toolCallId ?? previous?.toolCallId,
+        toolCallId: previous?.toolCallId ?? toolCallId,
         analysis,
       };
       if (index >= 0) toolCalls[index] = entry;
@@ -852,7 +876,7 @@ export function reduceChatEvent(
       if (index >= 0) {
         toolCalls[index] = {
           ...toolCalls[index],
-          toolCallId: toolCallId ?? toolCalls[index].toolCallId,
+          toolCallId: toolCalls[index].toolCallId ?? toolCallId,
           error: analysis?.error ?? detail,
           analysis,
           status: "error",

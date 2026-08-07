@@ -486,6 +486,20 @@ def test_chat_sse_emits_analysis_progress_and_structured_tool_output(
                     },
                 }
                 yield {
+                    "event": "on_tool_start",
+                    "name": "mark_jd_extraction_success",
+                    "run_id": "nested-analysis-call",
+                    "parent_ids": ["analysis-call"],
+                    "data": {"input": {"jd_text": "内部文本"}},
+                }
+                yield {
+                    "event": "on_tool_end",
+                    "name": "mark_jd_extraction_success",
+                    "run_id": "nested-analysis-call",
+                    "parent_ids": ["analysis-call"],
+                    "data": {"output": "内部结果"},
+                }
+                yield {
                     "event": "on_tool_end",
                     "name": "analyze_resume",
                     "run_id": "analysis-call",
@@ -520,6 +534,7 @@ def test_chat_sse_emits_analysis_progress_and_structured_tool_output(
     assert '"progress": 0.5' in response.text
     assert "event: tool_end" in response.text
     assert '"status": "parsed"' in response.text
+    assert "mark_jd_extraction_success" not in response.text
 
 
 def test_chat_sse_emits_structured_analysis_tool_failure(

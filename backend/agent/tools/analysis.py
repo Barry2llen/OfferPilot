@@ -294,7 +294,11 @@ def build_job_description_analysis_tool(
     async def analyze_job_description(
         jd_text: str | None = Field(
             default=None,
-            description="Pasted job description text. At least one input source is required.",
+            description=(
+                "Job description text pasted directly by the user. Do not copy extracted or OCR "
+                "text from an attachment here; use file_ids for attached image files instead. "
+                "At least one input source is required."
+            ),
         ),
         source_url: str | None = Field(
             default=None,
@@ -303,7 +307,10 @@ def build_job_description_analysis_tool(
         ),
         file_ids: list[str] = Field(
             default_factory=list,
-            description="Image file-library IDs to use as job description sources.",
+            description=(
+                "Image file-library IDs to use as job description sources. Prefer this field "
+                "when the JD comes from attached files and omit jd_text in that case."
+            ),
             examples=[["A1B2C3"]],
         ),
         *,
@@ -311,9 +318,11 @@ def build_job_description_analysis_tool(
     ) -> tuple[str, dict[str, Any]]:
         """Analyze a job description and persist a new structured result.
 
-        Provide pasted text, a source URL, and/or reusable image file IDs. The
-        current chat model is used automatically. Wait for the analysis job to
-        reach parsed or failed before returning the persisted result.
+        Provide pasted text, a source URL, and/or reusable image file IDs. If
+        the JD comes from an attached file, pass its file ID and do not copy
+        the extracted or OCR text into jd_text. The current chat model is used
+        automatically. Wait for the analysis job to reach parsed or failed
+        before returning the persisted result.
         """
 
         locale = _locale(runtime)

@@ -34,7 +34,15 @@ _system_prompt = PromptComposer(
     [
         PromptFragment(
             name="Instructions",
-            content="You are a helpful assistant.",
+            content=(
+                "You are a helpful assistant.\n\n"
+                "When using resume or job-description analysis tools, call each tool only once "
+                "for the current user request and wait for its structured result. If the source "
+                "comes from an attached file, use the file ID shown in the attachment references "
+                "with file_id or file_ids and do not copy the extracted or OCR text into the tool "
+                "input. For a job description, use jd_text only for text directly pasted by the "
+                "user, and use source_url only for an explicitly provided URL."
+            ),
         ),
         PromptFragment(
             name="Metadata",
