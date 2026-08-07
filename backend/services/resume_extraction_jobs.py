@@ -9,6 +9,7 @@ from db.engine.manager import DatabaseManager
 from db.repositories import ResumeDocumentRepository, ResumeExtractionRepository
 from schemas.config import Config
 from schemas.resume_document import ResumeDocument
+from services.analysis_job_events import AnalysisEventHub, AnalysisJobEvent
 from services.resume_service import ResumeService
 from utils.i18n import (
     DEFAULT_LOCALE,
@@ -17,7 +18,6 @@ from utils.i18n import (
     localize_model_retry_detail,
     localize_progress_message,
 )
-from utils.stream import render_sse_event
 
 
 @dataclass(slots=True)
@@ -25,8 +25,10 @@ class _ResumeExtractionJob:
     job_id: str
     resume_id: int
     locale: Locale = DEFAULT_LOCALE
-    history: list[str] = field(default_factory=list)
-    subscribers: set[asyncio.Queue[str | None]] = field(default_factory=set)
+    history: list[AnalysisJobEvent] = field(default_factory=list)
+    subscribers: set[asyncio.Queue[AnalysisJobEvent | None]] = field(
+        default_factory=set
+    )
     done: bool = False
     task: asyncio.Task[None] | None = None
 
@@ -39,9 +41,11 @@ class ResumeExtractionJobManager:
         *,
         config: Config,
         database: DatabaseManager,
+        event_hub: AnalysisEventHub | None = None,
     ) -> None:
         self._config = config
         self._database = database
+        self._event_hub = event_hub
         self._jobs: dict[int, _ResumeExtractionJob] = {}
         self._lock = asyncio.Lock()
 
@@ -52,7 +56,7 @@ class ResumeExtractionJobManager:
         selection_id: int,
         selection: Any,
         resume_document: ResumeDocument,
-        initial_event: str,
+        initial_event: AnalysisJobEvent,
         locale: Locale = DEFAULT_LOCALE,
     ) -> str:
         job_id = uuid4().hex
@@ -71,6 +75,8 @@ class ResumeExtractionJobManager:
                 for queue in list(previous.subscribers):
                     queue.put_nowait(None)
             self._jobs[resume_id] = job
+            if self._event_hub is not None:
+                self._event_hub.publish_nowait(initial_event)
             job.task = asyncio.create_task(
                 self._run(
                     job_id=job_id,
@@ -84,8 +90,10 @@ class ResumeExtractionJobManager:
 
         return job_id
 
-    async def stream(self, resume_id: int, job_id: str) -> AsyncGenerator[str, None]:
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
+    async def events(
+        self, resume_id: int, job_id: str
+    ) -> AsyncGenerator[AnalysisJobEvent, None]:
+        queue: asyncio.Queue[AnalysisJobEvent | None] = asyncio.Queue()
         async with self._lock:
             job = self._jobs.get(resume_id)
             if job is None or job.job_id != job_id:
@@ -108,6 +116,10 @@ class ResumeExtractionJobManager:
                 job = self._jobs.get(resume_id)
                 if job is not None and job.job_id == job_id:
                     job.subscribers.discard(queue)
+
+    async def stream(self, resume_id: int, job_id: str) -> AsyncGenerator[str, None]:
+        async for event in self.events(resume_id, job_id):
+            yield event.to_sse()
 
     async def shutdown(self) -> None:
         async with self._lock:
@@ -236,18 +248,21 @@ class ResumeExtractionJobManager:
         *,
         done: bool = False,
     ) -> None:
-        payload = render_sse_event(event, data)
+        job_event = AnalysisJobEvent(event, data)
         async with self._lock:
             job = self._jobs.get(resume_id)
             if job is None or job.job_id != job_id:
                 return
-            job.history.append(payload)
+            job.history.append(job_event)
             if done:
                 job.done = True
             subscribers = list(job.subscribers)
 
+        if self._event_hub is not None:
+            await self._event_hub.publish(job_event)
+
         for queue in subscribers:
-            await queue.put(payload)
+            await queue.put(job_event)
             if done:
                 await queue.put(None)
 

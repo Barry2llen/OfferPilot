@@ -16,9 +16,9 @@ import type {
   ChatStreamRequest,
   ChatStreamState,
   ChatReducerResult,
+  AnalysisToolProgress,
   ToolCallEntry,
 } from "./types";
-
 export function extractTextContent(content: unknown): string {
   if (typeof content === "string") return content;
 
@@ -178,9 +178,14 @@ export function clearCommittedMessages(state: ChatStreamState): ChatStreamState 
 function findLastRunningToolCallIndex(
   toolCalls: ToolCallEntry[],
   name: string,
+  toolCallId?: string,
 ): number {
   for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
-    if (toolCalls[index].name === name && toolCalls[index].status === "running") {
+    if (
+      toolCalls[index].name === name &&
+      toolCalls[index].status === "running" &&
+      (!toolCallId || toolCalls[index].toolCallId === toolCallId)
+    ) {
       return index;
     }
   }
@@ -190,13 +195,15 @@ function findLastRunningToolCallIndex(
 function findLastRunningToolMessageIndex(
   messages: ChatMessage[],
   name: string,
+  toolCallId?: string,
 ): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (
       message.role === "tool" &&
       message.toolName === name &&
-      message.toolStatus === "running"
+      message.toolStatus === "running" &&
+      (!toolCallId || message.toolCallId === toolCallId)
     ) {
       return index;
     }
@@ -224,10 +231,12 @@ function toolCallToMessage(entry: ToolCallEntry, id: string): ChatMessage {
     role: "tool",
     content: formatDisplayContent(entry.output ?? entry.error ?? entry.input ?? ""),
     toolName: entry.name,
+    toolCallId: entry.toolCallId,
     toolStatus: entry.status,
     toolInput: entry.input,
     toolOutput: entry.output,
     toolError: entry.error,
+    toolAnalysis: entry.analysis,
   };
 }
 
@@ -439,7 +448,11 @@ function updateRunningToolMessage(
   name: string,
   entry: ToolCallEntry,
 ): ChatStreamState {
-  const index = findLastRunningToolMessageIndex(state.liveMessages, name);
+  const index = findLastRunningToolMessageIndex(
+    state.liveMessages,
+    name,
+    entry.toolCallId,
+  );
   const liveMessages = [...state.liveMessages];
   if (index >= 0) {
     liveMessages[index] = toolCallToMessage(entry, liveMessages[index].id);
@@ -488,6 +501,71 @@ function addAgentStatusEffect(
   value: ChatStreamState["agentStatus"],
 ): void {
   effects.push({ type: "agent_status", value });
+}
+
+function clampAnalysisProgress(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(value, 1));
+}
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function analysisProgressFromValue(
+  value: unknown,
+  fallback?: AnalysisToolProgress,
+): AnalysisToolProgress | undefined {
+  const parsed = parseMaybeJson(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return fallback;
+  }
+
+  const item = parsed as Record<string, unknown>;
+  const resourceType = item.resource_type;
+  const resourceId = item.resource_id;
+  if (
+    (resourceType !== "resume" && resourceType !== "job_description") ||
+    typeof resourceId !== "number"
+  ) {
+    return fallback;
+  }
+
+  const event = typeof item.event === "string" ? item.event : undefined;
+  const previousProgress = fallback?.progress ?? 0;
+  const status: AnalysisToolProgress["status"] =
+    item.status === "failed" || event === "error"
+      ? "failed"
+      : item.status === "parsed" || event === "final"
+        ? "parsed"
+        : "processing";
+  const error =
+    typeof item.error === "string"
+      ? item.error
+      : typeof item.detail === "string" && event === "error"
+        ? item.detail
+        : fallback?.error ?? null;
+
+  return {
+    resourceType,
+    resourceId,
+    status,
+    progress:
+      status === "parsed"
+        ? 1
+        : clampAnalysisProgress(item.progress, previousProgress),
+    message: typeof item.message === "string" ? item.message : fallback?.message ?? null,
+    modelError:
+      typeof item.detail === "string" && event === "model_error"
+        ? item.detail
+        : fallback?.modelError ?? null,
+    error,
+  };
 }
 
 export function reduceChatEvent(
@@ -625,7 +703,14 @@ export function reduceChatEvent(
       next = endAssistantSegment(next);
       const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
       const input = data.input as Record<string, unknown> | undefined;
-      const entry: ToolCallEntry = { name, input, status: "running" };
+      const toolCallId =
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
+      const entry: ToolCallEntry = {
+        name,
+        toolCallId,
+        input,
+        status: "running",
+      };
 
       if (next.pendingQueryResumeMerge && name === "query") {
         const committedToolIndex = findLastRunningCommittedToolMessageIndex(
@@ -663,6 +748,8 @@ export function reduceChatEvent(
     case "tool_end": {
       const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
       const output = data.output;
+      const toolCallId =
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
       if (next.resumedQueryToolEntry && name === "query") {
         const entry: ToolCallEntry = {
           ...next.resumedQueryToolEntry,
@@ -679,12 +766,29 @@ export function reduceChatEvent(
         break;
       }
 
-      const index = findLastRunningToolCallIndex(next.toolCalls, name);
+      const index = findLastRunningToolCallIndex(next.toolCalls, name, toolCallId);
       const toolCalls = [...next.toolCalls];
       if (index >= 0) {
-        toolCalls[index] = { ...toolCalls[index], output, status: "success" };
+        const analysis = analysisProgressFromValue(
+          output,
+          toolCalls[index].analysis,
+        );
+        toolCalls[index] = {
+          ...toolCalls[index],
+          toolCallId: toolCallId ?? toolCalls[index].toolCallId,
+          output,
+          analysis,
+          status: analysis?.status === "failed" ? "error" : "success",
+        };
       } else {
-        toolCalls.push({ name, output, status: "success" });
+        const analysis = analysisProgressFromValue(output);
+        toolCalls.push({
+          name,
+          toolCallId,
+          output,
+          analysis,
+          status: analysis?.status === "failed" ? "error" : "success",
+        });
       }
       const entry = index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
       next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
@@ -693,8 +797,31 @@ export function reduceChatEvent(
       break;
     }
 
+    case "tool_progress": {
+      const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
+      const toolCallId =
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
+      const index = findLastRunningToolCallIndex(next.toolCalls, name, toolCallId);
+      const toolCalls = [...next.toolCalls];
+      const previous = index >= 0 ? toolCalls[index] : undefined;
+      const analysis = analysisProgressFromValue(data, previous?.analysis);
+      if (!analysis) break;
+
+      const entry: ToolCallEntry = {
+        ...(previous ?? { name, status: "running" as const }),
+        toolCallId: toolCallId ?? previous?.toolCallId,
+        analysis,
+      };
+      if (index >= 0) toolCalls[index] = entry;
+      else toolCalls.push(entry);
+      next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
+      break;
+    }
+
     case "tool_error": {
       const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
+      const toolCallId =
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
       const detail =
         extractTextContent(data.detail ?? data.error) || labels.toolError;
       if (isQueryInterruptToolError(name, detail)) break;
@@ -715,12 +842,29 @@ export function reduceChatEvent(
         break;
       }
 
-      const index = findLastRunningToolCallIndex(next.toolCalls, name);
+      const index = findLastRunningToolCallIndex(next.toolCalls, name, toolCallId);
       const toolCalls = [...next.toolCalls];
+      const previous = index >= 0 ? toolCalls[index] : undefined;
+      const analysis = analysisProgressFromValue(
+        data.output,
+        previous?.analysis,
+      );
       if (index >= 0) {
-        toolCalls[index] = { ...toolCalls[index], error: detail, status: "error" };
+        toolCalls[index] = {
+          ...toolCalls[index],
+          toolCallId: toolCallId ?? toolCalls[index].toolCallId,
+          error: analysis?.error ?? detail,
+          analysis,
+          status: "error",
+        };
       } else {
-        toolCalls.push({ name, error: detail, status: "error" });
+        toolCalls.push({
+          name,
+          toolCallId,
+          error: analysis?.error ?? detail,
+          analysis,
+          status: "error",
+        });
       }
       const entry = index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
       next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);

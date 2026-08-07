@@ -42,9 +42,13 @@ from services import (
     ModelSelectionService,
     UploadedChatFile,
 )
-from utils.i18n import localize_error, request_locale, translate
+from utils.i18n import DEFAULT_LOCALE, localize_error, request_locale, translate
 from utils.stream import render_sse_event, to_jsonable
-from utils.tool_outputs import summarize_tool_output
+from utils.tool_outputs import (
+    ANALYSIS_TOOL_NAMES,
+    is_tool_output_error,
+    summarize_tool_output,
+)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -256,9 +260,17 @@ def _make_thread_id(thread_id: str | None) -> str:
     return thread_id or uuid4().hex
 
 
-def _agent_config(thread_id: str, *, recursion_limit: int) -> dict:
+def _agent_config(
+    thread_id: str,
+    *,
+    recursion_limit: int,
+    locale: str | None = None,
+) -> dict:
+    configurable = {"thread_id": thread_id}
+    if locale and locale != DEFAULT_LOCALE:
+        configurable["locale"] = locale
     return {
-        "configurable": {"thread_id": thread_id},
+        "configurable": configurable,
         "recursion_limit": recursion_limit,
     }
 
@@ -388,11 +400,18 @@ def _extract_interrupt_payloads_from_chunk(chunk: Any) -> list[dict[str, Any]]:
 
 
 def _is_tool_error_output(output: Any) -> bool:
-    if getattr(output, "status", None) == "error":
-        return True
-    if isinstance(output, dict) and output.get("status") == "error":
-        return True
-    return False
+    return is_tool_output_error(output)
+
+
+def _tool_call_id(event: dict[str, Any], data: dict[str, Any]) -> str | None:
+    for value in (
+        data.get("tool_call_id"),
+        event.get("tool_call_id"),
+        event.get("run_id"),
+    ):
+        if isinstance(value, str) and value:
+            return value
+    return None
 
 
 def _is_query_interrupt_tool_error(tool_name: str, detail: str) -> bool:
@@ -665,6 +684,7 @@ async def chat(
             _agent_config(
                 thread_id,
                 recursion_limit=request.app.state.config.graph_recursion_limit,
+                locale=request_locale(request),
             ),
         )
         interrupt_payloads = _extract_interrupt_payloads_from_chunk(final_state)
@@ -720,7 +740,7 @@ async def chat(
         200: {
             "description": (
                 "Returns SSE events including thread, token, reasoning, reasoning_done, tool_start, "
-                "tool_end, tool_error, context_compaction, interrupt, and final; failures use error. "
+                "tool_progress, tool_end, tool_error, context_compaction, interrupt, and final; failures use error. "
                 "The context_compaction event reports started, completed, or failed phases. Query interrupts include "
                 "question, firstChoice, firstChoiceDescription, secondChoice, secondChoiceDescription, "
                 "thirdChoice, and thirdChoiceDescription. Search tool output contains only the safe frontend "
@@ -836,6 +856,7 @@ async def chat_stream(
                 _agent_config(
                     thread_id,
                     recursion_limit=request.app.state.config.graph_recursion_limit,
+                    locale=request_locale(request),
                 ),
                 version="v2",
             ):
@@ -862,38 +883,53 @@ async def chat_stream(
                     return
 
                 if event_name == "on_tool_start":
+                    tool_call_id = _tool_call_id(event, data)
+                    tool_start_data = {
+                        "thread_id": thread_id,
+                        "tool_name": tool_name,
+                        "input": data.get("input"),
+                    }
+                    if tool_call_id:
+                        tool_start_data["tool_call_id"] = tool_call_id
                     yield render_sse_event(
                         "tool_start",
-                        {
-                            "thread_id": thread_id,
-                            "tool_name": tool_name,
-                            "input": data.get("input"),
-                        },
+                        tool_start_data,
                     )
                     continue
 
                 if event_name == "on_tool_end":
                     output = data.get("output")
+                    tool_call_id = _tool_call_id(event, data)
                     if _is_tool_error_output(output):
+                        error_data = {
+                            "thread_id": thread_id,
+                            "tool_name": tool_name,
+                            "detail": _extract_content([output])
+                            if isinstance(output, BaseMessage)
+                            else str(output),
+                        }
+                        if tool_call_id:
+                            error_data["tool_call_id"] = tool_call_id
+                        if tool_name in ANALYSIS_TOOL_NAMES:
+                            error_data["output"] = summarize_tool_output(
+                                tool_name, output
+                            )
                         yield render_sse_event(
                             "tool_error",
-                            {
-                                "thread_id": thread_id,
-                                "tool_name": tool_name,
-                                "detail": _extract_content([output])
-                                if isinstance(output, BaseMessage)
-                                else str(output),
-                            },
+                            error_data,
                         )
                         continue
 
+                    tool_end_data = {
+                        "thread_id": thread_id,
+                        "tool_name": tool_name,
+                        "output": summarize_tool_output(tool_name, output),
+                    }
+                    if tool_call_id:
+                        tool_end_data["tool_call_id"] = tool_call_id
                     yield render_sse_event(
                         "tool_end",
-                        {
-                            "thread_id": thread_id,
-                            "tool_name": tool_name,
-                            "output": summarize_tool_output(tool_name, output),
-                        },
+                        tool_end_data,
                     )
                     continue
 
@@ -901,13 +937,24 @@ async def chat_stream(
                     detail = str(data.get("error") or data.get("output") or "")
                     if _is_query_interrupt_tool_error(tool_name, detail):
                         continue
+                    tool_error_data = {
+                        "thread_id": thread_id,
+                        "tool_name": tool_name,
+                        "detail": detail,
+                    }
+                    tool_call_id = _tool_call_id(event, data)
+                    if tool_call_id:
+                        tool_error_data["tool_call_id"] = tool_call_id
+                    if (
+                        tool_name in ANALYSIS_TOOL_NAMES
+                        and data.get("output") is not None
+                    ):
+                        tool_error_data["output"] = summarize_tool_output(
+                            tool_name, data.get("output")
+                        )
                     yield render_sse_event(
                         "tool_error",
-                        {
-                            "thread_id": thread_id,
-                            "tool_name": tool_name,
-                            "detail": detail,
-                        },
+                        tool_error_data,
                     )
                     continue
 
@@ -923,6 +970,19 @@ async def chat_stream(
                                 "duration_ms": duration_ms,
                             },
                         )
+                    continue
+
+                if (
+                    event_name == "on_custom_event"
+                    and tool_name == "on_analysis_job_event"
+                ):
+                    yield render_sse_event(
+                        "tool_progress",
+                        {
+                            "thread_id": thread_id,
+                            **data,
+                        },
+                    )
                     continue
 
                 if (

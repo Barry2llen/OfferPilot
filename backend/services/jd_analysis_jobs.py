@@ -8,6 +8,7 @@ from agent.workflows.jd_analyzer import JdAnalysisWorkflow
 from db.engine.manager import DatabaseManager
 from db.repositories import JobDescriptionAnalysisRepository
 from schemas.config import Config
+from services.analysis_job_events import AnalysisEventHub, AnalysisJobEvent
 from services.job_description_analysis_service import JobDescriptionAnalysisService
 from utils.i18n import (
     DEFAULT_LOCALE,
@@ -16,7 +17,6 @@ from utils.i18n import (
     localize_model_retry_detail,
     localize_progress_message,
 )
-from utils.stream import render_sse_event
 
 
 @dataclass(slots=True)
@@ -24,8 +24,10 @@ class _JdAnalysisJob:
     job_id: str
     analysis_id: int
     locale: Locale = DEFAULT_LOCALE
-    history: list[str] = field(default_factory=list)
-    subscribers: set[asyncio.Queue[str | None]] = field(default_factory=set)
+    history: list[AnalysisJobEvent] = field(default_factory=list)
+    subscribers: set[asyncio.Queue[AnalysisJobEvent | None]] = field(
+        default_factory=set
+    )
     done: bool = False
     task: asyncio.Task[None] | None = None
 
@@ -38,9 +40,11 @@ class JdAnalysisJobManager:
         *,
         config: Config,
         database: DatabaseManager,
+        event_hub: AnalysisEventHub | None = None,
     ) -> None:
         self._config = config
         self._database = database
+        self._event_hub = event_hub
         self._jobs: dict[int, _JdAnalysisJob] = {}
         self._lock = asyncio.Lock()
 
@@ -53,7 +57,7 @@ class JdAnalysisJobManager:
         jd_text: str | None,
         source_url: str | None,
         images: list[str],
-        initial_event: str,
+        initial_event: AnalysisJobEvent,
         locale: Locale = DEFAULT_LOCALE,
     ) -> str:
         job_id = uuid4().hex
@@ -66,6 +70,8 @@ class JdAnalysisJobManager:
 
         async with self._lock:
             self._jobs[analysis_id] = job
+            if self._event_hub is not None:
+                self._event_hub.publish_nowait(initial_event)
             job.task = asyncio.create_task(
                 self._run(
                     job_id=job_id,
@@ -81,8 +87,10 @@ class JdAnalysisJobManager:
 
         return job_id
 
-    async def stream(self, analysis_id: int, job_id: str) -> AsyncGenerator[str, None]:
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
+    async def events(
+        self, analysis_id: int, job_id: str
+    ) -> AsyncGenerator[AnalysisJobEvent, None]:
+        queue: asyncio.Queue[AnalysisJobEvent | None] = asyncio.Queue()
         async with self._lock:
             job = self._jobs.get(analysis_id)
             if job is None or job.job_id != job_id:
@@ -105,6 +113,10 @@ class JdAnalysisJobManager:
                 job = self._jobs.get(analysis_id)
                 if job is not None and job.job_id == job_id:
                     job.subscribers.discard(queue)
+
+    async def stream(self, analysis_id: int, job_id: str) -> AsyncGenerator[str, None]:
+        async for event in self.events(analysis_id, job_id):
+            yield event.to_sse()
 
     async def shutdown(self) -> None:
         async with self._lock:
@@ -233,18 +245,21 @@ class JdAnalysisJobManager:
         *,
         done: bool = False,
     ) -> None:
-        payload = render_sse_event(event, data)
+        job_event = AnalysisJobEvent(event, data)
         async with self._lock:
             job = self._jobs.get(analysis_id)
             if job is None or job.job_id != job_id:
                 return
-            job.history.append(payload)
+            job.history.append(job_event)
             if done:
                 job.done = True
             subscribers = list(job.subscribers)
 
+        if self._event_hub is not None:
+            await self._event_hub.publish(job_event)
+
         for queue in subscribers:
-            await queue.put(payload)
+            await queue.put(job_event)
             if done:
                 await queue.put(None)
 

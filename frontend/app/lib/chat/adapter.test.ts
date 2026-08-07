@@ -143,6 +143,96 @@ describe("chat stream adapter", () => {
     expect(continued.contextCompacted).toBe(true);
   });
 
+  it("tracks analysis tool progress, retry errors, and structured completion", () => {
+    let state = beginChat(createChatState(), "分析简历", undefined);
+    state = reduceChatEvent(
+      state,
+      event("tool_start", {
+        tool_name: "analyze_resume",
+        tool_call_id: "analysis-call",
+        input: { resume_id: 3 },
+      }),
+      labels,
+    ).state;
+    state = reduceChatEvent(
+      state,
+      event("tool_progress", {
+        tool_name: "analyze_resume",
+        tool_call_id: "analysis-call",
+        resource_type: "resume",
+        resource_id: 3,
+        event: "progress",
+        progress: 0.5,
+        message: "解析中",
+      }),
+      labels,
+    ).state;
+
+    expect(state.toolCalls[0]).toMatchObject({
+      name: "analyze_resume",
+      toolCallId: "analysis-call",
+      status: "running",
+      analysis: {
+        resourceType: "resume",
+        resourceId: 3,
+        status: "processing",
+        progress: 0.5,
+        message: "解析中",
+      },
+    });
+
+    state = reduceChatEvent(
+      state,
+      event("tool_end", {
+        tool_name: "analyze_resume",
+        tool_call_id: "analysis-call",
+        output: {
+          resource_type: "resume",
+          resource_id: 3,
+          status: "parsed",
+          result: { raw_text: "完成" },
+        },
+      }),
+      labels,
+    ).state;
+
+    expect(state.toolCalls[0]).toMatchObject({
+      status: "success",
+      analysis: { status: "parsed", progress: 1 },
+    });
+
+    let failed = beginChat(createChatState(), "分析岗位", undefined);
+    failed = reduceChatEvent(
+      failed,
+      event("tool_start", { tool_name: "analyze_job_description" }),
+      labels,
+    ).state;
+    failed = reduceChatEvent(
+      failed,
+      event("tool_error", {
+        tool_name: "analyze_job_description",
+        detail: "模型失败",
+        output: {
+          resource_type: "job_description",
+          resource_id: 8,
+          status: "failed",
+          error: "模型失败",
+        },
+      }),
+      labels,
+    ).state;
+
+    expect(failed.toolCalls[0]).toMatchObject({
+      status: "error",
+      error: "模型失败",
+      analysis: {
+        resourceType: "job_description",
+        resourceId: 8,
+        status: "failed",
+      },
+    });
+  });
+
   it("restores completed compaction from history and clears it for a new thread", () => {
     const history = mapChatHistory(
       [{ role: "user", type: "human", content: "历史消息" }],

@@ -1,6 +1,5 @@
 from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from fastapi.responses import StreamingResponse
@@ -32,9 +31,9 @@ from services import (
     ModelSelectionService,
     UploadedChatFile,
 )
+from services.analysis_job_events import AnalysisJobEvent
 from services.jd_analysis_jobs import JdAnalysisJobManager
 from utils.i18n import request_locale
-from utils.stream import render_sse_event
 
 router = APIRouter(prefix="/job-descriptions", tags=["job-descriptions"])
 
@@ -100,10 +99,6 @@ def _get_model_selection(selection_id: int, session: Session):
             detail=f"Model selection not found: {selection_id}",
         )
     return selection
-
-
-def _sse(event: str, data: dict[str, Any]) -> str:
-    return render_sse_event(event, data)
 
 
 async def _read_upload_file(file: StarletteUploadFile) -> bytes:
@@ -329,7 +324,7 @@ async def analyze_job_description(
         jd_text=payload.jd_text,
         source_url=payload.source_url,
         images=images,
-        initial_event=_sse("job_description", {"job_description": detail}),
+        initial_event=AnalysisJobEvent("job_description", {"job_description": detail}),
         locale=request_locale(request),
     )
 

@@ -1,5 +1,4 @@
 from collections.abc import AsyncGenerator, Generator
-from typing import Any
 from urllib.parse import quote
 
 from fastapi import (
@@ -34,9 +33,9 @@ from schemas.resume_document import (
     ResumeListItem,
 )
 from services import ModelSelectionService, ResumeService, UploadedResumeFile
+from services.analysis_job_events import AnalysisJobEvent
 from services.resume_extraction_jobs import ResumeExtractionJobManager
 from utils.i18n import request_locale
-from utils.stream import render_sse_event
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -85,10 +84,6 @@ async def _read_upload_file(file: UploadFile) -> bytes:
         return await file.read()
     finally:
         await file.close()
-
-
-def _sse(event: str, data: dict[str, Any]) -> str:
-    return render_sse_event(event, data)
 
 
 def _get_model_selection(selection_id: int, session: Session):
@@ -236,7 +231,7 @@ async def upload_resume_file(
         selection_id=selection_id,
         selection=selection,
         resume_document=_resume_document_from_detail(processing_detail),
-        initial_event=_sse("resume", {"resume": processing_detail}),
+        initial_event=AnalysisJobEvent("resume", {"resume": processing_detail}),
         locale=request_locale(request),
     )
 
@@ -329,7 +324,7 @@ async def replace_resume_file(
         selection_id=selection_id,
         selection=selection,
         resume_document=_resume_document_from_detail(processing_detail),
-        initial_event=_sse("resume", {"resume": processing_detail}),
+        initial_event=AnalysisJobEvent("resume", {"resume": processing_detail}),
         locale=request_locale(request),
     )
 

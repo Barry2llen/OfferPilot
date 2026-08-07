@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
-import type { ToolCallEntry } from "@/app/lib/chat/types";
+import { Link } from "react-router";
+import type { AnalysisToolProgress, ToolCallEntry } from "@/app/lib/chat/types";
+import { analysisDetailPath } from "@/app/lib/analysis-events/links";
 import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 
 type ToolStatus = ToolCallEntry["status"];
@@ -49,6 +51,7 @@ const dotClassNames: Record<ToolStatus, string> = {
 
 const searchToolNames = new Set(["web_search", "web_search_exa", "find_similar_exa"]);
 const fetchToolNames = new Set(["web_fetch", "web_fetch_exa"]);
+const analysisToolNames = new Set(["analyze_resume", "analyze_job_description"]);
 
 export default function ToolCallCard({
   entry,
@@ -58,6 +61,7 @@ export default function ToolCallCard({
   const [expanded, setExpanded] = useState(defaultExpanded);
   const isWebTool = isWebResultTool(entry.name);
   const isQuery = isQueryTool(entry.name);
+  const isAnalysis = isAnalysisTool(entry.name);
   const canExpand = hasToolDetails(entry);
   const searchResults = useMemo(
     () => getSearchResults(entry.name, entry.output),
@@ -136,7 +140,9 @@ export default function ToolCallCard({
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: "easeInOut" }}
             >
-              {isQuery ? (
+              {isAnalysis && entry.analysis ? (
+                <AnalysisToolDetails analysis={entry.analysis} />
+              ) : isQuery ? (
                 <QueryToolDetails entry={entry} />
               ) : isWebTool && searchResults.length > 0 ? (
                 <SearchResultList results={searchResults} />
@@ -149,6 +155,65 @@ export default function ToolCallCard({
           )}
         </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+function AnalysisToolDetails({ analysis }: { analysis: AnalysisToolProgress }) {
+  const progress = Math.round(Math.max(0, Math.min(analysis.progress, 1)) * 100);
+  const detail =
+    analysis.status === "failed"
+      ? analysis.error || analysis.modelError || i18n.t("chat.analysisFailed")
+      : analysis.message ||
+        (analysis.status === "parsed"
+          ? i18n.t("chat.analysisComplete")
+          : i18n.t("chat.analysisWorking"));
+  const detailPath = analysisDetailPath(
+    analysis.resourceType,
+    analysis.resourceId,
+  );
+
+  return (
+    <div className="space-y-2 text-xs leading-relaxed text-text-secondary">
+      <div className="flex items-center justify-between gap-2">
+        <span>{detail}</span>
+        <span className="shrink-0 text-text-muted">{progress}%</span>
+      </div>
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-surface-secondary"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress}
+      >
+        <div
+          className={`h-full rounded-full transition-[width] ${
+            analysis.status === "failed" ? "bg-error-text" : "bg-primary-500"
+          }`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      {analysis.modelError && (
+        <DetailBlock
+          label={i18n.t("chat.analysisModelRetry")}
+          value={analysis.modelError}
+          tone="error"
+        />
+      )}
+      {analysis.error && analysis.error !== analysis.modelError && (
+        <DetailBlock
+          label={i18n.t("chat.analysisError")}
+          value={analysis.error}
+          tone="error"
+        />
+      )}
+      <Link
+        to={detailPath}
+        className="inline-flex items-center gap-1 font-medium text-primary-600 hover:text-primary-700"
+      >
+        {i18n.t("chat.openAnalysis")}
+        <span aria-hidden="true">→</span>
+      </Link>
     </div>
   );
 }
@@ -285,6 +350,12 @@ function getToolDisplayName(entry: ToolCallEntry): string {
   if (isFetchTool(entry.name)) {
     return i18n.t("chat.webRead");
   }
+  if (entry.name === "analyze_resume") {
+    return i18n.t("chat.analyzeResume");
+  }
+  if (entry.name === "analyze_job_description") {
+    return i18n.t("chat.analyzeJobDescription");
+  }
   return entry.name || i18n.t("chat.unknownTool");
 }
 
@@ -320,6 +391,14 @@ function ToolIcon({ name, className }: { name: string, className?: string }) {
       </svg>
     );
   }
+  if (isAnalysisTool(name)) {
+    return (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4.5h6M9 7.5h6M7.5 3h9A1.5 1.5 0 0118 4.5v15a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 016 19.5v-15A1.5 1.5 0 017.5 3z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6M9 15h4" />
+      </svg>
+    );
+  }
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -335,6 +414,9 @@ function buildSummary(
 ): string {
   if (isQueryTool(entry.name)) {
     return getQueryQuestion(entry) || i18n.t("chat.waitingUserDecision");
+  }
+  if (isAnalysisTool(entry.name) && entry.analysis) {
+    return getAnalysisSummary(entry.analysis);
   }
   if (entry.status === "running") {
     const query = getInputText(entry.input);
@@ -361,6 +443,19 @@ function buildSummary(
     return truncate(formatUnknown(entry.output).replace(/\s+/g, " "), 80);
   }
   return "";
+}
+
+function getAnalysisSummary(analysis: AnalysisToolProgress): string {
+  if (analysis.status === "failed") {
+    return analysis.error || analysis.modelError || i18n.t("chat.analysisFailed");
+  }
+  if (analysis.status === "parsed") {
+    return i18n.t("chat.analysisComplete");
+  }
+  const progress = Math.round(Math.max(0, Math.min(analysis.progress, 1)) * 100);
+  return analysis.message
+    ? `${analysis.message} · ${progress}%`
+    : `${i18n.t("chat.analysisWorking")} · ${progress}%`;
 }
 
 function getInputText(input?: Record<string, unknown>): string {
@@ -447,8 +542,17 @@ function isQueryTool(name: string): boolean {
   return name === "query";
 }
 
+function isAnalysisTool(name: string): boolean {
+  return analysisToolNames.has(name);
+}
+
 function hasToolDetails(entry: ToolCallEntry): boolean {
-  return entry.input !== undefined || entry.output !== undefined || Boolean(entry.error);
+  return (
+    entry.input !== undefined ||
+    entry.output !== undefined ||
+    Boolean(entry.error) ||
+    Boolean(entry.analysis)
+  );
 }
 
 function getQueryQuestion(entry: ToolCallEntry): string {

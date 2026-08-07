@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { formatLocaleNumber } from "@/app/lib/i18n";
@@ -10,6 +10,8 @@ import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Button from "@/app/components/ui/button";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import type { ResumeListItem } from "@/app/lib/api/types";
+import { useAppContext } from "@/app/lib/context/app-context";
+import { analysisTaskKey } from "@/app/lib/analysis-events/types";
 
 interface ResumeStats {
   total: number;
@@ -21,10 +23,17 @@ interface ResumeStats {
 export default function ResumesPage() {
   const { t } = useTranslation();
   const fetchResumes = useCallback(() => resumesApi.list(), []);
-  const { data, loading, error, refetch } = useAsyncData(fetchResumes, [
+  const { data, loading, error, refetch, refresh } = useAsyncData(fetchResumes, [
     fetchResumes,
   ]);
+  const {
+    state: { analysisEventVersions, analysisTasks },
+  } = useAppContext();
   const { addToast } = useToast();
+
+  useEffect(() => {
+    if (analysisEventVersions.resume > 0) refresh();
+  }, [analysisEventVersions.resume, refresh]);
 
   const [deleting, setDeleting] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ResumeListItem | null>(
@@ -112,6 +121,7 @@ export default function ResumesPage() {
                 <ResumeCard
                   key={resume.id}
                   resume={resume}
+                  analysisTask={analysisTasks[analysisTaskKey("resume", resume.id)]}
                   onDelete={setConfirmDelete}
                   deleting={deleting === resume.id}
                 />

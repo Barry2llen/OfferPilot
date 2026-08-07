@@ -41,6 +41,7 @@ export default function ChatMessage({ message, streaming = false }: Props) {
             message.toolStatus === "error"
               ? message.toolError ?? message.content
               : undefined,
+          analysis: message.toolAnalysis,
           status: normalizeToolStatus(message.toolStatus),
         }}
       />

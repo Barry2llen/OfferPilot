@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { resumesApi } from "@/app/lib/api/resumes";
@@ -9,6 +9,9 @@ import Badge from "@/app/components/ui/badge";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Spinner from "@/app/components/ui/spinner";
 import ResumeUploader from "@/app/components/resumes/resume-uploader";
+import AnalysisTaskStatus from "@/app/components/analysis/analysis-task-status";
+import { useAppContext } from "@/app/lib/context/app-context";
+import { analysisTaskKey } from "@/app/lib/analysis-events/types";
 import type {
   ResumeDetail,
   ResumeFact,
@@ -25,10 +28,17 @@ export default function ResumeDetailPage() {
   const id = Number(params.id);
   const { addToast } = useToast();
 
-  const { data: resume, loading, error, refetch } = useAsyncData(
+  const { data: resume, loading, error, refetch, refresh } = useAsyncData(
     () => resumesApi.get(id),
     [id]
   );
+  const {
+    state: { analysisEventVersions, analysisTasks },
+  } = useAppContext();
+
+  useEffect(() => {
+    if (analysisEventVersions.resume > 0) refresh();
+  }, [analysisEventVersions.resume, refresh]);
 
   const [activeTab, setActiveTab] = useState<DetailTab>("analysis");
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -148,6 +158,10 @@ export default function ResumeDetailPage() {
             <TabSwitch activeTab={activeTab} onChange={setActiveTab} />
           </div>
         </div>
+
+        <AnalysisTaskStatus
+          task={analysisTasks[analysisTaskKey("resume", resume.id)]}
+        />
 
         <div className="flex-1">
           {activeTab === "analysis" ? (

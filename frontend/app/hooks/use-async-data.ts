@@ -6,6 +6,7 @@ interface UseAsyncDataResult<T> {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  refresh: () => void;
 }
 
 export function useAsyncData<T>(
@@ -17,8 +18,8 @@ export function useAsyncData<T>(
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
+  const fetch = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const result = await fetcher();
@@ -47,5 +48,14 @@ export function useAsyncData<T>(
     };
   }, [fetch]);
 
-  return { data, loading, error, refetch: fetch };
+  const refetch = useCallback(() => void fetch(true), [fetch]);
+  const refresh = useCallback(() => void fetch(false), [fetch]);
+
+  return {
+    data,
+    loading,
+    error,
+    refetch,
+    refresh,
+  };
 }

@@ -6,6 +6,13 @@ import {
   type ReactNode,
 } from "react";
 import type { AgentStatus } from "@/app/lib/api/types";
+import { useAnalysisEvents } from "@/app/hooks/use-analysis-events";
+import { updateAnalysisTaskMap } from "@/app/lib/analysis-events/adapter";
+import type {
+  AnalysisEvent,
+  AnalysisResourceType,
+  AnalysisTaskSnapshot,
+} from "@/app/lib/analysis-events/types";
 
 interface AppState {
   currentModelSelection: number | null;
@@ -13,6 +20,8 @@ interface AppState {
   currentThreadRequiresImageInput: boolean;
   agentStatus: AgentStatus;
   chatHistoryVersion: number;
+  analysisTasks: Record<string, AnalysisTaskSnapshot>;
+  analysisEventVersions: Record<AnalysisResourceType, number>;
 }
 
 type AppAction =
@@ -20,7 +29,8 @@ type AppAction =
   | { type: "SET_THREAD_ID"; payload: string | null }
   | { type: "SET_THREAD_REQUIRES_IMAGE_INPUT"; payload: boolean }
   | { type: "SET_AGENT_STATUS"; payload: AgentStatus }
-  | { type: "BUMP_CHAT_HISTORY_VERSION" };
+  | { type: "BUMP_CHAT_HISTORY_VERSION" }
+  | { type: "ANALYSIS_EVENT"; payload: AnalysisEvent };
 
 const initialState: AppState = {
   currentModelSelection: null,
@@ -28,6 +38,8 @@ const initialState: AppState = {
   currentThreadRequiresImageInput: false,
   agentStatus: "idle",
   chatHistoryVersion: 0,
+  analysisTasks: {},
+  analysisEventVersions: { resume: 0, job_description: 0 },
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -45,6 +57,27 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         chatHistoryVersion: state.chatHistoryVersion + 1,
       };
+    case "ANALYSIS_EVENT": {
+      const result = updateAnalysisTaskMap(state.analysisTasks, action.payload);
+      if (!result.task) return state;
+      const shouldRefreshResource = [
+        "resume",
+        "job_description",
+        "final",
+        "error",
+      ].includes(action.payload.event);
+      return {
+        ...state,
+        analysisTasks: result.tasks,
+        analysisEventVersions: shouldRefreshResource
+          ? {
+              ...state.analysisEventVersions,
+              [result.task.resourceType]:
+                state.analysisEventVersions[result.task.resourceType] + 1,
+            }
+          : state.analysisEventVersions,
+      };
+    }
     default:
       return state;
   }
@@ -57,6 +90,12 @@ const AppContext = createContext<{
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const handleAnalysisEvent = useCallback(
+    (event: AnalysisEvent) => dispatch({ type: "ANALYSIS_EVENT", payload: event }),
+    [],
+  );
+  useAnalysisEvents(handleAnalysisEvent);
+
   return (
     <AppContext.Provider value={{ state, dispatch }}>
       {children}

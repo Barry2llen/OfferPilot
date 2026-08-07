@@ -1,13 +1,16 @@
 import { Link, useParams } from "react-router";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import Card from "@/app/components/ui/card";
+import AnalysisTaskStatus from "@/app/components/analysis/analysis-task-status";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { jobDescriptionsApi } from "@/app/lib/api/job-descriptions";
 import i18n from "@/app/lib/i18n";
+import { useAppContext } from "@/app/lib/context/app-context";
+import { analysisTaskKey } from "@/app/lib/analysis-events/types";
 import type {
   JobDescriptionAnalysisDetail,
   JobDescriptionBlock,
@@ -43,7 +46,14 @@ export default function JobDescriptionDetailPage() {
     () => jobDescriptionsApi.get(analysisId),
     [analysisId]
   );
-  const { data, loading, error, refetch } = useAsyncData(fetchDetail, [fetchDetail]);
+  const { data, loading, error, refetch, refresh } = useAsyncData(fetchDetail, [fetchDetail]);
+  const {
+    state: { analysisEventVersions, analysisTasks },
+  } = useAppContext();
+
+  useEffect(() => {
+    if (analysisEventVersions.job_description > 0) refresh();
+  }, [analysisEventVersions.job_description, refresh]);
 
   if (loading) {
     return (
@@ -101,6 +111,10 @@ export default function JobDescriptionDetailPage() {
           {t("common.back")}
         </Link>
       </div>
+
+      <AnalysisTaskStatus
+        task={analysisTasks[analysisTaskKey("job_description", data.id)]}
+      />
 
       <Card shadow="none" radius="lg" padding="lg" className="mb-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

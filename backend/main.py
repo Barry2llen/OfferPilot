@@ -7,10 +7,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from agent.agents.supervisor import SupervisorAgent, get_supervisor_tools
+from agent.agents.supervisor import (
+    SupervisorAgent,
+    get_analysis_tools_for_supervisor,
+    get_supervisor_tools,
+)
 from agent.checkpointers import DatabaseCheckpointer
 from agent.compaction import DatabaseCompactionModelResolver
-from api import ai_router, job_description_router, model_config_router, resume_router
+from agent.tools.analysis import AnalysisToolDependencies
+from api import (
+    ai_router,
+    analysis_router,
+    job_description_router,
+    model_config_router,
+    resume_router,
+)
 from db.engine import (
     configure_async_database_manager,
     configure_database_manager,
@@ -18,6 +29,7 @@ from db.engine import (
     dispose_database_manager,
 )
 from schemas.config import Config, load_config
+from services.analysis_job_events import AnalysisEventHub
 from services.jd_analysis_jobs import JdAnalysisJobManager
 from services.resume_extraction_jobs import ResumeExtractionJobManager
 from utils.asyncio_windows import install_windows_connection_reset_filter
@@ -52,22 +64,36 @@ def create_app(
             target_config.database
         )
         app.state.database.initialize_tables()
+        app.state.analysis_events = AnalysisEventHub()
         app.state.resume_extraction_jobs = ResumeExtractionJobManager(
             config=target_config,
             database=app.state.database,
+            event_hub=app.state.analysis_events,
         )
         app.state.jd_analysis_jobs = JdAnalysisJobManager(
             config=target_config,
             database=app.state.database,
+            event_hub=app.state.analysis_events,
         )
         app.state.checkpointer = DatabaseCheckpointer(
             app.state.database,
             app.state.async_database,
         )
+        supervisor_tools = await get_supervisor_tools(config=target_config)
+        supervisor_tools.extend(
+            get_analysis_tools_for_supervisor(
+                AnalysisToolDependencies(
+                    config=target_config,
+                    database=app.state.database,
+                    resume_jobs=app.state.resume_extraction_jobs,
+                    jd_jobs=app.state.jd_analysis_jobs,
+                )
+            )
+        )
         app.state.supervisor_agent = SupervisorAgent(
             checkpointer=app.state.checkpointer,
             config=target_config,
-            tools=await get_supervisor_tools(config=target_config),
+            tools=supervisor_tools,
             compaction_model_resolver=DatabaseCompactionModelResolver(
                 app.state.database
             ),
@@ -75,6 +101,7 @@ def create_app(
         yield
         await app.state.resume_extraction_jobs.shutdown()
         await app.state.jd_analysis_jobs.shutdown()
+        await app.state.analysis_events.close()
         await dispose_async_database_manager()
         dispose_database_manager()
 
@@ -101,6 +128,10 @@ def create_app(
             {
                 "name": "ai",
                 "description": "AI chat operations using SupervisorAgent and database checkpoints for conversation state.",
+            },
+            {
+                "name": "analysis",
+                "description": "Background resume and job description analysis task events.",
             },
         ],
         lifespan=lifespan,
@@ -154,6 +185,7 @@ def create_app(
     )
     app.include_router(resume_router)
     app.include_router(job_description_router)
+    app.include_router(analysis_router)
     app.include_router(model_config_router)
     app.include_router(ai_router)
 
