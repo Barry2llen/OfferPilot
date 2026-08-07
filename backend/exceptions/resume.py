@@ -48,6 +48,7 @@ class ResumePreviewDependencyError(ResumePreviewError, ImportError):
 class ResumePreviewConversionError(ResumePreviewError):
     """Raised when a resume preview cannot be rendered."""
 
+
 class NotAResumeError(ResumeError):
     """Raised when the provided document is not recognized as a resume."""
 
@@ -65,5 +66,5 @@ __all__ = [
     "ResumeValidationError",
     "UnsupportedResumeFileError",
     "UnsupportedResumePreviewFileError",
-    "NotAResumeError"
+    "NotAResumeError",
 ]

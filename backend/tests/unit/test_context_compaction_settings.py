@@ -1,20 +1,19 @@
 import pytest
 from sqlalchemy import text
 
-from db.engine import DatabaseManager
-
 from agent.base import GraphRuntime
 from agent.compaction import DatabaseCompactionModelResolver
+from db.engine import DatabaseManager
 from db.models import ModelProviderORM, ModelSelectionORM
 from db.repositories import (
     ContextCompactionSettingsRepository,
     ModelSelectionRepository,
 )
+from schemas.model_provider import ModelProvider
+from schemas.model_selection import ModelSelection
 from services.context_compaction_settings_service import (
     ContextCompactionSettingsService,
 )
-from schemas.model_provider import ModelProvider
-from schemas.model_selection import ModelSelection
 
 
 @pytest.fixture

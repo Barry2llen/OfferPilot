@@ -3,7 +3,14 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class JdSchemaModel(BaseModel):
@@ -107,11 +114,17 @@ def _normalize_experience_bounds(
                 if min_match:
                     normalized_min = int(min_match.group(1))
                 elif normalized_min is None:
-                    bare_match = re.search(r"(\d+)\s*年(?:经验|工作经验|开发经验)?", text)
+                    bare_match = re.search(
+                        r"(\d+)\s*年(?:经验|工作经验|开发经验)?", text
+                    )
                     if bare_match:
                         normalized_min = int(bare_match.group(1))
 
-    if normalized_min is not None and normalized_max is not None and normalized_max < normalized_min:
+    if (
+        normalized_min is not None
+        and normalized_max is not None
+        and normalized_max < normalized_min
+    ):
         normalized_max = None
     return normalized_min, normalized_max
 

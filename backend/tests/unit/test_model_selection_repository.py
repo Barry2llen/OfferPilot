@@ -128,7 +128,9 @@ def test_create_missing_provider_raises_domain_error(
     with initialized_database_manager.session_scope() as session:
         repository = ModelSelectionRepository(session)
 
-        with pytest.raises(ModelProviderNotFoundError, match="Model provider not found"):
+        with pytest.raises(
+            ModelProviderNotFoundError, match="Model provider not found"
+        ):
             repository.create(
                 ModelSelectionORM(
                     provider_name="missing-provider",

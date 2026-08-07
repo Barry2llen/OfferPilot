@@ -30,7 +30,26 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pyinstaller>=6.20.0",
+    "ruff>=0.16.1",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+extend-exclude = [
+    "data",
+    "logs",
+    "dev/test-tmp",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true

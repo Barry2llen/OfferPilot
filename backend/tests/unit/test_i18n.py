@@ -55,7 +55,9 @@ def test_context_compaction_error_localizes_prefix_and_preserves_detail() -> Non
     assert localize_error(raw_error, "en-US") == raw_error
 
 
-def test_known_progress_messages_are_localized_and_unknown_messages_are_preserved() -> None:
+def test_known_progress_messages_are_localized_and_unknown_messages_are_preserved() -> (
+    None
+):
     assert (
         localize_progress_message("Starting resume extraction.", "en-US")
         == "Starting resume parsing."
@@ -167,6 +169,6 @@ def test_api_sets_content_language_and_openapi_is_english(
     assert openapi_response.headers["content-language"] == "zh-CN"
     openapi_payload = openapi_response.json()
     _assert_openapi_documentation_is_english(openapi_payload)
-    assert openapi_payload["components"]["schemas"]["ResumeDetail"]["properties"]["summary"]["examples"] == [
-        "张三 高级后端开发工程师 Python, FastAPI"
-    ]
+    assert openapi_payload["components"]["schemas"]["ResumeDetail"]["properties"][
+        "summary"
+    ]["examples"] == ["张三 高级后端开发工程师 Python, FastAPI"]

@@ -1,50 +1,42 @@
-
 import asyncio
-from uuid import uuid4
 from time import perf_counter
 from typing import override
+from uuid import uuid4
 
-from langgraph.runtime import Runtime
-from langgraph.errors import GraphInterrupt
-from langgraph.types import interrupt
-from langgraph.constants import START, END
-from langgraph.graph import StateGraph
 from langchain.tools import BaseTool, ToolRuntime
+from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import ToolMessage, ToolCall, BaseMessage
+from langgraph.constants import END, START
+from langgraph.errors import GraphInterrupt
+from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
+from langgraph.types import interrupt
 
-from ..models import load_chat_model
+from exceptions import AgentStateError, ModelCallExecutionError
+from schemas.command import BaseCommand
+from schemas.config.base import Config
+from utils.custom_events import _adispatch_custom_event_safely
+from utils.json import jsonify
+from utils.logger import logger
+
+from ..base import BaseAgentState, BaseGraph, BaseInterupt
 from ..compaction import (
-    ContextCompactionError,
     CompactionRequest,
     Compactor,
     ContextBudgetPolicy,
+    ContextCompactionError,
     DefaultContextBudgetPolicy,
     model_messages_for_state,
 )
-from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
-from ..base import (
-    BaseGraph,
-    BaseAgentState,
-    BaseInterupt
-)
+from ..events import ModelCallErrorEvent, ModelLoadErrorEvent, ToolCallErrorEvent
+from ..models import load_chat_model
 from ..prompts import (
-    PromptMessageBuilder,
     PromptBuilder,
+    PromptMessageBuilder,
     Prompts,
-    normalize_system_prompts
+    normalize_system_prompts,
 )
-from ..events import (
-    ToolCallErrorEvent,
-    ModelCallErrorEvent,
-    ModelLoadErrorEvent
-)
-from exceptions import AgentStateError, ModelCallExecutionError
-from schemas.config.base import Config
-from schemas.command import BaseCommand
-from utils.json import jsonify
-from utils.logger import logger
-from utils.custom_events import _adispatch_custom_event_safely
+from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
 
 
 def _message_reasoning_content(message: BaseMessage) -> str:
@@ -70,15 +62,17 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
     return True
 
 
-
 class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
-
     system_prompts: PromptMessageBuilder[State]
     tools: ToolsBuilder[State]
 
-    def _add_interrupt_tool(self, message_id: str, tool_call: ToolCall, tool: BaseTool) -> str:
+    def _add_interrupt_tool(
+        self, message_id: str, tool_call: ToolCall, tool: BaseTool
+    ) -> str:
         logger.debug(
-            lambda: f"Tool {tool.name} is an interrupt tool, skip calling it synchronously."
+            lambda: (
+                f"Tool {tool.name} is an interrupt tool, skip calling it synchronously."
+            )
         )
         self._interrupt_tools.append((message_id, tool_call, tool))
         return "[INTERRUPT_TOOL_CALLED]"
@@ -92,8 +86,8 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         result: object,
         tool_call: ToolCall,
         message_id: str | None = None,
-        tool: BaseTool | None = None
-        ) -> ToolMessage:
+        tool: BaseTool | None = None,
+    ) -> ToolMessage:
         if isinstance(result, ToolMessage):
             msg = result
             if message_id and msg.id is None:
@@ -107,9 +101,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             )
 
         if tool and tool.return_direct:
-            msg.additional_kwargs.update({
-                'return_direct': True
-            })
+            msg.additional_kwargs.update({"return_direct": True})
 
         return msg
 
@@ -137,30 +129,30 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         runtime: ToolRuntime[None, State],
     ) -> ToolCall:
         if not (
-            ModelCallGraph._schema_has_field(getattr(tool, "args_schema", None), "runtime")
+            ModelCallGraph._schema_has_field(
+                getattr(tool, "args_schema", None), "runtime"
+            )
             or ModelCallGraph._schema_has_field(tool.tool_call_schema, "runtime")
         ):
             return tool_call
 
-        logger.debug(
-            lambda: f"Injecting runtime into tool call for tool {tool.name}."
-        )
+        logger.debug(lambda: f"Injecting runtime into tool call for tool {tool.name}.")
 
         args = dict(tool_call["args"])
         args["runtime"] = runtime
         return {**tool_call, "args": args}
 
     def __init__(
-            self,
-            *args,
-            config: Config | None = None,
-            system_prompts: Prompts | PromptBuilder[State] | None = None,
-            tools: Tools | ToolsBuilder[State] | None = None,
-            compactor: Compactor[State] | None = None,
-            context_budget_policy: ContextBudgetPolicy | None = None,
-            **kwargs
-        ):
-        
+        self,
+        *args,
+        config: Config | None = None,
+        system_prompts: Prompts | PromptBuilder[State] | None = None,
+        tools: Tools | ToolsBuilder[State] | None = None,
+        compactor: Compactor[State] | None = None,
+        context_budget_policy: ContextBudgetPolicy | None = None,
+        **kwargs,
+    ):
+
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
         self._interrupt_tools: list[tuple[str, ToolCall, BaseTool]] = []
@@ -253,8 +245,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
     async def _context_compaction_error_node(self, state: State) -> State:
         message = str(
-            state.get("context_compaction_error")
-            or "Context compaction failed."
+            state.get("context_compaction_error") or "Context compaction failed."
         )
         await _adispatch_custom_event_safely(
             "on_context_compaction",
@@ -268,9 +259,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 max_attempts=1,
             ),
         )
-        response: BaseCommand = interrupt(
-            BaseInterupt(type="error", message=message)
-        )
+        response: BaseCommand = interrupt(BaseInterupt(type="error", message=message))
         if response["type"] == "retry":
             return {"context_compaction_error": None}  # type: ignore[return-value]
         raise ModelCallExecutionError(
@@ -294,19 +283,19 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         Tool node. This node is responsible for calling the tool and getting the response.
         It calls the tool with the state.messages and returns the response.
         """
-        
+
         config = config or {}
         messages = state.get("messages")
 
         if not messages:
             logger.warning("No messages in state, skipping tool node.")
             return state
-        
-        if messages[-1].type != 'ai':
+
+        if messages[-1].type != "ai":
             logger.warning("Last message is not a tool call, skipping tool node.")
             return state
-        
-        tool_calls: list[ToolCall] = getattr(messages[-1], 'tool_calls', None) or []
+
+        tool_calls: list[ToolCall] = getattr(messages[-1], "tool_calls", None) or []
         if not tool_calls:
             logger.warning("Last AI message has no tool calls, skipping tool node.")
             return state
@@ -324,7 +313,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 )
                 for tool_call in tool_calls
             ]
-            return BaseAgentState(messages=results) # type: ignore
+            return BaseAgentState(messages=results)  # type: ignore
 
         if not tools:
             logger.warning("No tools provided, skipping tool node.")
@@ -338,13 +327,13 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             tool_call_id = tool_call.get("id") or ""
 
             logger.debug(
-                lambda: f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})"
+                lambda: (
+                    f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})"
+                )
             )
 
             if name not in tools_dict:
-                logger.debug(
-                    lambda: f"Tool {name} not found in provided tools."
-                )
+                logger.debug(lambda: f"Tool {name} not found in provided tools.")
                 return ToolMessage(
                     content=f"Tool {name} not found. Please check if you called the correct tool.",
                     tool_call_id=tool_call_id,
@@ -376,27 +365,34 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     else await tool.ainvoke(injected_tool_call, config)
                 )
             except GraphInterrupt:
-                logger.warning(f"Tool {name} raised GraphInterrupt, treating it as an interrupt tool.")
+                logger.warning(
+                    f"Tool {name} raised GraphInterrupt, treating it as an interrupt tool."
+                )
                 result = self._add_interrupt_tool(message_id, injected_tool_call, tool)
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
-                await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(
-                    error=str(e),
-                    tool_name=name,
-                    args=args,
-                    tool_call_id=tool_call_id
-                ))
+                await _adispatch_custom_event_safely(
+                    "on_tool_call_error",
+                    ToolCallErrorEvent(
+                        error=str(e),
+                        tool_name=name,
+                        args=args,
+                        tool_call_id=tool_call_id,
+                    ),
+                )
                 return ToolMessage(
                     content=f"Error calling tool {name} with args {args}: {e}",
                     tool_call_id=tool_call_id,
                     name=name,
                     status="error",
                 )
-            
+
             return self._convert_tool_message(result, tool_call, message_id, tool)
-        
-        results = await asyncio.gather(*(_call_tool(tool_call) for tool_call in tool_calls))
-        return {'messages': list(results)} # type: ignore
+
+        results = await asyncio.gather(
+            *(_call_tool(tool_call) for tool_call in tool_calls)
+        )
+        return {"messages": list(results)}  # type: ignore
 
     async def _exec_interrupt_tool_node(
         self,
@@ -418,13 +414,18 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         except GraphInterrupt:
             raise
         except Exception as e:
-            logger.error(f"Error calling interrupt tool {tool.name} with args {tool_call['args']}: {e}")
-            await _adispatch_custom_event_safely("on_tool_call_error", ToolCallErrorEvent(
-                error=str(e),
-                tool_name=tool.name,
-                args=tool_call['args'],
-                tool_call_id=tool_call_id
-            ))
+            logger.error(
+                f"Error calling interrupt tool {tool.name} with args {tool_call['args']}: {e}"
+            )
+            await _adispatch_custom_event_safely(
+                "on_tool_call_error",
+                ToolCallErrorEvent(
+                    error=str(e),
+                    tool_name=tool.name,
+                    args=tool_call["args"],
+                    tool_call_id=tool_call_id,
+                ),
+            )
             result = ToolMessage(
                 content=f"Error calling interrupt tool {tool.name} with args {tool_call['args']}: {e}",
                 tool_call_id=tool_call_id,
@@ -434,15 +435,17 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
         self._interrupt_tools.pop()
         return {
-            'messages': [self._convert_tool_message(result, tool_call, message_id, tool)]
-        } # type: ignore
+            "messages": [
+                self._convert_tool_message(result, tool_call, message_id, tool)
+            ]
+        }  # type: ignore
 
     async def _model_call_node(self, state: State) -> State:
         """
         Model call node. This node is responsible for calling the model and getting the response.
         It switchs the model based on the state.model and calls the model with the state.messages.
         """
-        
+
         while True:
             model_selection = self._resolve_model_selection(state)
             try:
@@ -454,15 +457,18 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             except Exception as e:
                 msg = f"Error loading model:\n{e}"
                 logger.error(msg)
-                
-                await _adispatch_custom_event_safely("on_model_load_error", ModelLoadErrorEvent(
-                    error=msg,
-                    model=model_selection # type: ignore
-                ))
 
-                resp: BaseCommand = interrupt(BaseInterupt(type='error', message=msg))
+                await _adispatch_custom_event_safely(
+                    "on_model_load_error",
+                    ModelLoadErrorEvent(
+                        error=msg,
+                        model=model_selection,  # type: ignore
+                    ),
+                )
 
-                if resp['type'] == 'retry':
+                resp: BaseCommand = interrupt(BaseInterupt(type="error", message=msg))
+
+                if resp["type"] == "retry":
                     continue
                 else:
                     raise ModelCallExecutionError(
@@ -479,7 +485,9 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         ]
 
         logger.debug(
-            lambda: f"Calling model {getattr(model_selection, 'name', 'unknown')} with input messages:\n{jsonify(model_input)}"
+            lambda: (
+                f"Calling model {getattr(model_selection, 'name', 'unknown')} with input messages:\n{jsonify(model_input)}"
+            )
         )
 
         while True:
@@ -496,20 +504,28 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                             "on_reasoning_done",
                             {"duration_ms": duration_ms},
                         )
-                    return {'messages': [response]} # type: ignore
+                    return {"messages": [response]}  # type: ignore
                 except Exception as e:
-                    await _adispatch_custom_event_safely("on_model_call_error", ModelCallErrorEvent(
-                        error=str(e),
-                        attempt=_+1,
-                        max_attempts=max_retries
-                    ))
-                    logger.error(f"Error calling model, retries in progress {_+1}/{max_retries}:\n{e}")
+                    await _adispatch_custom_event_safely(
+                        "on_model_call_error",
+                        ModelCallErrorEvent(
+                            error=str(e), attempt=_ + 1, max_attempts=max_retries
+                        ),
+                    )
+                    logger.error(
+                        f"Error calling model, retries in progress {_ + 1}/{max_retries}:\n{e}"
+                    )
 
             logger.error(f"Model call failed after {max_retries} retries.")
 
-            resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Model call failed after {max_retries} retries."))
-            
-            if resp['type'] == 'retry':
+            resp: BaseCommand = interrupt(
+                BaseInterupt(
+                    type="error",
+                    message=f"Model call failed after {max_retries} retries.",
+                )
+            )
+
+            if resp["type"] == "retry":
                 continue
             else:
                 raise ModelCallExecutionError(
@@ -517,7 +533,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     f"{max_retries} retries and code received interrupt with type "
                     f"{resp['type']} and message {resp.get('prompt', '')}"
                 )
-            
+
     def _dicide_next_action(self, state: State) -> str:
         """
         Decide next action node. This node is responsible for deciding the next action based on the state.messages.
@@ -528,7 +544,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         if not messages:
             logger.error("No messages in state, this should not happen.")
             raise AgentStateError("No messages in state, this should not happen.")
-        
+
         msg = messages[-1]
         if msg.type not in {"ai", "tool"}:
             logger.error(
@@ -537,10 +553,10 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             raise AgentStateError(
                 "Last message in state is not an AI or tool message, this should not happen."
             )
-        
-        tool_calls = getattr(msg, 'tool_calls', None)
 
-        return 'tool' if tool_calls else 'end'
+        tool_calls = getattr(msg, "tool_calls", None)
+
+        return "tool" if tool_calls else "end"
 
     def _dicide_after_tool(self, state: State) -> str:
         """
@@ -555,69 +571,66 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
         msg = messages[-1]
         if msg.type == "tool":
-            return_direct = msg.additional_kwargs.get('return_direct')
+            return_direct = msg.additional_kwargs.get("return_direct")
             if return_direct:
                 logger.debug(
                     lambda: "Tool message has return_direct flag, ending the graph."
                 )
-                return 'end'
-            return 'model'
+                return "end"
+            return "model"
         else:
             logger.error(
-                lambda: "Last message in state is not a tool message, this should not happen."
+                lambda: (
+                    "Last message in state is not a tool message, this should not happen."
+                )
             )
             raise AgentStateError(
                 "Last message in state is not a tool message, this should not happen."
             )
-            
+
     @override
     def get_graph(self) -> StateGraph[BaseAgentState]:
-        
+
         graph = StateGraph(BaseAgentState)
-        graph.add_node('model', self._model_call_node)
-        graph.add_node('tool', self._tool_node) #type: ignore
-        graph.add_node('interrupt_tool', self._exec_interrupt_tool_node)
+        graph.add_node("model", self._model_call_node)
+        graph.add_node("tool", self._tool_node)  # type: ignore
+        graph.add_node("interrupt_tool", self._exec_interrupt_tool_node)
         if self.compactor is not None:
-            graph.add_node('compact', self._prepare_context_node)
-            graph.add_node('compaction_complete', self._context_compaction_complete_node)
-            graph.add_node('compaction_error', self._context_compaction_error_node)
-            graph.add_edge(START, 'compact')
+            graph.add_node("compact", self._prepare_context_node)
+            graph.add_node(
+                "compaction_complete", self._context_compaction_complete_node
+            )
+            graph.add_node("compaction_error", self._context_compaction_error_node)
+            graph.add_edge(START, "compact")
             graph.add_conditional_edges(
-                'compact',
+                "compact",
                 self._route_after_context_compaction,
                 {
-                    'model': 'model',
-                    'complete': 'compaction_complete',
-                    'error': 'compaction_error',
+                    "model": "model",
+                    "complete": "compaction_complete",
+                    "error": "compaction_error",
                 },
             )
-            graph.add_edge('compaction_complete', 'model')
-            graph.add_edge('compaction_error', 'compact')
+            graph.add_edge("compaction_complete", "model")
+            graph.add_edge("compaction_error", "compact")
         else:
-            graph.add_edge(START, 'model')
+            graph.add_edge(START, "model")
         graph.add_conditional_edges(
-            'model',
-            self._dicide_next_action,
-            {
-                'tool': 'tool',
-                'end': END
-            }
+            "model", self._dicide_next_action, {"tool": "tool", "end": END}
         )
-        graph.add_edge('tool', 'interrupt_tool')
-        next_model_node = 'compact' if self.compactor is not None else 'model'
+        graph.add_edge("tool", "interrupt_tool")
+        next_model_node = "compact" if self.compactor is not None else "model"
         graph.add_conditional_edges(
-            'interrupt_tool',
-            lambda state: True if len(self._interrupt_tools) > 0 else self._dicide_after_tool(state),
-            {
-                True: 'interrupt_tool',
-                'model': next_model_node,
-                'end': END
-            }
+            "interrupt_tool",
+            lambda state: (
+                True
+                if len(self._interrupt_tools) > 0
+                else self._dicide_after_tool(state)
+            ),
+            {True: "interrupt_tool", "model": next_model_node, "end": END},
         )
-        
 
         return graph
 
-__all__ = [
-    "ModelCallGraph"
-]
+
+__all__ = ["ModelCallGraph"]

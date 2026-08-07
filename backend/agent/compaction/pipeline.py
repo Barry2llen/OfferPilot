@@ -6,32 +6,31 @@ from typing import Any, cast
 from langchain_core.messages import BaseMessage, SystemMessage
 
 from schemas.config.base import Config, ContextCompactionConfig
+from utils.logger import logger
 
+from ..base import ContextCompactionSnapshot, ContextCompactionStatus
 from .budget import DefaultContextBudgetPolicy
+from .errors import ContextCompactionError
 from .layers import (
     AutoCompactLayer,
     HistoricalAttachmentCompactor,
     ToolResultCompactor,
 )
-from ..base import ContextCompactionSnapshot, ContextCompactionStatus
-from .errors import ContextCompactionError
 from .models import (
     CompactedMessage,
-    CompactionAction,
     CompactionContext,
     CompactionRequest,
     CompactionResult,
     MessageRef,
 )
+from .protection import protect_entries
 from .protocols import (
     CompactionLayer,
     CompactionModelResolver,
     Compactor,
     TokenCounter,
 )
-from .protection import protect_entries
 from .token_counter import ApproximateTokenCounter
-from utils.logger import logger
 
 
 def _message_ref(index: int, message: BaseMessage) -> MessageRef:
@@ -158,7 +157,9 @@ def model_messages_for_state(state: Mapping[str, Any]) -> list[BaseMessage]:
     messages = state.get("messages", ())
     if not isinstance(messages, Sequence):
         return []
-    raw_messages = tuple(message for message in messages if isinstance(message, BaseMessage))
+    raw_messages = tuple(
+        message for message in messages if isinstance(message, BaseMessage)
+    )
     snapshot = _read_snapshot(state, raw_messages)
     if snapshot is None:
         logger.debug(
@@ -243,10 +244,10 @@ class PipelineCompactor(Compactor):
         try:
             original_tokens = await self._count(context)
         except Exception as error:
+            error_type = type(error).__name__
             logger.debug(
                 lambda: (
-                    "Initial compaction token count failed: "
-                    f"error_type={type(error).__name__}."
+                    f"Initial compaction token count failed: error_type={error_type}."
                 )
             )
             raise ContextCompactionError(
@@ -276,10 +277,11 @@ class PipelineCompactor(Compactor):
                 context = await layer.apply(context)
                 compacted_tokens = await self._count(context)
             except ContextCompactionError as error:
+                error_type = type(error).__name__
                 logger.debug(
                     lambda: (
                         "Compaction layer blocked: "
-                        f"layer={layer.name}, error_type={type(error).__name__}, "
+                        f"layer={layer.name}, error_type={error_type}, "
                         f"partial_entries={len(context.entries)}, "
                         f"partial_actions={len(context.actions)}."
                     )
@@ -293,10 +295,11 @@ class PipelineCompactor(Compactor):
                 )
                 raise error.with_partial_result(partial) from error
             except Exception as error:
+                error_type = type(error).__name__
                 logger.debug(
                     lambda: (
                         "Compaction layer failed: "
-                        f"layer={layer.name}, error_type={type(error).__name__}, "
+                        f"layer={layer.name}, error_type={error_type}, "
                         f"partial_entries={len(context.entries)}, "
                         f"partial_actions={len(context.actions)}."
                     )
@@ -388,9 +391,10 @@ class PipelineCompactor(Compactor):
             action.layer == "auto_compact" and action.kind == "summarize"
             for action in context.actions
         )
-        auto_compacted = bool(
-            context.snapshot and context.snapshot.get("auto_compacted")
-        ) or auto_compacted_this_run
+        auto_compacted = (
+            bool(context.snapshot and context.snapshot.get("auto_compacted"))
+            or auto_compacted_this_run
+        )
         return CompactionResult(
             entries=context.entries,
             actions=context.actions,

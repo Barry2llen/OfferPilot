@@ -9,7 +9,6 @@ from db.engine.manager import DatabaseManager
 from db.repositories import JobDescriptionAnalysisRepository
 from schemas.config import Config
 from services.job_description_analysis_service import JobDescriptionAnalysisService
-from utils.stream import render_sse_event
 from utils.i18n import (
     DEFAULT_LOCALE,
     Locale,
@@ -17,6 +16,7 @@ from utils.i18n import (
     localize_model_retry_detail,
     localize_progress_message,
 )
+from utils.stream import render_sse_event
 
 
 @dataclass(slots=True)
@@ -145,7 +145,9 @@ class JdAnalysisJobManager:
                     {
                         "analysis_id": analysis_id,
                         "progress": data.get("progress", 0),
-                        "message": localize_progress_message(data.get("message"), locale),
+                        "message": localize_progress_message(
+                            data.get("message"), locale
+                        ),
                         "additional_data": data.get("additional_data") or {},
                     },
                 )

@@ -15,7 +15,9 @@ class ContextCompactionError(RuntimeError):
         super().__init__(message)
         self.partial_result = partial_result
 
-    def with_partial_result(self, partial_result: CompactionResult) -> ContextCompactionError:
+    def with_partial_result(
+        self, partial_result: CompactionResult
+    ) -> ContextCompactionError:
         if self.partial_result is None:
             self.partial_result = partial_result
         return self

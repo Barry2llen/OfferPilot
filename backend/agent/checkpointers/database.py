@@ -90,7 +90,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
         checkpoint_ns = None
         target_checkpoint_id = None
         if config is not None:
-            thread_id, checkpoint_ns, target_checkpoint_id = self._get_config_values(config)
+            thread_id, checkpoint_ns, target_checkpoint_id = self._get_config_values(
+                config
+            )
             thread_ids = (thread_id,)
 
         with self._sync_manager.session_scope() as session:
@@ -106,7 +108,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
                 if before_id and row.checkpoint_id >= before_id:
                     continue
 
-                metadata = self.serde.loads_typed((row.metadata_type, row.metadata_payload))
+                metadata = self.serde.loads_typed(
+                    (row.metadata_type, row.metadata_payload)
+                )
                 if filter and not self._metadata_matches(metadata, filter):
                     continue
 
@@ -246,8 +250,7 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
             repository = CheckpointRepository(session)
             rows = repository.list_checkpoints_for_run_ids(run_ids)
             keys = [
-                (row.thread_id, row.checkpoint_ns, row.checkpoint_id)
-                for row in rows
+                (row.thread_id, row.checkpoint_ns, row.checkpoint_id) for row in rows
             ]
             repository.delete_checkpoints(keys)
             self._cleanup_orphan_blobs(repository, {row.thread_id for row in rows})
@@ -264,7 +267,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
             repository.delete_thread(target_thread_id)
 
             for row in source_rows:
-                metadata = self.serde.loads_typed((row.metadata_type, row.metadata_payload))
+                metadata = self.serde.loads_typed(
+                    (row.metadata_type, row.metadata_payload)
+                )
                 metadata["source"] = "fork"
                 metadata_type, metadata_payload = self.serde.dumps_typed(metadata)
                 repository.save_checkpoint(
@@ -360,7 +365,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
         thread_id, checkpoint_ns, checkpoint_id = self._get_config_values(config)
         async with self._async_manager.session_scope() as session:
             repository = AsyncCheckpointRepository(session)
-            row = await repository.get_checkpoint(thread_id, checkpoint_ns, checkpoint_id)
+            row = await repository.get_checkpoint(
+                thread_id, checkpoint_ns, checkpoint_id
+            )
             if row is None:
                 return None
 
@@ -397,7 +404,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
         checkpoint_ns = None
         target_checkpoint_id = None
         if config is not None:
-            thread_id, checkpoint_ns, target_checkpoint_id = self._get_config_values(config)
+            thread_id, checkpoint_ns, target_checkpoint_id = self._get_config_values(
+                config
+            )
             thread_ids = (thread_id,)
 
         async with self._async_manager.session_scope() as session:
@@ -413,7 +422,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
                 if before_id and row.checkpoint_id >= before_id:
                     continue
 
-                metadata = self.serde.loads_typed((row.metadata_type, row.metadata_payload))
+                metadata = self.serde.loads_typed(
+                    (row.metadata_type, row.metadata_payload)
+                )
                 if filter and not self._metadata_matches(metadata, filter):
                     continue
 
@@ -555,11 +566,12 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
             repository = AsyncCheckpointRepository(session)
             rows = await repository.list_checkpoints_for_run_ids(run_ids)
             keys = [
-                (row.thread_id, row.checkpoint_ns, row.checkpoint_id)
-                for row in rows
+                (row.thread_id, row.checkpoint_ns, row.checkpoint_id) for row in rows
             ]
             await repository.delete_checkpoints(keys)
-            await self._acleanup_orphan_blobs(repository, {row.thread_id for row in rows})
+            await self._acleanup_orphan_blobs(
+                repository, {row.thread_id for row in rows}
+            )
 
     async def acopy_thread(
         self,
@@ -568,12 +580,16 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
     ) -> None:
         async with self._async_manager.session_scope() as session:
             repository = AsyncCheckpointRepository(session)
-            source_rows = await repository.list_checkpoints(thread_ids=(source_thread_id,))
+            source_rows = await repository.list_checkpoints(
+                thread_ids=(source_thread_id,)
+            )
             blob_rows = await repository.list_blobs_for_threads((source_thread_id,))
             await repository.delete_thread(target_thread_id)
 
             for row in source_rows:
-                metadata = self.serde.loads_typed((row.metadata_type, row.metadata_payload))
+                metadata = self.serde.loads_typed(
+                    (row.metadata_type, row.metadata_payload)
+                )
                 metadata["source"] = "fork"
                 metadata_type, metadata_payload = self.serde.dumps_typed(metadata)
                 await repository.save_checkpoint(
@@ -731,7 +747,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
         checkpoint_ns: str,
         row: GraphCheckpointORM,
     ) -> Checkpoint:
-        checkpoint = self.serde.loads_typed((row.checkpoint_type, row.checkpoint_payload))
+        checkpoint = self.serde.loads_typed(
+            (row.checkpoint_type, row.checkpoint_payload)
+        )
         versions = {
             channel: str(version)
             for channel, version in checkpoint["channel_versions"].items()
@@ -750,7 +768,9 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
         checkpoint_ns: str,
         row: GraphCheckpointORM,
     ) -> Checkpoint:
-        checkpoint = self.serde.loads_typed((row.checkpoint_type, row.checkpoint_payload))
+        checkpoint = self.serde.loads_typed(
+            (row.checkpoint_type, row.checkpoint_payload)
+        )
         versions = {
             channel: str(version)
             for channel, version in checkpoint["channel_versions"].items()
@@ -832,7 +852,5 @@ class DatabaseCheckpointer(BaseCheckpointSaver[str]):
     def _require_checkpoint_ref(self, config: RunnableConfig) -> tuple[str, str, str]:
         thread_id, checkpoint_ns, checkpoint_id = self._get_config_values(config)
         if not checkpoint_id:
-            raise ValueError(
-                "Checkpoint writes require configurable.checkpoint_id."
-            )
+            raise ValueError("Checkpoint writes require configurable.checkpoint_id.")
         return thread_id, checkpoint_ns, checkpoint_id

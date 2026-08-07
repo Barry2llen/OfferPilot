@@ -6,9 +6,9 @@ from typing import Any
 
 from langchain_core.messages import ToolMessage
 
-from ..models import CompactedMessage, CompactionAction, CompactionContext
 from utils.logger import logger
 
+from ..models import CompactedMessage, CompactionAction, CompactionContext
 
 _PREFERRED_KEYS = (
     "query",
@@ -48,7 +48,9 @@ def _compact_json_value(
         return _shorten_text(value, string_limit)
     if isinstance(value, list):
         compacted = [
-            _compact_json_value(item, string_limit=string_limit, array_limit=array_limit)
+            _compact_json_value(
+                item, string_limit=string_limit, array_limit=array_limit
+            )
             for item in value[:array_limit]
         ]
         omitted = len(value) - len(compacted)
@@ -58,7 +60,9 @@ def _compact_json_value(
     if isinstance(value, dict):
         preferred: list[tuple[str, Any]] = []
         remaining: list[tuple[str, Any]] = []
-        normalized_preferred = {key.lower().replace("_", " ") for key in _PREFERRED_KEYS}
+        normalized_preferred = {
+            key.lower().replace("_", " ") for key in _PREFERRED_KEYS
+        }
         for key, item in value.items():
             target = (
                 preferred

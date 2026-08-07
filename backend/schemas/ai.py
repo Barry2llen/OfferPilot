@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 from schemas.chat_file import ChatAttachmentRef
 
 
@@ -18,10 +19,12 @@ class AIChatCommand(BaseModel):
         description="Text attached to the command. The top-level prompt is used when prompt is omitted; retry and query may omit it.",
         examples=["Continue processing the resume."],
     )
-    choice: Literal["firstChoice", "secondChoice", "thirdChoice", "other"] | None = Field(
-        default=None,
-        description="User choice submitted by a query command. Required only when command.type is query.",
-        examples=["firstChoice"],
+    choice: Literal["firstChoice", "secondChoice", "thirdChoice", "other"] | None = (
+        Field(
+            default=None,
+            description="User choice submitted by a query command. Required only when command.type is query.",
+            examples=["firstChoice"],
+        )
     )
     note: str | None = Field(
         default=None,
@@ -84,14 +87,12 @@ class AIChatResponse(BaseModel):
                         },
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": "data:image/png;base64,iVBORw0KGgo="
-                            },
+                            "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="},
                             "index": 1,
                             "extras": {},
                         },
                     ],
-                }
+                },
             ]
         }
     )
@@ -343,7 +344,9 @@ class AIChatStreamRequest(BaseModel):
 
         if command_type in {"retry", "query"}:
             if not self.thread_id:
-                raise ValueError(f"thread_id is required when command.type is {command_type}")
+                raise ValueError(
+                    f"thread_id is required when command.type is {command_type}"
+                )
             if command_type == "query" and self.command and self.command.choice is None:
                 raise ValueError("choice is required when command.type is query")
             return self

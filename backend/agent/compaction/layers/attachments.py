@@ -4,9 +4,9 @@ from collections.abc import Mapping
 
 from langchain_core.messages import HumanMessage
 
-from ..models import CompactedMessage, CompactionAction, CompactionContext
 from utils.logger import logger
 
+from ..models import CompactedMessage, CompactionAction, CompactionContext
 
 _ATTACHMENT_LAYER = "historical_attachments"
 
@@ -91,7 +91,9 @@ class HistoricalAttachmentCompactor:
 
     async def apply(self, context: CompactionContext) -> CompactionContext:
         if not self.enabled:
-            logger.debug(lambda: "Historical attachment compaction skipped: layer disabled.")
+            logger.debug(
+                lambda: "Historical attachment compaction skipped: layer disabled."
+            )
             return context
 
         actions: list[CompactionAction] = []

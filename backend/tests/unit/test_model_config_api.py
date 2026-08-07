@@ -237,11 +237,18 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     assert "/model-providers" in payload["paths"]
     assert "/model-selections" in payload["paths"]
     assert "/context-compaction-settings" in payload["paths"]
-    assert payload["paths"]["/model-providers"]["post"]["summary"] == "Create a model provider"
-    assert payload["paths"]["/model-selections"]["post"]["summary"] == "Create a model selection"
     assert (
-        payload["components"]["schemas"]["ModelSelectionResponse"]["properties"]
-        ["context_window_tokens"]["description"]
+        payload["paths"]["/model-providers"]["post"]["summary"]
+        == "Create a model provider"
+    )
+    assert (
+        payload["paths"]["/model-selections"]["post"]["summary"]
+        == "Create a model selection"
+    )
+    assert (
+        payload["components"]["schemas"]["ModelSelectionResponse"]["properties"][
+            "context_window_tokens"
+        ]["description"]
         == "Resolved maximum context window for this model in tokens."
     )
     assert "ModelProviderResponse" in payload["components"]["schemas"]
@@ -249,4 +256,9 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
         payload["components"]["schemas"]["ModelProviderCreate"],
         ensure_ascii=False,
     )
-    assert "Whether an API key is configured" in payload["components"]["schemas"]["ModelProviderResponse"]["properties"]["has_api_key"]["description"]
+    assert (
+        "Whether an API key is configured"
+        in payload["components"]["schemas"]["ModelProviderResponse"]["properties"][
+            "has_api_key"
+        ]["description"]
+    )

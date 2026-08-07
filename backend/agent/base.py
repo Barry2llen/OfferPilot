@@ -1,40 +1,34 @@
-
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import (
+    Annotated,
     Any,
     Awaitable,
-    TypedDict,
-    Annotated,
     Literal,
-    NotRequired,
     NamedTuple,
+    NotRequired,
     Sequence,
-    cast
+    TypedDict,
+    cast,
 )
-from abc import ABC, abstractmethod
 
-from langgraph._internal._typing import StateLike
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables.schema import StreamEvent
+from langgraph._internal._typing import StateLike
+from langgraph.cache.base import BaseCache
 from langgraph.graph import StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.cache.base import BaseCache
 from langgraph.store.base import BaseStore
-from langgraph.types import (
-    Checkpointer,
-    All
-)
-from .annotations.types import (
-    Displace,
-    MaybeCallable
-)
-from schemas.config.base import Config
-from schemas.config import load_config
-from utils.stream import render_stream_events, StreamEventHandler
-from schemas.model_selection import ModelSelection
+from langgraph.types import All, Checkpointer
 
+from schemas.config import load_config
+from schemas.config.base import Config
+from schemas.model_selection import ModelSelection
+from utils.stream import StreamEventHandler, render_stream_events
+
+from .annotations.types import Displace, MaybeCallable
 
 ContextCompactionStatus = Literal["complete", "pending_auto_compact"]
 
@@ -60,37 +54,33 @@ class BaseAgentState(TypedDict, total=False):
     context_compaction_error: NotRequired[str | None]
     context_compaction_event_pending: NotRequired[bool]
 
+
 class GraphRuntime[State: StateLike = BaseAgentState](NamedTuple):
     state: State
     additional_args: Sequence[Any]
     additional_keywords: dict[str, Any]
 
-class BaseGraph[State: StateLike = BaseAgentState](ABC):
 
+class BaseGraph[State: StateLike = BaseAgentState](ABC):
     config: Config
     additional_args: Sequence[Any]
     additional_keywords: dict[str, Any]
 
-    def __init__(
-            self,
-            *args,
-            config: Config | None = None,
-            **kwargs
-        ):
+    def __init__(self, *args, config: Config | None = None, **kwargs):
         self.additional_args = args or ()
         self.additional_keywords = kwargs or {}
         self.config = config if config is not None else load_config()
 
     """Base graph"""
+
     @abstractmethod
-    def get_graph(self) -> StateGraph[State]:
-        ...
+    def get_graph(self) -> StateGraph[State]: ...
 
     def get_runtime(self, state: State) -> GraphRuntime[State]:
         return GraphRuntime[State](
             state=state,
             additional_args=self.additional_args,
-            additional_keywords=self.additional_keywords
+            additional_keywords=self.additional_keywords,
         )
 
     def get_compiled_graph(
@@ -111,8 +101,9 @@ class BaseGraph[State: StateLike = BaseAgentState](ABC):
             interrupt_before=interrupt_before,
             interrupt_after=interrupt_after,
             debug=debug,
-            name=name
+            name=name,
         )
+
 
 class BaseAgent[State: StateLike = BaseAgentState](BaseGraph[State]):
     """Base agent"""
@@ -138,7 +129,6 @@ class BaseAgent[State: StateLike = BaseAgentState](BaseGraph[State]):
         self.debug = debug
         self.name = name
 
-
     def get_agent(self) -> CompiledStateGraph[State]:
         return self.get_compiled_graph(
             checkpointer=self.checkpointer,
@@ -147,8 +137,9 @@ class BaseAgent[State: StateLike = BaseAgentState](BaseGraph[State]):
             interrupt_before=self.interrupt_before,
             interrupt_after=self.interrupt_after,
             debug=self.debug,
-            name=self.name
+            name=self.name,
         )
+
 
 class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
     """
@@ -160,9 +151,7 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         self.agent = agent.get_agent()
 
     def _graph_config(self) -> RunnableConfig:
-        return RunnableConfig(
-            recursion_limit=self.config.graph_recursion_limit
-        )
+        return RunnableConfig(recursion_limit=self.config.graph_recursion_limit)
 
     @abstractmethod
     def _construct_initial_state(self, *args, **kwargs) -> State:
@@ -178,21 +167,15 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         """
         ...
 
-    def invoke(
-        self,
-        *args,
-        **kwargs
-    ) -> Result:
+    def invoke(self, *args, **kwargs) -> Result:
         """
         Run the workflow and return the result.
         """
-        raise RuntimeError("Synchronous workflow invocation is no longer supported. Use ainvoke().")
-    
-    async def ainvoke(
-        self,
-        *args,
-        **kwargs
-    ) -> Result:
+        raise RuntimeError(
+            "Synchronous workflow invocation is no longer supported. Use ainvoke()."
+        )
+
+    async def ainvoke(self, *args, **kwargs) -> Result:
         """
         Asynchronously run the workflow and return the result.
         """
@@ -201,12 +184,9 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
             self._graph_config(),
         )
         return self._get_result(cast(State, result))
-    
+
     async def astream_events(
-        self,
-        *args,
-        handlers: dict[str, StreamEventHandler] | None = None,
-        **kwargs
+        self, *args, handlers: dict[str, StreamEventHandler] | None = None, **kwargs
     ) -> Result:
         """
         Run the workflow and stream events using the provided event handler.
@@ -242,14 +222,10 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         )
         await render_stream_events(event_stream, handlers=merged_handlers)
         return self._get_result(final_state or state)
-    
-    
-type InteruptType = Literal[
-    'error',
-    'query',
-    'warning',
-    'other'
-]
+
+
+type InteruptType = Literal["error", "query", "warning", "other"]
+
 
 class BaseInterupt(TypedDict):
     type: NotRequired[InteruptType]
@@ -262,6 +238,7 @@ def get[T](type_: type[T], obj: dict[str, Any], key: str) -> T:
         raise TypeError(f"Expected {type_}, got {type(value)}")
     return value
 
+
 __all__ = [
     "BaseAgentState",
     "BaseGraph",
@@ -271,5 +248,5 @@ __all__ = [
     "ContextCompactionStatus",
     "InteruptType",
     "BaseInterupt",
-    "get"
+    "get",
 ]

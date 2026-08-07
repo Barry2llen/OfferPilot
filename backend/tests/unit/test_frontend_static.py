@@ -11,7 +11,7 @@ def _create_frontend_dist(path: Path) -> Path:
     assets_dir = path / "assets"
     assets_dir.mkdir(parents=True)
     (path / "index.html").write_text(
-        "<!doctype html><html><body><div id=\"root\">OfferPilot SPA</div></body></html>",
+        '<!doctype html><html><body><div id="root">OfferPilot SPA</div></body></html>',
         encoding="utf-8",
     )
     (assets_dir / "app.js").write_text("console.log('OfferPilot');", encoding="utf-8")
@@ -27,7 +27,9 @@ def test_frontend_static_files_and_spa_navigation_are_served(
     root_response = client.get("/")
     asset_response = client.get("/assets/app.js")
     deep_route_response = client.get("/resumes/123", headers={"accept": "text/html"})
-    unknown_route_response = client.get("/unknown-route", headers={"accept": "text/html"})
+    unknown_route_response = client.get(
+        "/unknown-route", headers={"accept": "text/html"}
+    )
     missing_asset_response = client.get("/assets/missing.js")
     missing_api_response = client.patch("/resumes/123/text", json={})
 

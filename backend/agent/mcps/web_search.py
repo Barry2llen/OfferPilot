@@ -1,11 +1,10 @@
-
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any, AsyncIterator
 
 import httpx
-from langchain.tools import BaseTool
 import langchain_mcp_adapters.sessions as mcp_sessions
+from langchain.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.sessions import StreamableHttpConnection
 from mcp.client.streamable_http import streamable_http_client
@@ -22,7 +21,9 @@ async def _streamable_http_client(
     httpx_client_factory: Any = create_mcp_http_client,
     auth: httpx.Auth | None = None,
 ) -> AsyncIterator[tuple[Any, Any, Any]]:
-    timeout_seconds = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+    timeout_seconds = (
+        timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+    )
     read_timeout_seconds = (
         sse_read_timeout.total_seconds()
         if isinstance(sse_read_timeout, timedelta)
@@ -62,6 +63,5 @@ async def get_web_search_mcp_tools():
     web_search_mcp_tools.extend(tools)
     return web_search_mcp_tools
 
-__all__ = [
-    "get_web_search_mcp_tools"
-]
+
+__all__ = ["get_web_search_mcp_tools"]

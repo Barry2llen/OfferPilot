@@ -97,6 +97,5 @@ class ModelSelectionRepository:
             return
 
         raise ModelSelectionAlreadyExistsError(
-            "Model selection already exists: "
-            f"{provider_name}/{model_name}"
+            f"Model selection already exists: {provider_name}/{model_name}"
         )

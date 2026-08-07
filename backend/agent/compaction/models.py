@@ -14,7 +14,6 @@ from ..base import (
     GraphRuntime,
 )
 
-
 CompactionEntryKind = Literal["identity", "rewrite", "summary"]
 CompactionActionKind = Literal["keep", "rewrite", "drop", "summarize"]
 
@@ -63,7 +62,10 @@ class ContextBudget:
             raise ValueError("reserved_output_tokens must be non-negative.")
         if self.safety_margin_tokens < 0:
             raise ValueError("safety_margin_tokens must be non-negative.")
-        if self.reserved_output_tokens + self.safety_margin_tokens >= self.max_context_tokens:
+        if (
+            self.reserved_output_tokens + self.safety_margin_tokens
+            >= self.max_context_tokens
+        ):
             raise ValueError(
                 "reserved_output_tokens and safety_margin_tokens must leave input capacity."
             )

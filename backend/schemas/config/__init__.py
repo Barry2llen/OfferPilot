@@ -3,7 +3,7 @@ from .base import (
     ContextCompactionConfig,
     CorsConfig,
     load_config,
-    reload_config
+    reload_config,
 )
 from .database import DatabaseConfig, PostgreSQLDatabaseConfig, SQLiteDatabaseConfig
 
@@ -15,5 +15,5 @@ __all__ = [
     "PostgreSQLDatabaseConfig",
     "SQLiteDatabaseConfig",
     "load_config",
-    "reload_config"
+    "reload_config",
 ]

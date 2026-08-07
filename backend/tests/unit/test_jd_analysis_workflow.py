@@ -107,4 +107,7 @@ async def test_ainvoke_builds_initial_state_and_uses_graph_config(
         "source_url": "https://example.com/jobs/123",
         "images": None,
     }
-    assert captured["config"]["recursion_limit"] == temporary_app_config.graph_recursion_limit
+    assert (
+        captured["config"]["recursion_limit"]
+        == temporary_app_config.graph_recursion_limit
+    )

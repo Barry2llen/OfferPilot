@@ -1,12 +1,8 @@
+from typing import Literal, NotRequired, TypedDict
 
-from typing import (
-    NotRequired,
-    TypedDict,
-    Literal
-)
+type CommandType = Literal["prompt", "continue", "retry", "query"]
+type QueryChoice = Literal["firstChoice", "secondChoice", "thirdChoice", "other"]
 
-type CommandType = Literal['prompt', 'continue', 'retry', 'query']
-type QueryChoice = Literal['firstChoice', 'secondChoice', 'thirdChoice', 'other']
 
 class BaseCommand(TypedDict):
     type: CommandType
@@ -14,8 +10,5 @@ class BaseCommand(TypedDict):
     choice: NotRequired[QueryChoice]
     note: NotRequired[str | None]
 
-__all__ = [
-    "CommandType",
-    "QueryChoice",
-    "BaseCommand"
-]
+
+__all__ = ["CommandType", "QueryChoice", "BaseCommand"]

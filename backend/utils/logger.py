@@ -28,9 +28,13 @@ class LoggerProxy(type(_logger)):
     def debug(self, message: Any, *args: Any, **kwargs: Any) -> None: ...
 
     @override
-    def debug(self, message: Any | Callable[[], Any], *args: Any, **kwargs: Any) -> None:
+    def debug(
+        self, message: Any | Callable[[], Any], *args: Any, **kwargs: Any
+    ) -> None:
         if _is_debug_enabled():
-            super().debug(message if not callable(message) else message(), *args, **kwargs)
+            super().debug(
+                message if not callable(message) else message(), *args, **kwargs
+            )
 
 
 _logger.remove()

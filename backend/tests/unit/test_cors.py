@@ -20,4 +20,6 @@ def test_cors_preflight_is_enabled_for_all_routes() -> None:
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "*"
     assert "POST" in response.headers["access-control-allow-methods"]
-    assert response.headers["access-control-allow-headers"] == "content-type,authorization"
+    assert (
+        response.headers["access-control-allow-headers"] == "content-type,authorization"
+    )

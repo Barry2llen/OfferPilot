@@ -5,13 +5,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from ruamel.yaml import YAML
 
-from .database import DatabaseConfig, SQLiteDatabaseConfig
 from utils.logger import logger
+
+from .database import DatabaseConfig, SQLiteDatabaseConfig
+
 
 class WebSearchConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    type: Literal["auto", "fast", "instant", "deep", "deep-lite", "deep-reasoning"] = "auto"
+    type: Literal["auto", "fast", "instant", "deep", "deep-lite", "deep-reasoning"] = (
+        "auto"
+    )
     max_characters: int = 2000
     guiding_query: str | None = None
 
@@ -144,10 +148,12 @@ def load_config(config_path: str = "config.yaml") -> Config:
         logger.error(f"Error loading config: {error}")
         return Config()
 
+
 def reload_config(config_path: str = "config.yaml") -> Config:
     """Clear the config cache to force reloading on next access."""
     load_config.cache_clear()
     return load_config(config_path)
+
 
 __all__ = [
     "Config",

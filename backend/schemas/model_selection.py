@@ -89,7 +89,9 @@ class ModelSelectionResponse(BaseModel):
     )
 
     id: int = Field(description="Model selection record ID.", examples=[1])
-    provider: ModelProviderResponse = Field(description="Expanded model provider configuration summary.")
+    provider: ModelProviderResponse = Field(
+        description="Expanded model provider configuration summary."
+    )
     model_name: str = Field(description="Model name.", examples=["gpt-4o-mini"])
     supports_image_input: bool = Field(
         description="Whether this model supports image input.",

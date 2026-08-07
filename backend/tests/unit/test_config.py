@@ -4,7 +4,13 @@ import pytest
 from pydantic import ValidationError
 from ruamel.yaml import YAML
 
-from schemas.config import Config, CorsConfig, PostgreSQLDatabaseConfig, SQLiteDatabaseConfig, load_config
+from schemas.config import (
+    Config,
+    CorsConfig,
+    PostgreSQLDatabaseConfig,
+    SQLiteDatabaseConfig,
+    load_config,
+)
 
 
 def test_config_validation_rejects_mixed_database_fields() -> None:

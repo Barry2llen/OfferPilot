@@ -7,9 +7,9 @@ from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 from langgraph._internal._typing import StateLike
 
-from ..base import BaseAgentState, GraphRuntime
 from schemas.model_selection import ModelSelection
 
+from ..base import BaseAgentState, GraphRuntime
 from .models import (
     CompactionContext,
     CompactionRequest,
@@ -19,8 +19,7 @@ from .models import (
 
 
 class Compactor[State: StateLike = BaseAgentState](Protocol):
-    async def acompact(self, request: CompactionRequest[State]) -> CompactionResult:
-        ...
+    async def acompact(self, request: CompactionRequest[State]) -> CompactionResult: ...
 
 
 class CompactionLayer[State: StateLike = BaseAgentState](Protocol):
@@ -29,8 +28,7 @@ class CompactionLayer[State: StateLike = BaseAgentState](Protocol):
     async def apply(
         self,
         context: CompactionContext[State],
-    ) -> CompactionContext[State]:
-        ...
+    ) -> CompactionContext[State]: ...
 
 
 class TokenCounter(Protocol):
@@ -40,18 +38,15 @@ class TokenCounter(Protocol):
         system_prompts: Sequence[BaseMessage],
         messages: Sequence[BaseMessage],
         tools: Sequence[BaseTool],
-    ) -> int:
-        ...
+    ) -> int: ...
 
 
 class ContextBudgetPolicy(Protocol):
-    def resolve(self, model_selection: ModelSelection) -> ContextBudget:
-        ...
+    def resolve(self, model_selection: ModelSelection) -> ContextBudget: ...
 
 
 class CompactionModelResolver[State: StateLike = BaseAgentState](Protocol):
-    async def aresolve(self, runtime: "GraphRuntime[State]") -> ModelSelection:
-        ...
+    async def aresolve(self, runtime: "GraphRuntime[State]") -> ModelSelection: ...
 
 
 __all__ = [

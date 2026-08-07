@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from schemas.config.base import ContextCompactionConfig
 from schemas.model_selection import ModelSelection
+from utils.logger import logger
 
 from .models import ContextBudget
 from .protocols import ContextBudgetPolicy
-from utils.logger import logger
 
 
 class DefaultContextBudgetPolicy(ContextBudgetPolicy):

@@ -106,7 +106,9 @@ def test_extract_image_data_url_ocr_rejects_non_image_data_url() -> None:
 
 
 def test_extract_image_data_url_ocr_rejects_invalid_base64() -> None:
-    with pytest.raises(ResumeParsingError, match="Invalid image data URL base64 payload"):
+    with pytest.raises(
+        ResumeParsingError, match="Invalid image data URL base64 payload"
+    ):
         document_parser.extract_image_data_url_ocr("data:image/png;base64,not-base64")
 
 
@@ -142,12 +144,16 @@ def test_extract_text_ocr_for_docx_logs_warning_and_falls_back(
     file_path = workspace_tmp_dir / "resume.docx"
     _create_docx(file_path, ["Jane Doe"])
     warnings: list[str] = []
-    monkeypatch.setattr(document_parser.logger, "warning", lambda message: warnings.append(message))
+    monkeypatch.setattr(
+        document_parser.logger, "warning", lambda message: warnings.append(message)
+    )
 
     extracted = document_parser.extract_text_ocr(file_path)
 
     assert extracted == "Jane Doe"
-    assert warnings == ["DOCX OCR is not supported directly; falling back to direct text extraction."]
+    assert warnings == [
+        "DOCX OCR is not supported directly; falling back to direct text extraction."
+    ]
 
 
 def test_extract_text_ocr_raises_when_ocr_dependency_missing(
@@ -168,7 +174,9 @@ def test_extract_text_ocr_raises_when_ocr_dependency_missing(
 
     monkeypatch.setattr("builtins.__import__", _raise_import_error)
 
-    with pytest.raises(UnsupportedResumeFileError, match="Image OCR dependency is not installed"):
+    with pytest.raises(
+        UnsupportedResumeFileError, match="Image OCR dependency is not installed"
+    ):
         document_parser.extract_text_ocr(file_path)
 
 

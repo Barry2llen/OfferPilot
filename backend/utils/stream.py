@@ -1,14 +1,9 @@
-
-from typing import (
-    AsyncIterator,
-    Awaitable,
-    Callable,
-    Any
-)
 import json
+from typing import Any, AsyncIterator, Awaitable, Callable
+
 from langchain_core.messages import BaseMessage
-from pydantic import BaseModel
 from langchain_core.runnables.schema import StreamEvent
+from pydantic import BaseModel
 
 """
         | event                  | name                 | chunk                               | input                                             | output                                              |
@@ -32,14 +27,17 @@ from langchain_core.runnables.schema import StreamEvent
 
 type StreamEventName = str
 
-type StreamEventHandler = Callable[[StreamEvent], Any] | Callable[[StreamEvent], Awaitable[Any]]
+type StreamEventHandler = (
+    Callable[[StreamEvent], Any] | Callable[[StreamEvent], Awaitable[Any]]
+)
+
 
 async def render_stream_events(
-        events: AsyncIterator[StreamEvent],
-        *,
-        handlers: dict[StreamEventName, StreamEventHandler] | None = None,
-        returns: StreamEventHandler | None = None
-    ) -> Any:
+    events: AsyncIterator[StreamEvent],
+    *,
+    handlers: dict[StreamEventName, StreamEventHandler] | None = None,
+    returns: StreamEventHandler | None = None,
+) -> Any:
     result: Any = None
     async for event in events:
         event_name = event["event"]
@@ -55,6 +53,7 @@ async def render_stream_events(
             else:
                 result = res
     return result
+
 
 def to_jsonable(value: Any) -> Any:
     if isinstance(value, BaseMessage):
@@ -80,13 +79,17 @@ def to_jsonable(value: Any) -> Any:
         return str(value)
     return value
 
+
 def render_sse_event(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(to_jsonable(data), ensure_ascii=False)}\n\n"
+    return (
+        f"event: {event}\ndata: {json.dumps(to_jsonable(data), ensure_ascii=False)}\n\n"
+    )
+
 
 __all__ = [
     "render_sse_event",
     "to_jsonable",
     "render_stream_events",
     "StreamEventHandler",
-    "StreamEventName"
+    "StreamEventName",
 ]

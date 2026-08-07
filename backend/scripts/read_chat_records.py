@@ -13,11 +13,10 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from agent.checkpointers import DatabaseCheckpointer
-from db.engine import AsyncDatabaseManager, DatabaseManager
-from db.repositories import CheckpointRepository
-from schemas.config.database import SQLiteDatabaseConfig
-
+from agent.checkpointers import DatabaseCheckpointer  # noqa: E402
+from db.engine import AsyncDatabaseManager, DatabaseManager  # noqa: E402
+from db.repositories import CheckpointRepository  # noqa: E402
+from schemas.config.database import SQLiteDatabaseConfig  # noqa: E402
 
 ROLE_BY_MESSAGE_TYPE = {
     "human": "user",
@@ -107,7 +106,9 @@ def read_records(
     with sync_manager.session_scope() as session:
         repository = CheckpointRepository(session)
         if thread_id:
-            rows = repository.list_checkpoints(thread_ids=(thread_id,), checkpoint_ns="")
+            rows = repository.list_checkpoints(
+                thread_ids=(thread_id,), checkpoint_ns=""
+            )
             if not all_checkpoints:
                 rows = rows[:1]
         elif all_checkpoints:
@@ -129,9 +130,9 @@ def read_records(
             )
             messages = []
             if checkpoint_tuple is not None:
-                raw_messages = checkpoint_tuple.checkpoint.get("channel_values", {}).get(
-                    "messages"
-                )
+                raw_messages = checkpoint_tuple.checkpoint.get(
+                    "channel_values", {}
+                ).get("messages")
                 if isinstance(raw_messages, list):
                     messages = raw_messages
 

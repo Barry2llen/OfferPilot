@@ -5,14 +5,21 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from agent.compaction import DefaultContextBudgetPolicy
-from db.repositories import ModelProviderRepository, ModelSelectionRepository
-from db.repositories import ContextCompactionSettingsRepository
+from db.repositories import (
+    ContextCompactionSettingsRepository,
+    ModelProviderRepository,
+    ModelSelectionRepository,
+)
 from exceptions import (
     ModelProviderAlreadyExistsError,
     ModelProviderNotFoundError,
     ModelSelectionAlreadyExistsError,
     ModelSelectionNotFoundError,
     UnsupportedModelProviderError,
+)
+from schemas.context_compaction import (
+    ContextCompactionSettingsResponse,
+    ContextCompactionSettingsUpdate,
 )
 from schemas.model_provider import (
     ModelProvider,
@@ -25,10 +32,6 @@ from schemas.model_selection import (
     ModelSelectionCreate,
     ModelSelectionResponse,
     ModelSelectionUpdate,
-)
-from schemas.context_compaction import (
-    ContextCompactionSettingsResponse,
-    ContextCompactionSettingsUpdate,
 )
 from services import (
     ContextCompactionSettingsService,
@@ -185,7 +188,10 @@ async def update_context_compaction_settings(
     description="Return a model provider summary by name without exposing its API key.",
     response_description="Returns the requested model provider.",
     responses={
-        404: _error_response("The requested model provider was not found.", example="Model provider not found: default-openai"),
+        404: _error_response(
+            "The requested model provider was not found.",
+            example="Model provider not found: default-openai",
+        ),
     },
 )
 async def get_model_provider(
@@ -213,8 +219,14 @@ async def get_model_provider(
     description="Create a model provider configuration for later model selection references.",
     response_description="Returns the new model provider summary.",
     responses={
-        409: _error_response("A model provider with this name already exists.", example="Model provider already exists: default-openai"),
-        422: _error_response("The provider type is not supported.", example="Unsupported provider value: Unknown"),
+        409: _error_response(
+            "A model provider with this name already exists.",
+            example="Model provider already exists: default-openai",
+        ),
+        422: _error_response(
+            "The provider type is not supported.",
+            example="Unsupported provider value: Unknown",
+        ),
     },
 )
 async def create_model_provider(
@@ -248,8 +260,14 @@ async def create_model_provider(
     description="Update a model provider. Omit api_key to keep it, or pass null to clear it.",
     response_description="Returns the updated model provider summary.",
     responses={
-        404: _error_response("The requested model provider was not found.", example="Model provider not found: default-openai"),
-        422: _error_response("The provider type is not supported.", example="Unsupported provider value: Unknown"),
+        404: _error_response(
+            "The requested model provider was not found.",
+            example="Model provider not found: default-openai",
+        ),
+        422: _error_response(
+            "The provider type is not supported.",
+            example="Unsupported provider value: Unknown",
+        ),
     },
 )
 async def update_model_provider(
@@ -300,8 +318,14 @@ async def update_model_provider(
     description="Delete a model provider. Deletion conflicts while model selections still reference it.",
     response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("The requested model provider was not found.", example="Model provider not found: default-openai"),
-        409: _error_response("The provider is still referenced by model selections.", example="Model provider is still referenced by model selections."),
+        404: _error_response(
+            "The requested model provider was not found.",
+            example="Model provider not found: default-openai",
+        ),
+        409: _error_response(
+            "The provider is still referenced by model selections.",
+            example="Model provider is still referenced by model selections.",
+        ),
     },
 )
 async def delete_model_provider(
@@ -358,7 +382,10 @@ async def list_model_selections(
     ),
     response_description="Returns the requested model selection.",
     responses={
-        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
+        404: _error_response(
+            "The requested model selection was not found.",
+            example="Model selection not found: 1",
+        ),
     },
 )
 async def get_model_selection(
@@ -387,8 +414,14 @@ async def get_model_selection(
     description="Create a model selection that can be referenced by AI services.",
     response_description="Returns the new model selection with its resolved context window capacity.",
     responses={
-        404: _error_response("The referenced model provider was not found.", example="Model provider not found: missing-provider"),
-        409: _error_response("The model name already exists for this provider.", example="Model selection already exists: default-openai/gpt-4o-mini"),
+        404: _error_response(
+            "The referenced model provider was not found.",
+            example="Model provider not found: missing-provider",
+        ),
+        409: _error_response(
+            "The model name already exists for this provider.",
+            example="Model selection already exists: default-openai/gpt-4o-mini",
+        ),
     },
 )
 async def create_model_selection(
@@ -430,8 +463,14 @@ async def create_model_selection(
     description="Update a model selection. Omitted fields keep their current values.",
     response_description="Returns the updated model selection with its resolved context window capacity.",
     responses={
-        404: _error_response("The model selection or referenced provider was not found.", example="Model selection not found: 1"),
-        409: _error_response("The model name already exists for this provider.", example="Model selection already exists: default-openai/gpt-4o-mini"),
+        404: _error_response(
+            "The model selection or referenced provider was not found.",
+            example="Model selection not found: 1",
+        ),
+        409: _error_response(
+            "The model name already exists for this provider.",
+            example="Model selection already exists: default-openai/gpt-4o-mini",
+        ),
     },
 )
 async def update_model_selection(
@@ -491,7 +530,10 @@ async def update_model_selection(
     description="Delete a model selection.",
     response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
+        404: _error_response(
+            "The requested model selection was not found.",
+            example="Model selection not found: 1",
+        ),
     },
 )
 async def delete_model_selection(

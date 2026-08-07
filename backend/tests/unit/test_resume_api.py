@@ -520,7 +520,9 @@ def test_delete_resume_endpoint(
     assert not saved_path.exists()
 
 
-def test_resume_endpoints_return_404_for_missing_id(temporary_app_config: Config) -> None:
+def test_resume_endpoints_return_404_for_missing_id(
+    temporary_app_config: Config,
+) -> None:
     app = create_app(temporary_app_config)
 
     with TestClient(app) as client:
@@ -576,7 +578,9 @@ def test_openapi_json_contains_complete_resume_docs(
     upload_resume = payload["paths"]["/resumes/files"]["post"]
     assert upload_resume["summary"] == "Upload a resume file"
     assert "PDF, DOCX, PNG, JPG, or JPEG" in upload_resume["description"]
-    assert upload_resume["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
+    assert upload_resume["requestBody"]["content"]["multipart/form-data"]["schema"][
+        "$ref"
+    ]
     assert "text/event-stream" in upload_resume["responses"]["200"]["content"]
     assert "415" in upload_resume["responses"]
     assert "422" in upload_resume["responses"]
@@ -588,7 +592,9 @@ def test_openapi_json_contains_complete_resume_docs(
     assert "parse_status" in resume_detail["properties"]
     assert "raw_text" in resume_detail["properties"]
     assert "sections" in resume_detail["properties"]
-    assert resume_detail["properties"]["preview_url"]["examples"][0] == "/resumes/1/file"
+    assert (
+        resume_detail["properties"]["preview_url"]["examples"][0] == "/resumes/1/file"
+    )
     assert "ResumeAdviceRequest" not in schemas
     assert "ResumeAdviceResponse" not in schemas
     assert "/resumes/{resume_id}/advice" not in payload["paths"]

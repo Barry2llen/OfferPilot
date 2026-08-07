@@ -33,8 +33,8 @@ from services import (
     UploadedChatFile,
 )
 from services.jd_analysis_jobs import JdAnalysisJobManager
-from utils.stream import render_sse_event
 from utils.i18n import request_locale
+from utils.stream import render_sse_event
 
 router = APIRouter(prefix="/job-descriptions", tags=["job-descriptions"])
 
@@ -119,7 +119,9 @@ async def _parse_payload(request: Request) -> _JdAnalyzePayload:
     try:
         selection_id = int(str(selection_raw))
     except (TypeError, ValueError) as error:
-        raise HTTPException(status_code=422, detail="selection_id is required.") from error
+        raise HTTPException(
+            status_code=422, detail="selection_id is required."
+        ) from error
 
     jd_text = str(form.get("jd_text") or "").strip() or None
     source_url = str(form.get("source_url") or "").strip() or None
@@ -183,7 +185,10 @@ async def list_job_descriptions(
     description="Return the original text and structured analysis for a JD analysis ID.",
     response_description="Returns the requested JD analysis details.",
     responses={
-        404: _error_response("The requested JD analysis was not found.", example="JD analysis not found: 1"),
+        404: _error_response(
+            "The requested JD analysis was not found.",
+            example="JD analysis not found: 1",
+        ),
     },
 )
 async def get_job_description(
@@ -214,9 +219,18 @@ async def get_job_description(
                 }
             },
         },
-        404: _error_response("The requested model selection or file was not found.", example="Model selection not found: 1"),
-        415: _error_response("An unsupported file type was uploaded or referenced.", example="Unsupported JD image file type: .pdf"),
-        422: _error_response("The JD input is invalid.", example="JD text, source URL, or at least one image is required."),
+        404: _error_response(
+            "The requested model selection or file was not found.",
+            example="Model selection not found: 1",
+        ),
+        415: _error_response(
+            "An unsupported file type was uploaded or referenced.",
+            example="Unsupported JD image file type: .pdf",
+        ),
+        422: _error_response(
+            "The JD input is invalid.",
+            example="JD text, source URL, or at least one image is required.",
+        ),
     },
     openapi_extra={
         "requestBody": {
@@ -336,7 +350,10 @@ async def analyze_job_description(
     description="Delete a JD analysis record without deleting referenced file library images.",
     response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("The requested JD analysis was not found.", example="JD analysis not found: 1"),
+        404: _error_response(
+            "The requested JD analysis was not found.",
+            example="JD analysis not found: 1",
+        ),
     },
 )
 async def delete_job_description(
@@ -355,7 +372,14 @@ def _raise_input_error(error: Exception) -> None:
         raise HTTPException(status_code=404, detail=str(error)) from error
     if isinstance(error, UnsupportedChatFileError):
         raise HTTPException(status_code=415, detail=str(error)) from error
-    if isinstance(error, (EmptyChatFileContentError, JobDescriptionAnalysisValidationError, ResumeValidationError)):
+    if isinstance(
+        error,
+        (
+            EmptyChatFileContentError,
+            JobDescriptionAnalysisValidationError,
+            ResumeValidationError,
+        ),
+    ):
         raise HTTPException(status_code=422, detail=str(error)) from error
     if isinstance(error, ChatFileProcessingError):
         raise HTTPException(status_code=422, detail=str(error)) from error

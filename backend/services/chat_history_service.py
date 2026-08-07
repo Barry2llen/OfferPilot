@@ -6,7 +6,7 @@ from langchain_core.messages import BaseMessage
 
 from agent.checkpointers import DatabaseCheckpointer
 from db.models import GraphCheckpointORM
-from db.repositories import CheckpointRepository, ChatThreadFileRepository
+from db.repositories import ChatThreadFileRepository, CheckpointRepository
 from schemas.ai import (
     AIChatHistoryDetailResponse,
     AIChatHistoryListResponse,
@@ -15,7 +15,6 @@ from schemas.ai import (
 )
 from schemas.chat_file import ChatAttachmentRef
 from utils.tool_outputs import QUERY_TOOL_NAME, summarize_tool_output
-
 
 _ROLE_BY_MESSAGE_TYPE = {
     "human": "user",

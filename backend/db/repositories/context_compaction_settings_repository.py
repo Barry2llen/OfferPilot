@@ -29,7 +29,9 @@ class ContextCompactionSettingsRepository:
         self._session.flush()
         return settings
 
-    def set_model_selection_id(self, model_selection_id: int | None) -> ContextCompactionSettingsORM:
+    def set_model_selection_id(
+        self, model_selection_id: int | None
+    ) -> ContextCompactionSettingsORM:
         settings = self.get_or_create()
         settings.model_selection_id = model_selection_id
         self._session.flush()

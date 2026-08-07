@@ -1,6 +1,6 @@
 import json
-from dataclasses import dataclass
 from collections.abc import AsyncGenerator, Generator
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -9,8 +9,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse
 from langchain_core.messages import BaseMessage
 from langgraph.types import Command
-from starlette.datastructures import UploadFile as StarletteUploadFile
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from db.repositories import (
     ChatFileRepository,
@@ -42,9 +42,9 @@ from services import (
     ModelSelectionService,
     UploadedChatFile,
 )
-from utils.tool_outputs import summarize_tool_output
 from utils.i18n import localize_error, request_locale, translate
 from utils.stream import render_sse_event, to_jsonable
+from utils.tool_outputs import summarize_tool_output
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -173,7 +173,13 @@ async def _parse_multipart_ai_chat_payload(
             payload_data["command"] = json.loads(command_raw)
         except json.JSONDecodeError as error:
             raise RequestValidationError(
-                [{"loc": ("body", "command"), "msg": str(error), "type": "json_invalid"}]
+                [
+                    {
+                        "loc": ("body", "command"),
+                        "msg": str(error),
+                        "type": "json_invalid",
+                    }
+                ]
             ) from error
 
     uploaded_files = await _read_uploaded_chat_files(form)
@@ -550,7 +556,10 @@ async def list_chat_files(
     description="Return file details and reference counts for a short chat file ID.",
     response_description="Returns the requested chat file details.",
     responses={
-        404: _error_response("The requested chat file was not found.", example="Chat file not found: A1B2C3"),
+        404: _error_response(
+            "The requested chat file was not found.",
+            example="Chat file not found: A1B2C3",
+        ),
     },
 )
 async def get_chat_file(
@@ -575,7 +584,10 @@ async def get_chat_file(
     description="Return raw chat file content for preview or confirmation before reuse.",
     response_description="Returns the raw chat file stream.",
     responses={
-        404: _error_response("The requested chat file was not found.", example="Chat file not found: A1B2C3"),
+        404: _error_response(
+            "The requested chat file was not found.",
+            example="Chat file not found: A1B2C3",
+        ),
     },
 )
 async def get_chat_file_raw(
@@ -609,10 +621,22 @@ async def get_chat_file_raw(
     ),
     response_description="Returns the AI response and the conversation thread ID.",
     responses={
-        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
-        415: _error_response("The uploaded chat file type is not supported.", example="Unsupported chat file type: .exe"),
-        422: _error_response("The chat attachment is invalid or could not be processed.", example="Uploaded chat file is empty."),
-        502: _error_response("The model could not be loaded or called.", example="Model call failed after 3 retries."),
+        404: _error_response(
+            "The requested model selection was not found.",
+            example="Model selection not found: 1",
+        ),
+        415: _error_response(
+            "The uploaded chat file type is not supported.",
+            example="Unsupported chat file type: .exe",
+        ),
+        422: _error_response(
+            "The chat attachment is invalid or could not be processed.",
+            example="Uploaded chat file is empty.",
+        ),
+        502: _error_response(
+            "The model could not be loaded or called.",
+            example="Model call failed after 3 retries.",
+        ),
     },
 )
 async def chat(
@@ -710,9 +734,18 @@ async def chat(
                 }
             },
         },
-        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
-        415: _error_response("The uploaded chat file type is not supported.", example="Unsupported chat file type: .exe"),
-        422: _error_response("The chat attachment is invalid or could not be processed.", example="Uploaded chat file is empty."),
+        404: _error_response(
+            "The requested model selection was not found.",
+            example="Model selection not found: 1",
+        ),
+        415: _error_response(
+            "The uploaded chat file type is not supported.",
+            example="Unsupported chat file type: .exe",
+        ),
+        422: _error_response(
+            "The chat attachment is invalid or could not be processed.",
+            example="Uploaded chat file is empty.",
+        ),
     },
 )
 async def chat_stream(
@@ -723,7 +756,11 @@ async def chat_stream(
     selection = _get_model_selection(payload.selection_id, session)
 
     command_type = payload.command.type if payload.command else "prompt"
-    thread_id = payload.thread_id if command_type == "retry" else _make_thread_id(payload.thread_id)
+    thread_id = (
+        payload.thread_id
+        if command_type == "retry"
+        else _make_thread_id(payload.thread_id)
+    )
     prepared_prompt = None
 
     if command_type in {"retry", "query"}:
@@ -737,14 +774,20 @@ async def chat_stream(
             }
         else:
             resume_payload = payload.command.model_dump(exclude_none=True)
-        agent_input: dict[str, Any] | Command = Command(
-            resume=resume_payload
+        agent_input: dict[str, Any] | Command = Command(resume=resume_payload)
+        requires_image_input = chat_file_service.thread_requires_image_input(
+            thread_id or ""
         )
-        requires_image_input = chat_file_service.thread_requires_image_input(thread_id or "")
-        attachment_count = ChatThreadFileRepository(session).count_by_thread(thread_id or "")
+        attachment_count = ChatThreadFileRepository(session).count_by_thread(
+            thread_id or ""
+        )
         resolved_attachments: list[dict[str, Any]] = []
     else:
-        prompt = payload.command.prompt if payload.command and payload.command.prompt else payload.prompt
+        prompt = (
+            payload.command.prompt
+            if payload.command and payload.command.prompt
+            else payload.prompt
+        )
         chat_file_service = _build_chat_file_service(request, session)
         try:
             prepared_prompt = chat_file_service.prepare_prompt(
@@ -869,7 +912,9 @@ async def chat_stream(
                     continue
 
                 if event_name == "on_custom_event" and tool_name == "on_reasoning_done":
-                    duration_ms = _extract_reasoning_duration_ms(data.get("duration_ms"))
+                    duration_ms = _extract_reasoning_duration_ms(
+                        data.get("duration_ms")
+                    )
                     if duration_ms is not None:
                         yield render_sse_event(
                             "reasoning_done",
@@ -880,7 +925,10 @@ async def chat_stream(
                         )
                     continue
 
-                if event_name == "on_custom_event" and tool_name == "on_context_compaction":
+                if (
+                    event_name == "on_custom_event"
+                    and tool_name == "on_context_compaction"
+                ):
                     phase = data.get("phase")
                     if phase in {"started", "completed", "failed"}:
                         yield render_sse_event(

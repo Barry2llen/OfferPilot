@@ -4,18 +4,18 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.model_selection import ModelSelection
-
-from ..errors import ContextCompactionError
-from ..models import CompactedMessage, CompactionAction, CompactionContext
-from ..model_resolver import RuntimeCompactionModelResolver
-from ..protocols import CompactionModelResolver, ContextBudgetPolicy, TokenCounter
-from ...models.structured import StructuredModel, load_structured_model
 from utils.custom_events import _adispatch_custom_event_safely
 from utils.logger import logger
+
+from ...models.structured import StructuredModel, load_structured_model
+from ..errors import ContextCompactionError
+from ..model_resolver import RuntimeCompactionModelResolver
+from ..models import CompactedMessage, CompactionAction, CompactionContext
+from ..protocols import CompactionModelResolver, ContextBudgetPolicy, TokenCounter
 
 
 class ContextCompactionSummary(BaseModel):
@@ -133,7 +133,11 @@ class AutoCompactLayer:
             context.current_tokens <= context.request.budget.available_input_tokens
             and not pending_snapshot
         ):
-            logger.debug(lambda: "Auto-compaction skipped: available input threshold not reached.")
+            logger.debug(
+                lambda: (
+                    "Auto-compaction skipped: available input threshold not reached."
+                )
+            )
             return context
 
         if (
@@ -141,10 +145,13 @@ class AutoCompactLayer:
             and context.snapshot["status"] == "complete"
             and context.snapshot["auto_compacted"]
             and not context.has_new_messages_since_snapshot
-            and context.current_tokens
-            <= context.request.budget.available_input_tokens
+            and context.current_tokens <= context.request.budget.available_input_tokens
         ):
-            logger.debug(lambda: "Auto-compaction skipped: complete sidecar has no new raw messages.")
+            logger.debug(
+                lambda: (
+                    "Auto-compaction skipped: complete sidecar has no new raw messages."
+                )
+            )
             return context
 
         prior_summaries = tuple(
@@ -175,7 +182,11 @@ class AutoCompactLayer:
             )
             return context
         if not prior_summaries and not historical_entries:
-            logger.debug(lambda: "Auto-compaction blocked: no unprotected historical messages exist.")
+            logger.debug(
+                lambda: (
+                    "Auto-compaction blocked: no unprotected historical messages exist."
+                )
+            )
             raise ContextCompactionError(
                 "Auto-compaction has no unprotected historical messages to summarize."
             )
@@ -197,13 +208,15 @@ class AutoCompactLayer:
             )
             summary_budget = self.budget_policy.resolve(model_selection)
         except ContextCompactionError:
-            logger.debug(lambda:"Auto-compaction model resolution blocked by compaction error.")
+            logger.debug(
+                lambda: "Auto-compaction model resolution blocked by compaction error."
+            )
             raise
         except Exception as error:
+            error_type = type(error).__name__
             logger.debug(
                 lambda: (
-                    "Auto-compaction model resolution failed: "
-                    f"error_type={type(error).__name__}."
+                    f"Auto-compaction model resolution failed: error_type={error_type}."
                 )
             )
             raise ContextCompactionError(
@@ -235,7 +248,9 @@ class AutoCompactLayer:
         )
         if summary_input_tokens > summary_budget.available_input_tokens:
             logger.debug(
-                lambda: "Auto-compaction blocked: summary input exceeds summarizer capacity."
+                lambda: (
+                    "Auto-compaction blocked: summary input exceeds summarizer capacity."
+                )
             )
             raise ContextCompactionError(
                 "The auto-compaction model cannot fit the historical summary input "
@@ -263,10 +278,11 @@ class AutoCompactLayer:
                 else ContextCompactionSummary.model_validate(result)
             )
         except Exception as error:
+            error_type = type(error).__name__
             logger.debug(
                 lambda: (
                     "Auto-compaction structured output failed: "
-                    f"error_type={type(error).__name__}."
+                    f"error_type={error_type}."
                 )
             )
             raise ContextCompactionError(
@@ -288,9 +304,7 @@ class AutoCompactLayer:
                 },
             ),
             sources=tuple(
-                source
-                for entry in summary_entries
-                for source in entry.sources
+                source for entry in summary_entries for source in entry.sources
             ),
             kind="summary",
             layer=self.name,
@@ -299,9 +313,7 @@ class AutoCompactLayer:
         compacted_entries = (
             summary_entry,
             *tuple(
-                entry
-                for entry in context.protected_entries
-                if entry.kind != "summary"
+                entry for entry in context.protected_entries if entry.kind != "summary"
             ),
         )
         compacted_tokens = await self.token_counter.acount(
@@ -318,7 +330,9 @@ class AutoCompactLayer:
         )
         if compacted_tokens > context.request.budget.available_input_tokens:
             logger.debug(
-                lambda: "Auto-compaction blocked: compacted model view exceeds capacity."
+                lambda: (
+                    "Auto-compaction blocked: compacted model view exceeds capacity."
+                )
             )
             raise ContextCompactionError(
                 "Auto-compaction produced a model context above the configured "

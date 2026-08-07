@@ -29,10 +29,7 @@ def test_create_and_get_model_provider_schema(
         )
         fetched = service.get_by_name("default-openai")
         stored_provider = session.execute(
-            text(
-                "SELECT provider FROM tb_model_provider "
-                "WHERE name = :name"
-            ),
+            text("SELECT provider FROM tb_model_provider WHERE name = :name"),
             {"name": "default-openai"},
         ).scalar_one()
 
@@ -56,10 +53,7 @@ def test_create_deepseek_model_provider_schema(
         )
         fetched = service.get_by_name("default-deepseek")
         stored_provider = session.execute(
-            text(
-                "SELECT provider FROM tb_model_provider "
-                "WHERE name = :name"
-            ),
+            text("SELECT provider FROM tb_model_provider WHERE name = :name"),
             {"name": "default-deepseek"},
         ).scalar_one()
 

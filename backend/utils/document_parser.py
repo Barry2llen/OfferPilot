@@ -42,18 +42,22 @@ def extract_text_ocr(file_path: Path) -> str:
     if suffix in _IMAGE_SUFFIXES:
         return _extract_image_text(file_path)
     if suffix == ".docx":
-        logger.warning("DOCX OCR is not supported directly; falling back to direct text extraction.")
+        logger.warning(
+            "DOCX OCR is not supported directly; falling back to direct text extraction."
+        )
         return extract_text(file_path)
     if suffix == ".doc":
         raise UnsupportedResumeFileError("Legacy .doc files are not supported.")
 
     raise UnsupportedResumeFileError(f"Unsupported resume file type: {suffix}")
 
+
 def is_image_data_url(data_url: str) -> bool:
     """Check if a string is a valid image data URL."""
     if not isinstance(data_url, str):
         return False
     return _IMAGE_DATA_URL_PATTERN.match(data_url.strip()) is not None
+
 
 def decode_image_data_url(data_url: str) -> tuple[str, bytes]:
     """Decode a png/jpeg data URL into OCR-ready image bytes."""
@@ -105,9 +109,7 @@ def _extract_docx_text(file_path: Path) -> str:
     paragraphs: list[str] = []
     for paragraph in root.findall(".//w:p", namespace):
         fragments = [
-            node.text
-            for node in paragraph.findall(".//w:t", namespace)
-            if node.text
+            node.text for node in paragraph.findall(".//w:t", namespace) if node.text
         ]
         if fragments:
             paragraphs.append("".join(fragments))
@@ -123,7 +125,9 @@ def _extract_pdf_text_ocr(file_path: Path) -> str:
     try:
         with fitz.open(file_path) as document:
             pages = [
-                _extract_ocr_text(page.get_pixmap().tobytes(output="png"), "Failed to OCR PDF resume.")
+                _extract_ocr_text(
+                    page.get_pixmap().tobytes(output="png"), "Failed to OCR PDF resume."
+                )
                 for page in document
             ]
     except UnsupportedResumeFileError:

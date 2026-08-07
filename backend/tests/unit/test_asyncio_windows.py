@@ -4,12 +4,15 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-import utils.asyncio_windows as asyncio_windows
 from uvicorn.config import Config
+
+import utils.asyncio_windows as asyncio_windows
 
 
 class FakeLoop:
-    def __init__(self, handler: Callable[[Any, dict[str, Any]], None] | None = None) -> None:
+    def __init__(
+        self, handler: Callable[[Any, dict[str, Any]], None] | None = None
+    ) -> None:
         self.handler = handler
         self.default_contexts: list[dict[str, Any]] = []
 

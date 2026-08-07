@@ -12,7 +12,9 @@ class GraphCheckpointORM(Base):
     __tablename__ = "tb_graph_checkpoint"
 
     thread_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    checkpoint_ns: Mapped[str] = mapped_column(String(255), primary_key=True, default="")
+    checkpoint_ns: Mapped[str] = mapped_column(
+        String(255), primary_key=True, default=""
+    )
     checkpoint_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     parent_checkpoint_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     checkpoint_type: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -35,7 +37,9 @@ class GraphCheckpointBlobORM(Base):
     __tablename__ = "tb_graph_checkpoint_blob"
 
     thread_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    checkpoint_ns: Mapped[str] = mapped_column(String(255), primary_key=True, default="")
+    checkpoint_ns: Mapped[str] = mapped_column(
+        String(255), primary_key=True, default=""
+    )
     channel: Mapped[str] = mapped_column(String(255), primary_key=True)
     version: Mapped[str] = mapped_column(String(255), primary_key=True)
     value_type: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -1,19 +1,21 @@
-
 from typing import override
-from langgraph.graph import StateGraph, START, END
 
-from agent.graphs.model_call import ModelCallGraph
+from langgraph.graph import END, START, StateGraph
+
 from agent.compaction import (
     CompactionModelResolver,
     Compactor,
     ContextBudgetPolicy,
     build_supervisor_compactor,
 )
+from agent.graphs.model_call import ModelCallGraph
 from schemas.config import Config
-from .state import State, BaseAgentState
-from ...prompts import PromptComposer, PromptFragment
+
 from ...base import BaseAgent, GraphRuntime
+from ...prompts import PromptComposer, PromptFragment
 from ...tools import Tools, ToolsBuilder
+from .state import BaseAgentState, State
+
 
 def _metadata(runtime: GraphRuntime[State]) -> str:
 
@@ -27,19 +29,22 @@ def _metadata(runtime: GraphRuntime[State]) -> str:
         f"You are called as '{_get_model_name(runtime.state)}' in OfferPilot's agent framework."
     )
 
-_system_prompt = PromptComposer([
-    PromptFragment(
-        name="Instructions",
-        content="You are a helpful assistant.",
-    ),
-    PromptFragment(
-        name="Metadata",
-        content=_metadata,
-    )
-])
+
+_system_prompt = PromptComposer(
+    [
+        PromptFragment(
+            name="Instructions",
+            content="You are a helpful assistant.",
+        ),
+        PromptFragment(
+            name="Metadata",
+            content=_metadata,
+        ),
+    ]
+)
+
 
 class SupervisorAgent(BaseAgent[State]):
-
     def __init__(
         self,
         *args,

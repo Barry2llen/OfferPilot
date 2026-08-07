@@ -4,20 +4,20 @@ import json
 import time
 
 import pytest
-from langgraph.errors import GraphInterrupt
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.runtime import Runtime
-from langgraph.types import Interrupt
 from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphInterrupt
+from langgraph.runtime import Runtime
+from langgraph.types import Interrupt
 
-from agent.graphs.model_call import ModelCallGraph
 from agent.compaction import (
     CompactedMessage,
     CompactionResult,
     ContextBudget,
     MessageRef,
 )
+from agent.graphs.model_call import ModelCallGraph
 from agent.prompts import PromptComposer, PromptFragment
 from agent.tools.query import query as query_tool
 from exceptions import AgentStateError, ModelCallExecutionError
@@ -182,7 +182,9 @@ def test_tool_node_returns_error_message_when_tool_is_missing() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "missing_tool", "args": {"value": 1}, "id": "call-missing"}],
+                tool_calls=[
+                    {"name": "missing_tool", "args": {"value": 1}, "id": "call-missing"}
+                ],
             )
         ]
     )
@@ -202,7 +204,9 @@ def test_tool_node_executes_tool_calls_and_returns_tool_message() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "echo_value", "args": {"value": 3}, "id": "call-echo"}],
+                tool_calls=[
+                    {"name": "echo_value", "args": {"value": 3}, "id": "call-echo"}
+                ],
             )
         ]
     )
@@ -222,7 +226,13 @@ def test_tool_node_preserves_structured_tool_message() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "structured_value", "args": {"value": 4}, "id": "call-structured"}],
+                tool_calls=[
+                    {
+                        "name": "structured_value",
+                        "args": {"value": 4},
+                        "id": "call-structured",
+                    }
+                ],
             )
         ]
     )
@@ -266,7 +276,9 @@ def test_tool_node_returns_error_message_when_tool_raises() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "fail_value", "args": {"value": 5}, "id": "call-fail"}],
+                tool_calls=[
+                    {"name": "fail_value", "args": {"value": 5}, "id": "call-fail"}
+                ],
             )
         ]
     )
@@ -286,7 +298,13 @@ def test_tool_node_queues_graph_interrupt_tool_for_interrupt_node() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "interrupt_value", "args": {"value": 7}, "id": "call-interrupt"}],
+                tool_calls=[
+                    {
+                        "name": "interrupt_value",
+                        "args": {"value": 7},
+                        "id": "call-interrupt",
+                    }
+                ],
             )
         ]
     )
@@ -353,7 +371,13 @@ def test_tool_node_executes_async_tool_calls_and_returns_tool_message() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "async_echo_value", "args": {"value": 7}, "id": "call-async"}],
+                tool_calls=[
+                    {
+                        "name": "async_echo_value",
+                        "args": {"value": 7},
+                        "id": "call-async",
+                    }
+                ],
             )
         ]
     )
@@ -492,8 +516,16 @@ def test_tool_node_executes_multiple_tools_concurrently_and_preserves_order() ->
             AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": "delayed_echo_value", "args": {"value": 1, "delay": 0.2}, "id": "call-1"},
-                    {"name": "delayed_echo_value", "args": {"value": 2, "delay": 0.2}, "id": "call-2"},
+                    {
+                        "name": "delayed_echo_value",
+                        "args": {"value": 1, "delay": 0.2},
+                        "id": "call-1",
+                    },
+                    {
+                        "name": "delayed_echo_value",
+                        "args": {"value": 2, "delay": 0.2},
+                        "id": "call-2",
+                    },
                 ],
             )
         ]
@@ -521,7 +553,11 @@ def test_tool_node_isolates_errors_when_running_multiple_tools() -> None:
                 content="",
                 tool_calls=[
                     {"name": "fail_value", "args": {"value": 5}, "id": "call-fail"},
-                    {"name": "async_echo_value", "args": {"value": 9}, "id": "call-async"},
+                    {
+                        "name": "async_echo_value",
+                        "args": {"value": 9},
+                        "id": "call-async",
+                    },
                 ],
             )
         ]
@@ -551,7 +587,9 @@ def test_tool_node_uses_dynamic_tools_callable() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "echo_value", "args": {"value": 11}, "id": "call-dynamic"}],
+                tool_calls=[
+                    {"name": "echo_value", "args": {"value": 11}, "id": "call-dynamic"}
+                ],
             )
         ]
     )
@@ -573,7 +611,9 @@ def test_tool_node_returns_error_when_dynamic_tools_callable_fails() -> None:
         [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "echo_value", "args": {"value": 11}, "id": "call-builder"}],
+                tool_calls=[
+                    {"name": "echo_value", "args": {"value": 11}, "id": "call-builder"}
+                ],
             )
         ]
     )
@@ -613,7 +653,9 @@ def test_dicide_next_action_returns_tool_with_tool_calls() -> None:
             [
                 AIMessage(
                     content="",
-                    tool_calls=[{"name": "echo_value", "args": {"value": 1}, "id": "call-next"}],
+                    tool_calls=[
+                        {"name": "echo_value", "args": {"value": 1}, "id": "call-next"}
+                    ],
                 )
             ]
         )
@@ -762,7 +804,9 @@ async def test_runtime_tool_start_event_does_not_expose_runtime(
     assert tool_start_inputs == [{"value": 8}]
 
 
-async def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_binds_tools_and_returns_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     events: list[tuple[str, object]] = []
     response = AIMessage(content="model-response")
 
@@ -783,7 +827,9 @@ async def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pyt
 
     monkeypatch.setattr("agent.graphs.model_call.load_chat_model", fake_load_chat_model)
 
-    graph = ModelCallGraph(config=Config(model_call_retry_attempts=2), tools=[echo_value])
+    graph = ModelCallGraph(
+        config=Config(model_call_retry_attempts=2), tools=[echo_value]
+    )
     selected_model = object()
     state = make_state([HumanMessage(content="hello")], model=selected_model)
 
@@ -797,7 +843,9 @@ async def test_model_call_node_binds_tools_and_returns_response(monkeypatch: pyt
     assert result["messages"] == [response]
 
 
-async def test_model_call_node_binds_dynamic_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_binds_dynamic_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     events: list[tuple[str, object]] = []
     response = AIMessage(content="dynamic-model-response")
 
@@ -857,7 +905,9 @@ async def test_model_call_node_resolves_prompt_composer_to_system_messages(
                 PromptFragment(name="Instructions", content="Use attachments."),
                 PromptFragment(
                     name="Metadata",
-                    content=lambda runtime: f"messages={len(runtime.state['messages'])}",
+                    content=lambda runtime: (
+                        f"messages={len(runtime.state['messages'])}"
+                    ),
                 ),
             ]
         ),
@@ -914,7 +964,9 @@ async def test_model_call_node_resolves_dynamic_system_prompt_builder(
     assert messages[2] == state["messages"][0]
 
 
-async def test_model_call_node_accepts_awaitable_tools_callable(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_accepts_awaitable_tools_callable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bound_tools: list[object] = []
     response = AIMessage(content="awaitable-tools")
 
@@ -941,7 +993,9 @@ async def test_model_call_node_accepts_awaitable_tools_callable(monkeypatch: pyt
     assert result["messages"] == [response]
 
 
-async def test_model_call_node_accepts_async_iterable_tools_callable(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_accepts_async_iterable_tools_callable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bound_tools: list[object] = []
     response = AIMessage(content="async-iterable-tools")
 
@@ -971,7 +1025,9 @@ async def test_model_call_node_accepts_async_iterable_tools_callable(monkeypatch
     assert result["messages"] == [response]
 
 
-async def test_model_call_node_accepts_awaitable_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_accepts_awaitable_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bound_tools: list[object] = []
     response = AIMessage(content="awaitable-tools")
 
@@ -998,7 +1054,9 @@ async def test_model_call_node_accepts_awaitable_tools(monkeypatch: pytest.Monke
     assert result["messages"] == [response]
 
 
-async def test_model_call_node_accepts_async_iterable_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_accepts_async_iterable_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bound_tools: list[object] = []
     response = AIMessage(content="async-iterable-tools")
 
@@ -1064,7 +1122,9 @@ async def test_model_call_node_records_reasoning_duration(
     assert custom_events == [("on_reasoning_done", {"duration_ms": 2345})]
 
 
-async def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_model_call_node_retries_until_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     response = AIMessage(content="recovered")
 
     class FakeModel:
@@ -1087,7 +1147,9 @@ async def test_model_call_node_retries_until_success(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr("agent.graphs.model_call.load_chat_model", fake_load_chat_model)
 
-    graph = ModelCallGraph(config=Config(model_call_retry_attempts=2), tools=[echo_value])
+    graph = ModelCallGraph(
+        config=Config(model_call_retry_attempts=2), tools=[echo_value]
+    )
     result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
     assert fake_model.calls == 2
@@ -1148,9 +1210,13 @@ async def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
         lambda payload: {"type": "abort", "prompt": "stop"},
     )
 
-    graph = ModelCallGraph(config=Config(model_call_retry_attempts=2), tools=[echo_value])
+    graph = ModelCallGraph(
+        config=Config(model_call_retry_attempts=2), tools=[echo_value]
+    )
 
-    with pytest.raises(ModelCallExecutionError, match="Model call failed after 2 retries"):
+    with pytest.raises(
+        ModelCallExecutionError, match="Model call failed after 2 retries"
+    ):
         await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
 
@@ -1180,7 +1246,7 @@ async def test_model_call_node_preserves_tool_resolution_error(
     with pytest.raises(ModelCallExecutionError, match="tool resolution failed"):
         await graph._model_call_node(
             make_state([HumanMessage(content="hello")], model=selected_model)
-    )
+        )
 
     assert custom_events[0][0] == "on_model_load_error"
     assert "tool resolution failed" in custom_events[0][1]["error"]
@@ -1219,7 +1285,9 @@ class PersistedViewCompactor:
             compacted_tokens=20,
             applied_layers=("test",),
             source_message_count=len(raw_messages),
-            source_message_ids=tuple(getattr(message, "id", None) for message in raw_messages),
+            source_message_ids=tuple(
+                getattr(message, "id", None) for message in raw_messages
+            ),
             snapshot_status="complete",
             auto_compacted=True,
             auto_compacted_this_run=True,
@@ -1261,7 +1329,9 @@ async def test_compaction_sidecar_is_checkpointed_before_business_model_call(
     )
 
     assert compactor.calls == 1
-    assert seen_model_inputs == [[HumanMessage(content="compact model view", id="compact-view")]]
+    assert seen_model_inputs == [
+        [HumanMessage(content="compact model view", id="compact-view")]
+    ]
     assert result["messages"][0].content == "raw history"
     assert result["messages"][-1].content == "business response"
     checkpoint = saver.get_tuple(config)
@@ -1302,7 +1372,9 @@ async def test_successful_compaction_sidecar_survives_business_model_failure(
     ).get_compiled_graph(checkpointer=saver)
     config = {"configurable": {"thread_id": "sidecar-model-failure"}}
 
-    with pytest.raises(ModelCallExecutionError, match="Model call failed after 1 retries"):
+    with pytest.raises(
+        ModelCallExecutionError, match="Model call failed after 1 retries"
+    ):
         await graph.ainvoke(
             make_state([HumanMessage(content="raw history")], model="test-model"),
             config,

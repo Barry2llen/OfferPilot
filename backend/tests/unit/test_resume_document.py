@@ -154,7 +154,9 @@ def test_convert_raises_for_unsupported_file_type(workspace_tmp_dir: Path) -> No
     file_path = workspace_tmp_dir / "resume.txt"
     file_path.write_text("resume", encoding="utf-8")
 
-    with pytest.raises(UnsupportedResumePreviewFileError, match="Unsupported resume preview"):
+    with pytest.raises(
+        UnsupportedResumePreviewFileError, match="Unsupported resume preview"
+    ):
         _build_resume(file_path).convert_resume_to_image_base64()
 
 
@@ -241,5 +243,7 @@ def test_extract_text_ocr_raises_for_unsupported_file_type(
     file_path = workspace_tmp_dir / "resume.txt"
     file_path.write_text("resume", encoding="utf-8")
 
-    with pytest.raises(UnsupportedResumeFileError, match="Unsupported resume file type"):
+    with pytest.raises(
+        UnsupportedResumeFileError, match="Unsupported resume file type"
+    ):
         _build_resume(file_path).extract_text_ocr()

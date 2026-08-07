@@ -1,7 +1,7 @@
-
 from schemas.resume import Resume
 
 from ..base import BaseAgentState
+
 
 class JobTaskState(BaseAgentState):
     """

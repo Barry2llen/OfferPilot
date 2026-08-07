@@ -1,17 +1,9 @@
-from typing import (
-    Annotated,
-    Callable
-)
+from typing import Annotated, Callable
 
-from .reducers import (
-    update_if_not_none
-)
+from .reducers import update_if_not_none
 
 type Displace[T] = Annotated[T, update_if_not_none]
 
 type MaybeCallable[T] = T | Callable[..., T]
 
-__all__ = [
-    "Displace",
-    "MaybeCallable"
-]
+__all__ = ["Displace", "MaybeCallable"]

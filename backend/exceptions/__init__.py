@@ -39,9 +39,7 @@ from .resume import (
     UnsupportedResumeFileError,
     UnsupportedResumePreviewFileError,
 )
-from .validation import (
-    ValidationError
-)
+from .validation import ValidationError
 
 __all__ = [
     "AgentError",
@@ -80,5 +78,5 @@ __all__ = [
     "UnsupportedChatFileError",
     "UnsupportedResumeFileError",
     "UnsupportedResumePreviewFileError",
-    "ValidationError"
+    "ValidationError",
 ]

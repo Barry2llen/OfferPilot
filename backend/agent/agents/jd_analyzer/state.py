@@ -1,11 +1,11 @@
-
 from schemas.job_description import (
+    JdRequirementBlockEx,
     JobDescription,
     JobDescriptionEx,
-    JdRequirementBlockEx
 )
-from ...base import BaseAgentState
+
 from ...annotations.types import Displace
+from ...base import BaseAgentState
 
 
 class State(BaseAgentState, total=False):

@@ -22,10 +22,14 @@ class ContextCompactionSettingsService:
         settings = self._settings_repository.get()
         return self._to_schema(settings)
 
-    def update(self, model_selection_id: int | None) -> ContextCompactionSettingsResponse:
+    def update(
+        self, model_selection_id: int | None
+    ) -> ContextCompactionSettingsResponse:
         if model_selection_id is not None:
             if self._model_selection_repository is None:
-                raise RuntimeError("Model selection repository is required for an update.")
+                raise RuntimeError(
+                    "Model selection repository is required for an update."
+                )
             if self._model_selection_repository.get_by_id(model_selection_id) is None:
                 raise ModelSelectionNotFoundError(
                     f"Model selection not found: {model_selection_id}"
@@ -43,5 +47,6 @@ class ContextCompactionSettingsService:
                 settings.model_selection_id if settings is not None else None
             )
         )
+
 
 __all__ = ["ContextCompactionSettingsService"]

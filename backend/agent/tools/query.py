@@ -1,17 +1,14 @@
-
 import json
-from typing import (
-    TypedDict,
-    NotRequired,
-    Literal
-)
-from pydantic import Field
-from langgraph.types import interrupt
+from typing import Literal, NotRequired, TypedDict
+
 from langchain.tools import tool
+from langgraph.types import interrupt
+from pydantic import Field
 
 from ..base import (
     BaseInterupt,
 )
+
 
 class QueryInterupt(BaseInterupt):
     question: str
@@ -22,21 +19,42 @@ class QueryInterupt(BaseInterupt):
     thirdChoice: str
     thirdChoiceDescription: str
 
-type AnswerType = Literal['firstChoice', 'secondChoice', 'thirdChoice', 'other']
+
+type AnswerType = Literal["firstChoice", "secondChoice", "thirdChoice", "other"]
+
 
 class Answer(TypedDict):
     choice: AnswerType
     note: NotRequired[str | None]
 
+
 @tool(response_format="content_and_artifact", extras={"interrupt": True})
 async def query(
-    question: str = Field(..., description="The specific question to ask the user before continuing."),
-    firstChoice: str = Field(..., description="The first,as well as recommended,choice to present to the user."),
-    firstChoiceDescription: str = Field(..., description="A short user-facing explanation of when to choose the recommended first choice."),
-    secondChoice: str = Field(..., description="The second choice to present to the user."),
-    secondChoiceDescription: str = Field(..., description="A short user-facing explanation of when to choose the second choice."),
-    thirdChoice: str = Field(..., description="The third choice to present to the user."),
-    thirdChoiceDescription: str = Field(..., description="A short user-facing explanation of when to choose the third choice."),
+    question: str = Field(
+        ..., description="The specific question to ask the user before continuing."
+    ),
+    firstChoice: str = Field(
+        ...,
+        description="The first,as well as recommended,choice to present to the user.",
+    ),
+    firstChoiceDescription: str = Field(
+        ...,
+        description="A short user-facing explanation of when to choose the recommended first choice.",
+    ),
+    secondChoice: str = Field(
+        ..., description="The second choice to present to the user."
+    ),
+    secondChoiceDescription: str = Field(
+        ...,
+        description="A short user-facing explanation of when to choose the second choice.",
+    ),
+    thirdChoice: str = Field(
+        ..., description="The third choice to present to the user."
+    ),
+    thirdChoiceDescription: str = Field(
+        ...,
+        description="A short user-facing explanation of when to choose the third choice.",
+    ),
 ) -> tuple[str, dict[str, str]]:
     """
     Ask the user a specific question and present exactly three concrete options.
@@ -50,7 +68,7 @@ async def query(
 
     resp: Answer = interrupt(
         QueryInterupt(
-            type='query',
+            type="query",
             question=question,
             firstChoice=firstChoice,
             firstChoiceDescription=firstChoiceDescription,

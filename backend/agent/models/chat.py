@@ -1,4 +1,3 @@
-
 import json
 from functools import lru_cache
 from typing import Any, Literal
@@ -47,9 +46,12 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
             strict=strict,
             **kwargs,
         )
-        return RunnableLambda(
-            lambda input_: self._prepend_json_output_instruction(input_, schema) # type: ignore
-        ) | structured_model
+        return (
+            RunnableLambda(
+                lambda input_: self._prepend_json_output_instruction(input_, schema)  # type: ignore
+            )
+            | structured_model
+        )
 
     def _get_request_payload(
         self,
@@ -86,7 +88,10 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
         schema: Any | None,
     ) -> list[Any]:
         messages = self._convert_input(input_).to_messages()
-        return [SystemMessage(content=_build_json_output_instruction(schema)), *messages]
+        return [
+            SystemMessage(content=_build_json_output_instruction(schema)),
+            *messages,
+        ]
 
 
 def _build_json_output_instruction(schema: Any | None) -> str:
@@ -208,7 +213,7 @@ def load_chat_model(model_selection: ModelSelection | None, **kwargs) -> BaseCha
         model_name=model_selection.model_name,
         base_url=model_selection.provider.base_url,
         api_key=model_selection.provider.api_key,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -221,8 +226,9 @@ def _load_chat_model_cached(
     api_key: str | None,
     **kwargs: Any,
 ) -> BaseChatModel:
-    
+
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
 
     required_base_and_key = False
@@ -246,16 +252,18 @@ def _load_chat_model_cached(
                 deepseek_kwargs["api_key"] = api_key
             return DeepSeekThinkingChatModel(**deepseek_kwargs, **kwargs)
 
-        return init_chat_model(
-            model_provider=model_provider,
-            model=model_name,
-            base_url=base_url,
-            api_key=api_key,
-            **kwargs
-        ) if required_base_and_key else init_chat_model(
-            model_provider=model_provider,
-            model=model_name,
-            **kwargs
+        return (
+            init_chat_model(
+                model_provider=model_provider,
+                model=model_name,
+                base_url=base_url,
+                api_key=api_key,
+                **kwargs,
+            )
+            if required_base_and_key
+            else init_chat_model(
+                model_provider=model_provider, model=model_name, **kwargs
+            )
         )
     except Exception as e:
         logger.error(f"Error loading chat model for provider {provider_name}: {e}")

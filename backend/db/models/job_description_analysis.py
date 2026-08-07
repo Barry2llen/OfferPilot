@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -13,9 +13,13 @@ class JobDescriptionAnalysisORM(Base):
     __tablename__ = "tb_job_description_analysis"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="processing")
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="processing"
+    )
     source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    source_image_file_ids: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    source_image_file_ids: Mapped[Any] = mapped_column(
+        JSON, default=list, nullable=False
+    )
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[Any] = mapped_column(JSON, default=dict, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -5,8 +5,9 @@ from dataclasses import replace
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from .models import CompactedMessage
 from utils.logger import logger
+
+from .models import CompactedMessage
 
 
 def protect_entries(
@@ -57,9 +58,7 @@ def _protected_source_indexes(
 
     if not human_indexes:
         protected_indexes.update(
-            source.index
-            for entry in entries
-            for source in entry.sources
+            source.index for entry in entries for source in entry.sources
         )
     else:
         latest_human = human_indexes[-1]
@@ -77,13 +76,14 @@ def _protected_source_indexes(
     for start, end, complete in exchanges:
         if not complete or (start, end) == exchanges[-1][:2]:
             protected_indexes.update(
-                source.index
-                for entry in entries[start:end]
-                for source in entry.sources
+                source.index for entry in entries[start:end] for source in entry.sources
             )
 
     for index, entry in enumerate(entries):
-        if isinstance(entry.rendered, ToolMessage) and index not in consumed_tool_indexes:
+        if (
+            isinstance(entry.rendered, ToolMessage)
+            and index not in consumed_tool_indexes
+        ):
             protected_indexes.update(source.index for source in entry.sources)
 
     incomplete_or_latest_exchanges = sum(
@@ -91,8 +91,7 @@ def _protected_source_indexes(
         for start, end, complete in exchanges
     )
     orphan_tool_messages = sum(
-        isinstance(entry.rendered, ToolMessage)
-        and index not in consumed_tool_indexes
+        isinstance(entry.rendered, ToolMessage) and index not in consumed_tool_indexes
         for index, entry in enumerate(entries)
     )
     logger.debug(
@@ -124,10 +123,7 @@ def _tool_exchanges(
 
         raw_ids = [call.get("id") for call in message.tool_calls]
         ids = [str(call_id) for call_id in raw_ids if call_id]
-        valid_ids = (
-            len(ids) == len(raw_ids)
-            and len(ids) == len(set(ids))
-        )
+        valid_ids = len(ids) == len(raw_ids) and len(ids) == len(set(ids))
         expected = set(ids)
         seen: set[str] = set()
         duplicate = False

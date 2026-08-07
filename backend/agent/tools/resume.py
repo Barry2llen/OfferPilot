@@ -1,17 +1,10 @@
-
-from typing import (
-    TypedDict,
-    NotRequired
-)
-from pydantic import Field
 from langchain_core.tools import tool
 
-from ..base import (
-    BaseInterupt
-)
+from ..base import BaseInterupt
 
-class ListResumesInterupt(BaseInterupt):
-    ...
+
+class ListResumesInterupt(BaseInterupt): ...
+
 
 @tool(response_format="content_and_artifact")
 async def list_resumes():

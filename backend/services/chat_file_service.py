@@ -11,14 +11,17 @@ from exceptions import (
     ChatFileProcessingError,
     EmptyChatFileContentError,
     ResumeParsingError,
-    ResumePreviewConversionError,
-    ResumePreviewDependencyError,
     ResumePreviewError,
     ResumeValidationError,
     UnsupportedChatFileError,
     UnsupportedResumeFileError,
 )
-from schemas.chat_file import ChatAttachmentRef, ChatFileDetail, ChatFileListItem, StoredChatFile
+from schemas.chat_file import (
+    ChatAttachmentRef,
+    ChatFileDetail,
+    ChatFileListItem,
+    StoredChatFile,
+)
 from schemas.model_selection import ModelSelection
 from utils.document_assets import (
     decode_text_file,
@@ -78,7 +81,9 @@ class ChatFileService:
         if row is None:
             raise ChatFileNotFoundError(f"Chat file not found: {file_id}")
         record, reference_count = row
-        return ChatFileDetail(**self._to_list_item(record, reference_count).model_dump())
+        return ChatFileDetail(
+            **self._to_list_item(record, reference_count).model_dump()
+        )
 
     def get_file_raw(self, file_id: str) -> StoredChatFile:
         record = self._file_repository.get_by_id(file_id)
@@ -99,7 +104,9 @@ class ChatFileService:
                 stored = self._create_file_record(uploaded_file)
                 records.append(stored)
                 created_file_paths.append(
-                    self._resolve_storage_path(stored.storage_path, require_exists=False)
+                    self._resolve_storage_path(
+                        stored.storage_path, require_exists=False
+                    )
                 )
         except Exception:
             for path in created_file_paths:
@@ -126,7 +133,9 @@ class ChatFileService:
                 stored = self._create_file_record(uploaded_file)
                 stored_records.append(stored)
                 created_file_paths.append(
-                    self._resolve_storage_path(stored.storage_path, require_exists=False)
+                    self._resolve_storage_path(
+                        stored.storage_path, require_exists=False
+                    )
                 )
 
             for file_id in file_ids:
@@ -144,7 +153,9 @@ class ChatFileService:
                     human_message=HumanMessage(content=normalized_prompt),
                     attachments=[],
                     requires_image_input=self.thread_requires_image_input(thread_id),
-                    attachment_count=self._thread_file_repository.count_by_thread(thread_id),
+                    attachment_count=self._thread_file_repository.count_by_thread(
+                        thread_id
+                    ),
                     created_file_paths=created_file_paths,
                 )
 
@@ -187,7 +198,9 @@ class ChatFileService:
                     if injection_mode == "image":
                         content_blocks.extend(self._build_image_blocks(record))
                     else:
-                        extracted_text = self._extract_attachment_text(record, injection_mode)
+                        extracted_text = self._extract_attachment_text(
+                            record, injection_mode
+                        )
                         content_blocks.append(
                             {
                                 "type": "text",
@@ -209,7 +222,9 @@ class ChatFileService:
                 0,
                 {
                     "type": "text",
-                    "text": self._build_visible_prompt(normalized_prompt, reference_lines),
+                    "text": self._build_visible_prompt(
+                        normalized_prompt, reference_lines
+                    ),
                 },
             )
 
@@ -220,14 +235,17 @@ class ChatFileService:
                     additional_kwargs={
                         "display_content": normalized_prompt,
                         "attachments": [
-                            attachment.model_dump(mode="json") for attachment in attachments
+                            attachment.model_dump(mode="json")
+                            for attachment in attachments
                         ],
                         "requires_image_input": requires_image_input,
                     },
                 ),
                 attachments=attachments,
                 requires_image_input=requires_image_input,
-                attachment_count=self._thread_file_repository.count_by_thread(thread_id),
+                attachment_count=self._thread_file_repository.count_by_thread(
+                    thread_id
+                ),
                 created_file_paths=created_file_paths,
             )
         except Exception:
@@ -341,7 +359,9 @@ class ChatFileService:
             f"{extracted_text}"
         )
 
-    def _to_list_item(self, record: ChatFileORM, reference_count: int) -> ChatFileListItem:
+    def _to_list_item(
+        self, record: ChatFileORM, reference_count: int
+    ) -> ChatFileListItem:
         return ChatFileListItem(
             id=record.id,
             original_filename=record.original_filename,

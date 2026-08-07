@@ -1,8 +1,8 @@
 import pytest
 from sqlalchemy import text
 
-from db.models import ModelProviderORM
 from db.engine import DatabaseManager
+from db.models import ModelProviderORM
 from db.repositories import ModelProviderRepository
 from exceptions import (
     ModelProviderAlreadyExistsError,
@@ -32,10 +32,7 @@ def test_create_and_get_model_provider(
         fetched = repository.get_by_name("default-openai")
 
         stored_provider = session.execute(
-            text(
-                "SELECT provider FROM tb_model_provider "
-                "WHERE name = :name"
-            ),
+            text("SELECT provider FROM tb_model_provider WHERE name = :name"),
             {"name": "default-openai"},
         ).scalar_one()
 
@@ -142,7 +139,9 @@ def test_update_missing_model_provider_raises_domain_error(
     with initialized_database_manager.session_scope() as session:
         repository = ModelProviderRepository(session)
 
-        with pytest.raises(ModelProviderNotFoundError, match="Model provider not found"):
+        with pytest.raises(
+            ModelProviderNotFoundError, match="Model provider not found"
+        ):
             repository.update(
                 ModelProviderORM(
                     name="missing-provider",
