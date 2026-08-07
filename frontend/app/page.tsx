@@ -11,6 +11,7 @@ import ChatInput, {
 } from "@/app/components/chat/chat-input";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
 import type { ModelSelectionResponse, QueryChoice } from "@/app/lib/api/types";
+import { shouldWarnForSmallerContextWindow } from "@/app/lib/chat/model-context-warning";
 
 export default function Home() {
   const { t } = useTranslation();
@@ -42,6 +43,7 @@ export default function Home() {
   const [models, setModels] = useState<ModelSelectionResponse[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [modelContextWindowWarning, setModelContextWindowWarning] = useState(false);
 
   const currentModel = models.find(
     (model) => model.id === state.currentModelSelection
@@ -51,6 +53,9 @@ export default function Home() {
     currentModel?.supports_image_input === false
       ? t("chat.threadImageMismatch")
       : null;
+  const modelContextWindowWarningMessage = modelContextWindowWarning
+    ? t("chat.modelContextWindowWarning")
+    : null;
 
   useEffect(() => {
     let mounted = true;
@@ -126,6 +131,7 @@ export default function Home() {
   const handleSelectThread = useCallback(
     async (threadId: string) => {
       stopStream();
+      setModelContextWindowWarning(false);
       if (!threadId) {
         resetStreamingState();
         clearMessages();
@@ -160,6 +166,7 @@ export default function Home() {
 
   const handleNewChat = useCallback(() => {
     stopStream();
+    setModelContextWindowWarning(false);
     resetStreamingState();
     clearMessages();
     setThreadId(null);
@@ -184,9 +191,20 @@ export default function Home() {
 
   const handleModelChange = useCallback(
     (id: number | null) => {
+      const previousModel = models.find(
+        (model) => model.id === state.currentModelSelection,
+      );
+      const nextModel = models.find((model) => model.id === id);
       setModelSelection(id);
+      setModelContextWindowWarning(
+        shouldWarnForSmallerContextWindow(
+          Boolean(state.currentThreadId && messages.length > 0),
+          previousModel ?? null,
+          nextModel ?? null,
+        ),
+      );
     },
-    [setModelSelection]
+    [messages.length, models, setModelSelection, state.currentModelSelection, state.currentThreadId]
   );
 
   const handleQuickPrompt = useCallback(
@@ -239,6 +257,7 @@ export default function Home() {
           interrupt={interrupt}
           streamError={streamError}
           contextCompactionStatus={contextCompactionStatus}
+          modelContextWindowWarning={modelContextWindowWarningMessage}
           threadModelMismatchMessage={threadModelMismatchMessage}
           hasNoModel={hasNoModel}
           onRetry={handleRetry}
@@ -252,7 +271,7 @@ export default function Home() {
           isStreaming={isStreaming}
           isInterrupted={!!interrupt}
           disabled={hasNoModel}
-          noticeMessage={threadModelMismatchMessage}
+          noticeMessage={threadModelMismatchMessage ?? modelContextWindowWarningMessage}
           interrupt={interrupt}
           onAnswerQuery={handleAnswerQuery}
         />

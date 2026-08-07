@@ -654,6 +654,54 @@ async def test_pipeline_does_not_repeat_summary_without_new_raw_history() -> Non
     assert result.auto_compacted_this_run is False
 
 
+async def test_pipeline_recompacts_complete_summary_when_budget_shrinks() -> None:
+    raw_messages = [
+        HumanMessage(content="old user", id="human-old"),
+        AIMessage(content="old answer", id="ai-old"),
+    ]
+    old_summary = SystemMessage(content="[Historical context summary]\nold context")
+    snapshot = {
+        "messages": [old_summary, raw_messages[1]],
+        "source_message_count": 2,
+        "source_message_ids": ["human-old", "ai-old"],
+        "status": "complete",
+        "auto_compacted": True,
+    }
+    runnable = FakeStructuredRunnable(summary_result())
+    loader = FakeStructuredModelLoader(runnable)
+
+    result = await PipelineCompactor(
+        token_counter=SummaryMergeTokenCounter(),
+        keep_recent_turns=1,
+        layers=(
+            AutoCompactLayer(
+                model_resolver=StaticResolver(make_selection(model_name="compact")),
+                budget_policy=DefaultContextBudgetPolicy(ContextCompactionConfig()),
+                token_counter=SummaryMergeTokenCounter(),
+                structured_model_loader=loader,
+            ),
+        ),
+    ).acompact(
+        _snapshot_request(
+            _snapshot_state(raw_messages, snapshot),
+            budget=ContextBudget(
+                max_context_tokens=10,
+                reserved_output_tokens=0,
+                safety_margin_tokens=0,
+            ),
+        )
+    )
+
+    assert runnable.calls == 1
+    assert result.auto_compacted_this_run is True
+    assert result.compacted_tokens == 5
+    assert sum(
+        isinstance(message, SystemMessage)
+        and message.content.startswith("[Historical context summary]")
+        for message in result.model_messages
+    ) == 1
+
+
 async def test_pipeline_merges_existing_summary_with_new_historical_messages() -> None:
     raw_messages = [
         HumanMessage(content="old user", id="human-old"),

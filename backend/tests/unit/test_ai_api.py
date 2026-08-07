@@ -121,6 +121,62 @@ def test_ai_chat_endpoint_invokes_supervisor_and_persists_checkpoint(
     assert saved.checkpoint["channel_values"]["messages"] == ["checkpointed"]
 
 
+def test_ai_chat_endpoint_returns_localized_502_for_interrupt(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    class FakeInterrupt:
+        value = {
+            "type": "error",
+            "message": "Context compaction failed: provider returned trace-id=abc123",
+        }
+        id = "interrupt-context-compaction"
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
+                del state, config
+                return {
+                    "messages": [],
+                    "__interrupt__": (FakeInterrupt(),),
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        chinese = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-context-compaction-zh",
+            },
+            headers={"Accept-Language": "zh-CN"},
+        )
+        english = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-context-compaction-en",
+            },
+            headers={"Accept-Language": "en-US"},
+        )
+
+    assert chinese.status_code == 502
+    assert chinese.headers["content-language"] == "zh-CN"
+    assert chinese.json() == {
+        "detail": "上下文压缩失败：provider returned trace-id=abc123"
+    }
+    assert english.status_code == 502
+    assert english.headers["content-language"] == "en-US"
+    assert english.json() == {
+        "detail": "Context compaction failed: provider returned trace-id=abc123"
+    }
+
+
 def test_ai_chat_endpoint_generates_thread_id_when_missing(
     temporary_app_config: Config,
 ) -> None:

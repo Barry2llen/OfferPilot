@@ -43,7 +43,7 @@ from services import (
     UploadedChatFile,
 )
 from utils.tool_outputs import summarize_tool_output
-from utils.i18n import localize_error, request_locale
+from utils.i18n import localize_error, request_locale, translate
 from utils.stream import render_sse_event, to_jsonable
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -341,7 +341,10 @@ def _extract_interrupt_payloads(event: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(data, dict):
         return []
 
-    chunk = data.get("chunk")
+    return _extract_interrupt_payloads_from_chunk(data.get("chunk"))
+
+
+def _extract_interrupt_payloads_from_chunk(chunk: Any) -> list[dict[str, Any]]:
     if not isinstance(chunk, dict) or "__interrupt__" not in chunk:
         return []
 
@@ -640,6 +643,22 @@ async def chat(
                 recursion_limit=request.app.state.config.graph_recursion_limit,
             ),
         )
+        interrupt_payloads = _extract_interrupt_payloads_from_chunk(final_state)
+        if interrupt_payloads:
+            session.rollback()
+            if prepared_prompt is not None:
+                for path in prepared_prompt.created_file_paths:
+                    path.unlink(missing_ok=True)
+            message = next(
+                (
+                    payload["message"]
+                    for payload in interrupt_payloads
+                    if isinstance(payload.get("message"), str)
+                    and payload["message"].strip()
+                ),
+                translate("agentInterrupted", request_locale(request)),
+            )
+            raise HTTPException(status_code=502, detail=message)
         session.commit()
     except (
         ChatFileNotFoundError,

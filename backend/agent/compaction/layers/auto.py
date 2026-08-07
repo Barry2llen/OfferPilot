@@ -141,6 +141,8 @@ class AutoCompactLayer:
             and context.snapshot["status"] == "complete"
             and context.snapshot["auto_compacted"]
             and not context.has_new_messages_since_snapshot
+            and context.current_tokens
+            <= context.request.budget.available_input_tokens
         ):
             logger.debug(
                 "Auto-compaction skipped: complete sidecar has no new raw messages."
@@ -160,7 +162,11 @@ class AutoCompactLayer:
             f"prior_summaries={len(prior_summaries)}, "
             f"historical_entries={len(historical_entries)}."
         )
-        if prior_summaries and not historical_entries:
+        if (
+            prior_summaries
+            and not historical_entries
+            and context.current_tokens <= context.request.budget.available_input_tokens
+        ):
             logger.debug(
                 "Auto-compaction skipped: sidecar summary exists but no new history "
                 "is available to merge."

@@ -21,6 +21,7 @@ interface ChatAreaProps {
   interrupt: ChatInterrupt | null;
   streamError: string | null;
   contextCompactionStatus: ContextCompactionStatus;
+  modelContextWindowWarning: string | null;
   threadModelMismatchMessage: string | null;
   hasNoModel: boolean;
   onRetry: () => void;
@@ -35,6 +36,7 @@ export default function ChatArea({
   interrupt,
   streamError,
   contextCompactionStatus,
+  modelContextWindowWarning,
   threadModelMismatchMessage,
   hasNoModel,
   onRetry,
@@ -50,7 +52,8 @@ export default function ChatArea({
     messages.length > 0 ||
     liveMessages.length > 0 ||
     isStreaming ||
-    contextCompactionStatus !== "idle";
+    contextCompactionStatus !== "idle" ||
+    Boolean(modelContextWindowWarning);
 
   useEffect(() => {
     if (isAutoScrollEnabled) {
@@ -99,6 +102,16 @@ export default function ChatArea({
       ) : (
         <div className="w-full">
           <>
+            {modelContextWindowWarning && (
+              <div
+                className="mb-4 rounded-2xl bg-warning-bg px-4 py-3 text-sm text-warning-text"
+                role="alert"
+                aria-live="polite"
+              >
+                {modelContextWindowWarning}
+              </div>
+            )}
+
             {contextCompactionStatus !== "idle" && (
               <div
                 className={`mb-4 rounded-2xl px-4 py-3 text-sm ${

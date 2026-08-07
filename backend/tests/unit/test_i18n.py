@@ -45,6 +45,16 @@ def test_known_errors_are_localized_without_rewriting_unknown_details() -> None:
     assert localize_error(technical_detail, "en-US") == technical_detail
 
 
+def test_context_compaction_error_localizes_prefix_and_preserves_detail() -> None:
+    raw_error = "Context compaction failed: provider returned trace-id=abc123"
+
+    assert (
+        localize_error(raw_error, "zh-CN")
+        == "上下文压缩失败：provider returned trace-id=abc123"
+    )
+    assert localize_error(raw_error, "en-US") == raw_error
+
+
 def test_known_progress_messages_are_localized_and_unknown_messages_are_preserved() -> None:
     assert (
         localize_progress_message("Starting resume extraction.", "en-US")

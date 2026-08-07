@@ -82,6 +82,7 @@ class ModelSelectionResponse(BaseModel):
                     },
                     "model_name": "gpt-4o-mini",
                     "supports_image_input": True,
+                    "context_window_tokens": 128000,
                 }
             ]
         }
@@ -93,4 +94,8 @@ class ModelSelectionResponse(BaseModel):
     supports_image_input: bool = Field(
         description="Whether this model supports image input.",
         examples=[True],
+    )
+    context_window_tokens: int = Field(
+        description="Resolved maximum context window for this model in tokens.",
+        examples=[128000],
     )

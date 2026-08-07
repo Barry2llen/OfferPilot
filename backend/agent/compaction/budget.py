@@ -15,7 +15,7 @@ class DefaultContextBudgetPolicy(ContextBudgetPolicy):
         self.config = config
 
     def resolve(self, model_selection: ModelSelection) -> ContextBudget:
-        max_context_tokens = self._resolve_window(model_selection)
+        max_context_tokens = self.resolve_max_context_tokens(model_selection)
         available_input_tokens = (
             max_context_tokens
             - self.config.reserved_output_tokens
@@ -41,7 +41,7 @@ class DefaultContextBudgetPolicy(ContextBudgetPolicy):
         )
         return budget
 
-    def _resolve_window(self, model_selection: ModelSelection) -> int:
+    def resolve_max_context_tokens(self, model_selection: ModelSelection) -> int:
         model_name = str(getattr(model_selection, "model_name", "") or "")
         provider = getattr(model_selection, "provider", None)
         provider_name = str(getattr(provider, "provider", "") or "")

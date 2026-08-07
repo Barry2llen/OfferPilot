@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from agent.compaction import DefaultContextBudgetPolicy
 from db.repositories import ModelProviderRepository, ModelSelectionRepository
 from db.repositories import ContextCompactionSettingsRepository
 from exceptions import (
@@ -78,7 +79,10 @@ def _provider_response(provider: ModelProvider) -> ModelProviderResponse:
     )
 
 
-def _selection_response(selection: ModelSelection) -> ModelSelectionResponse:
+def _selection_response(
+    selection: ModelSelection,
+    request: Request,
+) -> ModelSelectionResponse:
     if selection.id is None:
         raise ValueError("Persisted model selection id is required.")
 
@@ -87,6 +91,9 @@ def _selection_response(selection: ModelSelection) -> ModelSelectionResponse:
         provider=_provider_response(selection.provider),
         model_name=selection.model_name,
         supports_image_input=selection.supports_image_input,
+        context_window_tokens=DefaultContextBudgetPolicy(
+            request.app.state.config.context_compaction
+        ).resolve_max_context_tokens(selection),
     )
 
 
@@ -327,27 +334,35 @@ async def delete_model_provider(
     "/model-selections",
     response_model=list[ModelSelectionResponse],
     summary="List model selections",
-    description="Return configured model selections with expanded provider summaries.",
+    description=(
+        "Return configured model selections with expanded provider summaries and "
+        "resolved context window capacities."
+    ),
     response_description="Returns model selections ordered by provider name, model name, and ID.",
 )
 async def list_model_selections(
+    request: Request,
     session: Session = Depends(_get_request_db_session),
 ) -> list[ModelSelectionResponse]:
     service = ModelSelectionService(ModelSelectionRepository(session))
-    return [_selection_response(selection) for selection in service.list_all()]
+    return [_selection_response(selection, request) for selection in service.list_all()]
 
 
 @router.get(
     "/model-selections/{selection_id}",
     response_model=ModelSelectionResponse,
     summary="Get model selection details",
-    description="Return a model selection and its provider summary by ID.",
+    description=(
+        "Return a model selection, its provider summary, and its resolved context "
+        "window capacity by ID."
+    ),
     response_description="Returns the requested model selection.",
     responses={
         404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
     },
 )
 async def get_model_selection(
+    request: Request,
     selection_id: int = Path(
         ...,
         description="Model selection record ID.",
@@ -362,7 +377,7 @@ async def get_model_selection(
             status_code=404,
             detail=f"Model selection not found: {selection_id}",
         )
-    return _selection_response(selection)
+    return _selection_response(selection, request)
 
 
 @router.post(
@@ -370,13 +385,14 @@ async def get_model_selection(
     response_model=ModelSelectionResponse,
     summary="Create a model selection",
     description="Create a model selection that can be referenced by AI services.",
-    response_description="Returns the new model selection.",
+    response_description="Returns the new model selection with its resolved context window capacity.",
     responses={
         404: _error_response("The referenced model provider was not found.", example="Model provider not found: missing-provider"),
         409: _error_response("The model name already exists for this provider.", example="Model selection already exists: default-openai/gpt-4o-mini"),
     },
 )
 async def create_model_selection(
+    request: Request,
     payload: ModelSelectionCreate,
     session: Session = Depends(_get_request_db_session),
 ) -> ModelSelectionResponse:
@@ -398,7 +414,7 @@ async def create_model_selection(
             )
         )
         _commit_or_rollback(session)
-        return _selection_response(created)
+        return _selection_response(created, request)
     except ModelSelectionAlreadyExistsError as error:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error
@@ -412,13 +428,14 @@ async def create_model_selection(
     response_model=ModelSelectionResponse,
     summary="Update a model selection",
     description="Update a model selection. Omitted fields keep their current values.",
-    response_description="Returns the updated model selection.",
+    response_description="Returns the updated model selection with its resolved context window capacity.",
     responses={
         404: _error_response("The model selection or referenced provider was not found.", example="Model selection not found: 1"),
         409: _error_response("The model name already exists for this provider.", example="Model selection already exists: default-openai/gpt-4o-mini"),
     },
 )
 async def update_model_selection(
+    request: Request,
     payload: ModelSelectionUpdate,
     selection_id: int = Path(
         ...,
@@ -458,7 +475,7 @@ async def update_model_selection(
             )
         )
         _commit_or_rollback(session)
-        return _selection_response(updated)
+        return _selection_response(updated, request)
     except ModelSelectionAlreadyExistsError as error:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from error

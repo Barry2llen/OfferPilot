@@ -158,6 +158,7 @@ export interface ModelSelectionResponse {
   provider: ModelProviderResponse;
   model_name: string;
   supports_image_input: boolean;
+  context_window_tokens: number;
 }
 
 export interface ModelSelectionCreate {

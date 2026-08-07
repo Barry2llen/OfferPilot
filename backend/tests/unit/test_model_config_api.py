@@ -3,7 +3,7 @@ import json
 from fastapi.testclient import TestClient
 
 from main import create_app
-from schemas.config import Config
+from schemas.config import Config, ContextCompactionConfig
 
 
 def test_model_provider_api_crud_and_api_key_masking(
@@ -130,6 +130,38 @@ def test_model_selection_api_crud_and_provider_reference_conflict(
     assert missing_provider.status_code == 404
 
 
+def test_model_selection_api_returns_resolved_context_window(
+    temporary_app_config: Config,
+) -> None:
+    config = temporary_app_config.model_copy(
+        update={
+            "context_compaction": ContextCompactionConfig(
+                model_context_windows={"OpenAI:gpt-4o-mini": 64_000},
+            )
+        }
+    )
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        client.post(
+            "/model-providers",
+            json={"provider": "OpenAI", "name": "default-openai"},
+        )
+        selection = client.post(
+            "/model-selections",
+            json={
+                "provider_name": "default-openai",
+                "model_name": "gpt-4o-mini",
+            },
+        )
+        listed = client.get("/model-selections")
+
+    assert selection.status_code == 200
+    assert selection.json()["context_window_tokens"] == 64_000
+    assert listed.status_code == 200
+    assert listed.json()[0]["context_window_tokens"] == 64_000
+
+
 def test_context_compaction_settings_follow_current_or_use_selected_model(
     temporary_app_config: Config,
 ) -> None:
@@ -207,6 +239,11 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     assert "/context-compaction-settings" in payload["paths"]
     assert payload["paths"]["/model-providers"]["post"]["summary"] == "Create a model provider"
     assert payload["paths"]["/model-selections"]["post"]["summary"] == "Create a model selection"
+    assert (
+        payload["components"]["schemas"]["ModelSelectionResponse"]["properties"]
+        ["context_window_tokens"]["description"]
+        == "Resolved maximum context window for this model in tokens."
+    )
     assert "ModelProviderResponse" in payload["components"]["schemas"]
     assert "DeepSeek" in json.dumps(
         payload["components"]["schemas"]["ModelProviderCreate"],
