@@ -51,7 +51,7 @@ def _protected_source_indexes(
     human_indexes = [
         source.index
         for entry in entries
-        if isinstance(entry.rendered, HumanMessage)
+        if entry.kind != "summary" and isinstance(entry.rendered, HumanMessage)
         for source in entry.sources
     ]
     protected_indexes: set[int] = set()

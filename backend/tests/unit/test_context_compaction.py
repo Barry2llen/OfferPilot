@@ -240,6 +240,61 @@ def test_protection_preserves_latest_recent_and_incomplete_tool_context() -> Non
     assert [entry.protected for entry in entries] == [False, False, False, True, True]
 
 
+def test_protection_does_not_count_persisted_summary_as_user_turn() -> None:
+    entries = (
+        CompactedMessage(
+            rendered=HumanMessage(
+                content="[Historical context summary]\nprior context"
+            ),
+            sources=(MessageRef(index=0, message_id=None),),
+            kind="summary",
+            layer="auto_compact",
+            protected=True,
+        ),
+        CompactedMessage(
+            rendered=AIMessage(content="old answer"),
+            sources=(MessageRef(index=1, message_id=None),),
+            kind="identity",
+            layer="identity",
+        ),
+        CompactedMessage(
+            rendered=HumanMessage(content="recent request"),
+            sources=(MessageRef(index=2, message_id=None),),
+            kind="identity",
+            layer="identity",
+        ),
+        CompactedMessage(
+            rendered=AIMessage(content="recent answer"),
+            sources=(MessageRef(index=3, message_id=None),),
+            kind="identity",
+            layer="identity",
+        ),
+        CompactedMessage(
+            rendered=HumanMessage(content="new request"),
+            sources=(MessageRef(index=4, message_id=None),),
+            kind="identity",
+            layer="identity",
+        ),
+        CompactedMessage(
+            rendered=AIMessage(content="new answer"),
+            sources=(MessageRef(index=5, message_id=None),),
+            kind="identity",
+            layer="identity",
+        ),
+    )
+
+    protected = protect_entries(entries, keep_recent_turns=4)
+
+    assert [entry.protected for entry in protected] == [
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+    ]
+
+
 def test_return_direct_does_not_add_an_extra_protection_rule() -> None:
     messages = [
         HumanMessage(content="old"),
