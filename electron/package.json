@@ -1,7 +1,7 @@
 {
   "name": "offer-pilot-electron",
   "private": true,
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "OfferPilot desktop application.",
   "author": "https://github.com/Barry2llen",
   "type": "module",
