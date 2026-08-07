@@ -32,10 +32,12 @@ def protect_entries(
         for entry in entries
     )
     logger.debug(
-        "Compaction protection applied: "
-        f"entries={len(entries)}, protected_source_indexes={len(protected_indexes)}, "
-        f"protected_entries={sum(entry.protected for entry in protected_entries)}, "
-        f"keep_recent_turns={keep_recent_turns}."
+        lambda: (
+            "Compaction protection applied: "
+            f"entries={len(entries)}, protected_source_indexes={len(protected_indexes)}, "
+            f"protected_entries={sum(entry.protected for entry in protected_entries)}, "
+            f"keep_recent_turns={keep_recent_turns}."
+        )
     )
     return protected_entries
 
@@ -94,12 +96,14 @@ def _protected_source_indexes(
         for index, entry in enumerate(entries)
     )
     logger.debug(
-        "Compaction protection scan: "
-        f"entries={len(entries)}, human_messages={len(human_indexes)}, "
-        f"tool_exchanges={len(exchanges)}, "
-        f"incomplete_or_latest_exchanges={incomplete_or_latest_exchanges}, "
-        f"orphan_tool_messages={orphan_tool_messages}, "
-        f"protected_source_indexes={len(protected_indexes)}."
+        lambda: (
+            "Compaction protection scan: "
+            f"entries={len(entries)}, human_messages={len(human_indexes)}, "
+            f"tool_exchanges={len(exchanges)}, "
+            f"incomplete_or_latest_exchanges={incomplete_or_latest_exchanges}, "
+            f"orphan_tool_messages={orphan_tool_messages}, "
+            f"protected_source_indexes={len(protected_indexes)}."
+        )
     )
 
     return protected_indexes

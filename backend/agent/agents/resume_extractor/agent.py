@@ -59,7 +59,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
 
         try:
             resume_text = resume_document.extract_text()
-            logger.debug("Extracted text from resume for text-based extraction.")
+            logger.debug(
+                lambda: "Extracted text from resume for text-based extraction."
+            )
             _dispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
                 progress=0.1,
                 message="Extracted resume text.",
@@ -70,7 +72,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
         
         try:
             resume_images = resume_document.convert_resume_to_image_base64()
-            logger.debug(f"Converted resume document to images for image-based extraction. Number of images: {len(resume_images)}")
+            logger.debug(
+                lambda: f"Converted resume document to images for image-based extraction. Number of images: {len(resume_images)}"
+            )
             _dispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
                 progress=0.18,
                 message="Converted resume document to preview images.",
@@ -90,7 +94,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
             max_retries = self.config.model_call_retry_attempts
             repair_attempts = max(0, max_retries - 1)
             try:
-                logger.debug(f"Invoking model for validation of the extracted resume text.")
+                logger.debug(
+                    lambda: f"Invoking model for validation of the extracted resume text."
+                )
                 validation = await validator.ainvoke(
                     [
                         SystemMessage(content=validation_system_prompt),
@@ -100,9 +106,13 @@ class ResumeExtractorAgent(BaseAgent[State]):
                 )
                 
                 if validation.is_valid:
-                    logger.debug(f"Extracted resume text seems to be valid, reason: {validation.reason or 'No reason provided.'}")
+                    logger.debug(
+                        lambda: f"Extracted resume text seems to be valid, reason: {validation.reason or 'No reason provided.'}"
+                    )
                 else:
-                    logger.debug(f"Extracted resume text seems to be invalid, reason: {validation.reason or 'No reason provided.'}")
+                    logger.debug(
+                        lambda: f"Extracted resume text seems to be invalid, reason: {validation.reason or 'No reason provided.'}"
+                    )
 
                 break
             except Exception as e:
@@ -138,7 +148,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
 
         # fall back to OCR-based extraction if text-based extraction is invalid
         if not validation.is_valid:
-            logger.debug("Falling back to OCR-based extraction due to invalid text-based extraction.")
+            logger.debug(
+                lambda: "Falling back to OCR-based extraction due to invalid text-based extraction."
+            )
             _dispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
                 progress=0.3,
                 message="Falling back to OCR text extraction.",
@@ -169,7 +181,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
         model_selection = model(state) if callable(model) else model
         resume_text: str = state.get('resume_text') # type: ignore
 
-        logger.debug("Extracting sections from the resume text.")
+        logger.debug(
+            lambda: "Extracting sections from the resume text."
+        )
         _dispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
             progress=0.4,
             message="Extracting resume sections.",
@@ -185,7 +199,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
             max_retries = self.config.model_call_retry_attempts
             repair_attempts = max(0, max_retries - 1)
             try:
-                logger.debug(f"Invoking model for extracting sections from the resume text.")
+                logger.debug(
+                    lambda: f"Invoking model for extracting sections from the resume text."
+                )
                 sections: ResumeSections = await extractor.ainvoke(
                     [
                         SystemMessage(content=section_extraction_system_prompt),
@@ -231,7 +247,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
         Extract facts from each resume section.
         """
 
-        logger.debug("Extracting facts from each resume section.")
+        logger.debug(
+            lambda: "Extracting facts from each resume section."
+        )
 
         model: MaybeCallable[ModelSelection] = state.get('model') # type: ignore
         model_selection = model(state) if callable(model) else model
@@ -257,7 +275,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
             )
             while True:
                 try:
-                    logger.debug(f"Invoking model for extracting facts from section: {section.title}")
+                    logger.debug(
+                        lambda: f"Invoking model for extracting facts from section: {section.title}"
+                    )
                     await _adispatch_custom_event_safely("on_progress_update", ProgressUpdateEvent(
                         progress=0.65,
                         message=f"Extracting facts from section: {section.title}",
@@ -349,7 +369,9 @@ class ResumeExtractorAgent(BaseAgent[State]):
                 error_indexes = [i for i, result in enumerate(results) if result is None]
                 sections = [sections[i] for i in error_indexes]
 
-                logger.debug(f"Error occurred while extracting facts for some sections: {[section.title for section in sections]}. Retrying for these sections, attempt {_+1}/{max_retries}.")
+                logger.debug(
+                    lambda: f"Error occurred while extracting facts for some sections: {[section.title for section in sections]}. Retrying for these sections, attempt {_+1}/{max_retries}."
+                )
 
             resp: BaseCommand = interrupt(BaseInterupt(type='error', message=f"Model call failed after {max_retries} retries for extracting facts from some sections of the resume."))
 

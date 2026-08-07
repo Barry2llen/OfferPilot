@@ -187,8 +187,10 @@ class ToolResultCompactor:
         no_reduction_skips = 0
 
         logger.debug(
-            "Tool result compaction started: "
-            f"entries={len(context.entries)}, max_characters={self.max_characters}."
+            lambda: (
+                "Tool result compaction started: "
+                f"entries={len(context.entries)}, max_characters={self.max_characters}."
+            )
         )
 
         for entry in context.entries:
@@ -244,19 +246,23 @@ class ToolResultCompactor:
                 )
             )
             logger.debug(
-                "Tool result compacted: "
-                f"source_indexes={[source.index for source in entry.sources]}, "
-                f"mode={compacted_mode}, original_characters={len(content)}, "
-                f"compacted_characters={len(compacted)}."
+                lambda: (
+                    "Tool result compacted: "
+                    f"source_indexes={[source.index for source in entry.sources]}, "
+                    f"mode={compacted_mode}, original_characters={len(content)}, "
+                    f"compacted_characters={len(compacted)}."
+                )
             )
 
         logger.debug(
-            "Tool result compaction finished: "
-            f"tool_entries={tool_entries}, rewritten={len(actions)}, "
-            f"protected_skips={protected_skips}, "
-            f"already_compacted_skips={already_compacted_skips}, "
-            f"within_limit_skips={within_limit_skips}, "
-            f"no_reduction_skips={no_reduction_skips}."
+            lambda: (
+                "Tool result compaction finished: "
+                f"tool_entries={tool_entries}, rewritten={len(actions)}, "
+                f"protected_skips={protected_skips}, "
+                f"already_compacted_skips={already_compacted_skips}, "
+                f"within_limit_skips={within_limit_skips}, "
+                f"no_reduction_skips={no_reduction_skips}."
+            )
         )
         return context.with_entries(tuple(rewritten_entries)).add_actions(*actions)
 

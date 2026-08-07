@@ -302,7 +302,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     JobDescriptionEx,
                     method=JD_STRUCTURED_OUTPUT_METHOD,
                 )
-                logger.debug("Invoking model for JD structure extraction.")
+                logger.debug(
+                    lambda: "Invoking model for JD structure extraction."
+                )
                 result = await extractor.ainvoke(
                     [
                         SystemMessage(content=jd_extraction_system_prompt),
@@ -399,7 +401,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
                 f"[content]\n{block.content}"
             )
             try:
-                logger.debug(f"Extracting facts from JD block: {block.title}")
+                logger.debug(
+                    lambda: f"Extracting facts from JD block: {block.title}"
+                )
                 async with semaphore:
                     facts_result: JdFactsEx = await extractor.ainvoke(
                         [
@@ -519,9 +523,11 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     if index in failed_indexes
                 ]
                 logger.debug(
-                    f"Retrying fact extraction for blocks: "
-                    f"{[block.title for _, block in remaining_blocks]}, "
-                    f"attempt {attempt + 1}/{max_retries}."
+                    lambda:  (
+                        f"Retrying fact extraction for blocks: "
+                        f"{[block.title for _, block in remaining_blocks]}, "
+                        f"attempt {attempt + 1}/{max_retries}."
+                    )
                 )
 
             # All retries exhausted

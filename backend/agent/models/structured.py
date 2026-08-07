@@ -106,7 +106,7 @@ class StructuredModel[Struct: dict[str, Any] |  BaseModel](
         for attempt in range(max_repair_attempts + 1):
             result: dict[str, Any] | BaseModel | None = None
             try:
-                logger.debug(f"Invoking structured model, attempt {attempt + 1}/{max_repair_attempts + 1}:\n{jsonify(repaired_input)}")
+                logger.debug(lambda: f"Invoking structured model, attempt {attempt + 1}/{max_repair_attempts + 1}:\n{jsonify(repaired_input)}")
                 result = await self._model.ainvoke(repaired_input, config=config, **kwargs)
             except (ValidationError, OutputParserException) as e:
                 error = e

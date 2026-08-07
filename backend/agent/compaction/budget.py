@@ -33,11 +33,13 @@ class DefaultContextBudgetPolicy(ContextBudgetPolicy):
         )
         provider = getattr(model_selection, "provider", None)
         logger.debug(
-            "Compaction budget resolved: "
-            f"provider={getattr(provider, 'provider', 'unknown')}, "
-            f"model={getattr(model_selection, 'model_name', 'unknown')}, "
-            f"max_context={budget.max_context_tokens}, "
-            f"available_input={budget.available_input_tokens}."
+            lambda: (
+                "Compaction budget resolved: "
+                f"provider={getattr(provider, 'provider', 'unknown')}, "
+                f"model={getattr(model_selection, 'model_name', 'unknown')}, "
+                f"max_context={budget.max_context_tokens}, "
+                f"available_input={budget.available_input_tokens}."
+            )
         )
         return budget
 
@@ -56,13 +58,17 @@ class DefaultContextBudgetPolicy(ContextBudgetPolicy):
         ):
             if key and key in windows:
                 logger.debug(
-                    "Compaction context window matched configured key: "
-                    f"key={key}, window={windows[key]}."
+                    lambda: (
+                        "Compaction context window matched configured key: "
+                        f"key={key}, window={windows[key]}."
+                    )
                 )
                 return windows[key]
         logger.debug(
-            "Compaction context window fell back to default: "
-            f"window={self.config.default_max_context_tokens}."
+            lambda: (
+                "Compaction context window fell back to default: "
+                f"window={self.config.default_max_context_tokens}."
+            )
         )
         return self.config.default_max_context_tokens
 

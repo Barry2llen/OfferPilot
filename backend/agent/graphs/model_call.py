@@ -42,6 +42,7 @@ from ..events import (
 from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 from schemas.command import BaseCommand
+from utils.json import jsonify
 from utils.logger import logger
 from utils.custom_events import _adispatch_custom_event_safely
 
@@ -76,7 +77,9 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     tools: ToolsBuilder[State]
 
     def _add_interrupt_tool(self, message_id: str, tool_call: ToolCall, tool: BaseTool) -> str:
-        logger.debug(f"Tool {tool.name} is an interrupt tool, skip calling it synchronously.")
+        logger.debug(
+            lambda: f"Tool {tool.name} is an interrupt tool, skip calling it synchronously."
+        )
         self._interrupt_tools.append((message_id, tool_call, tool))
         return "[INTERRUPT_TOOL_CALLED]"
 
@@ -139,7 +142,9 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         ):
             return tool_call
 
-        logger.debug(f"Injecting runtime into tool call for tool {tool.name}.")
+        logger.debug(
+            lambda: f"Injecting runtime into tool call for tool {tool.name}."
+        )
 
         args = dict(tool_call["args"])
         args["runtime"] = runtime
@@ -224,13 +229,15 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             update["context_compaction"] = result.build_snapshot()
 
         logger.debug(
-            "Context compaction completed: "
-            f"original_tokens={result.original_tokens}, "
-            f"compacted_tokens={result.compacted_tokens}, "
-            f"available_input_tokens={budget.available_input_tokens}, "
-            f"applied_layers={result.applied_layers}, "
-            f"original_messages={len(state.get('messages', []))}, "
-            f"model_messages={len(result.model_messages)}"
+            lambda: (
+                "Context compaction completed: "
+                f"original_tokens={result.original_tokens}, "
+                f"compacted_tokens={result.compacted_tokens}, "
+                f"available_input_tokens={budget.available_input_tokens}, "
+                f"applied_layers={result.applied_layers}, "
+                f"original_messages={len(state.get('messages', []))}, "
+                f"model_messages={len(result.model_messages)}"
+            )
         )
         if result.warnings:
             logger.warning(f"Context compaction warnings: {result.warnings}")
@@ -330,10 +337,14 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             args = tool_call["args"]
             tool_call_id = tool_call.get("id") or ""
 
-            logger.debug(f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})")
+            logger.debug(
+                lambda: f"Calling tool {name}({','.join(f'{k}={v}' for k, v in args.items())})"
+            )
 
             if name not in tools_dict:
-                logger.debug(f"Tool {name} not found in provided tools.")
+                logger.debug(
+                    lambda: f"Tool {name} not found in provided tools."
+                )
                 return ToolMessage(
                     content=f"Tool {name} not found. Please check if you called the correct tool.",
                     tool_call_id=tool_call_id,
@@ -467,6 +478,10 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             ),
         ]
 
+        logger.debug(
+            lambda: f"Calling model {getattr(model_selection, 'name', 'unknown')} with input messages:\n{jsonify(model_input)}"
+        )
+
         while True:
             max_retries = self.config.model_call_retry_attempts
             for _ in range(max_retries):
@@ -542,12 +557,14 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         if msg.type == "tool":
             return_direct = msg.additional_kwargs.get('return_direct')
             if return_direct:
-                logger.debug("Tool message has return_direct flag, ending the graph.")
+                logger.debug(
+                    lambda: "Tool message has return_direct flag, ending the graph."
+                )
                 return 'end'
             return 'model'
         else:
             logger.error(
-                "Last message in state is not a tool message, this should not happen."
+                lambda: "Last message in state is not a tool message, this should not happen."
             )
             raise AgentStateError(
                 "Last message in state is not a tool message, this should not happen."

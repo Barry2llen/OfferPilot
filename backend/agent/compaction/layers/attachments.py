@@ -91,7 +91,7 @@ class HistoricalAttachmentCompactor:
 
     async def apply(self, context: CompactionContext) -> CompactionContext:
         if not self.enabled:
-            logger.debug("Historical attachment compaction skipped: layer disabled.")
+            logger.debug(lambda: "Historical attachment compaction skipped: layer disabled.")
             return context
 
         actions: list[CompactionAction] = []
@@ -102,8 +102,10 @@ class HistoricalAttachmentCompactor:
         already_compacted_skips = 0
 
         logger.debug(
-            "Historical attachment compaction started: "
-            f"entries={len(context.entries)}."
+            lambda: (
+                "Historical attachment compaction started: "
+                f"entries={len(context.entries)}."
+            )
         )
 
         for entry in context.entries:
@@ -154,17 +156,21 @@ class HistoricalAttachmentCompactor:
                 )
             )
             logger.debug(
-                "Historical attachment context compacted: "
-                f"source_indexes={[source.index for source in entry.sources]}, "
-                f"attachment_count={len(attachments)}."
+                lambda: (
+                    "Historical attachment context compacted: "
+                    f"source_indexes={[source.index for source in entry.sources]}, "
+                    f"attachment_count={len(attachments)}."
+                )
             )
 
         logger.debug(
-            "Historical attachment compaction finished: "
-            f"attachment_messages={attachment_messages}, rewritten={len(actions)}, "
-            f"protected_skips={protected_skips}, "
-            f"invalid_or_missing_skips={invalid_or_missing_skips}, "
-            f"already_compacted_skips={already_compacted_skips}."
+            lambda: (
+                "Historical attachment compaction finished: "
+                f"attachment_messages={attachment_messages}, rewritten={len(actions)}, "
+                f"protected_skips={protected_skips}, "
+                f"invalid_or_missing_skips={invalid_or_missing_skips}, "
+                f"already_compacted_skips={already_compacted_skips}."
+            )
         )
         return context.with_entries(tuple(rewritten_entries)).add_actions(*actions)
 
