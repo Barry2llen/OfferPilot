@@ -1,8 +1,9 @@
-
 from schemas.resume import Resume, ResumeSectionEx
 from schemas.resume_document import ResumeDocument
-from ...base import BaseAgentState
+
 from ...annotations.types import Displace
+from ...base import BaseAgentState
+
 
 class State(BaseAgentState, total=False):
     """

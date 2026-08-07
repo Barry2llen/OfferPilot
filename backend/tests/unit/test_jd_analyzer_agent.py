@@ -6,13 +6,11 @@ from langchain_core.tools import tool
 from langgraph.constants import END
 from pydantic import ValidationError
 
+from agent.agents.jd_analyzer import JdAnalyzerAgent
 from agent.agents.jd_analyzer import agent as jd_agent_module
 from agent.agents.jd_analyzer import prompt as jd_prompt_module
-from agent.agents.jd_analyzer import JdAnalyzerAgent
 from agent.tools import web_search as web_search_module
 from schemas.config import Config
-from schemas.model_provider import ModelProvider
-from schemas.model_selection import ModelSelection
 from schemas.job_description import (
     JdFactEx,
     JdFactsEx,
@@ -20,7 +18,8 @@ from schemas.job_description import (
     JobDescription,
     JobDescriptionEx,
 )
-
+from schemas.model_provider import ModelProvider
+from schemas.model_selection import ModelSelection
 
 _IMAGE_DATA_URL = "data:image/png;base64,ZmFrZS1pbWFnZQ=="
 
@@ -39,7 +38,9 @@ def _model_selection(*, supports_image_input: bool) -> ModelSelection:
     )
 
 
-def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields() -> None:
+def test_job_description_ex_accepts_common_llm_aliases_and_ignores_extra_fields() -> (
+    None
+):
     result = JobDescriptionEx.model_validate(
         {
             "company": "示例科技",
@@ -133,7 +134,9 @@ def test_jd_ex_models_normalize_empty_control_enum_fields() -> None:
     assert fact.importance == "unknown"
 
 
-def test_job_description_models_preserve_raw_text_and_normalize_comparable_fields() -> None:
+def test_job_description_models_preserve_raw_text_and_normalize_comparable_fields() -> (
+    None
+):
     result = JobDescriptionEx.model_validate(
         {
             "job_title": "后端开发工程师",
@@ -198,7 +201,7 @@ def test_jd_extraction_prompt_constrains_field_names_and_missing_values() -> Non
     assert "For nullable string fields, use null" in prompt
     assert "For list fields, use []" in prompt
     assert "For enum fields, NEVER use null" not in prompt
-    assert "Use \"unknown\"" not in prompt
+    assert 'Use "unknown"' not in prompt
     assert "remote_policy_raw" in prompt
     assert "education_min_rank means" in prompt
     assert "fixed English enum values" in prompt
@@ -413,7 +416,7 @@ def test_parse_jd_text_extracts_success_tool_result_and_source_url() -> None:
                 tool_call_id="call-success",
                 name="mark_jd_extraction_success",
             ),
-        ]
+        ],
     }
 
     result = agent._parse_jd_text_node(state)
@@ -494,11 +497,13 @@ async def test_extract_structure_uses_jd_structured_output_method(
     monkeypatch.setattr(
         jd_agent_module,
         "load_structured_model",
-        lambda model_selection, schema, *, method=None: captured.update(
-            schema=schema,
-            method=method,
-        )
-        or FakeExtractor(),
+        lambda model_selection, schema, *, method=None: (
+            captured.update(
+                schema=schema,
+                method=method,
+            )
+            or FakeExtractor()
+        ),
     )
 
     result = await JdAnalyzerAgent(
@@ -557,10 +562,9 @@ async def test_extract_facts_retries_and_preserves_original_block_order(
     monkeypatch.setattr(
         jd_agent_module,
         "load_structured_model",
-        lambda model_selection, schema, *, method=None: load_calls.append(
-            (schema, method)
-        )
-        or FakeExtractor(),
+        lambda model_selection, schema, *, method=None: (
+            load_calls.append((schema, method)) or FakeExtractor()
+        ),
     )
 
     blocks = [

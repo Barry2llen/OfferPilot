@@ -1,15 +1,16 @@
-
 from ...prompts import PromptComposer, PromptFragment
 
-_system_prompt = PromptComposer([
-    PromptFragment(
-        name="Instructions",
-        content=(
-            "You are a job description analysis assistant.\n"
-            "Your job is to analyze the provided JD text."
-        ),
-    )
-])
+_system_prompt = PromptComposer(
+    [
+        PromptFragment(
+            name="Instructions",
+            content=(
+                "You are a job description analysis assistant.\n"
+                "Your job is to analyze the provided JD text."
+            ),
+        )
+    ]
+)
 
 jd_web_search_system_prompt = (
     "You are a JD (Job Description) text extraction assistant.\n\n"

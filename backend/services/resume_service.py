@@ -13,8 +13,8 @@ from exceptions import (
     ResumeValidationError,
     UnsupportedResumeFileError,
 )
-from schemas.resume_document import ResumeDetail, ResumeListItem
 from schemas.resume import Resume
+from schemas.resume_document import ResumeDetail, ResumeListItem
 
 
 @dataclass(slots=True)
@@ -45,7 +45,9 @@ class ResumeService:
         self._extraction_repository = extraction_repository
 
     def list_resumes(self) -> list[ResumeListItem]:
-        return [self._to_list_item(document) for document in self._repository.list_all()]
+        return [
+            self._to_list_item(document) for document in self._repository.list_all()
+        ]
 
     def get_resume(self, resume_id: int) -> ResumeDetail:
         return self._to_detail(self._require_resume(resume_id))
@@ -118,7 +120,10 @@ class ResumeService:
             saved_path.unlink(missing_ok=True)
             raise
 
-        if previous_resolved_path is not None and previous_resolved_path != saved_path.resolve():
+        if (
+            previous_resolved_path is not None
+            and previous_resolved_path != saved_path.resolve()
+        ):
             self._delete_file_quietly(previous_resolved_path)
 
         return self._to_detail(updated)
@@ -185,10 +190,7 @@ class ResumeService:
     ) -> ResumeDetail:
         self._require_extraction_repository()
         document = self._require_resume(resume_id)
-        sections = [
-            section.model_dump(mode="json")
-            for section in resume.sections
-        ]
+        sections = [section.model_dump(mode="json") for section in resume.sections]
         extraction = ResumeExtractionORM(
             resume_id=resume_id,
             status="parsed",
@@ -361,7 +363,11 @@ class ResumeService:
         require_exists: bool = True,
     ) -> Path:
         candidate = Path(file_path)
-        resolved = candidate.resolve() if candidate.is_absolute() else (Path.cwd() / candidate).resolve()
+        resolved = (
+            candidate.resolve()
+            if candidate.is_absolute()
+            else (Path.cwd() / candidate).resolve()
+        )
         allowed_roots = (Path.cwd().resolve(), self._upload_dir.resolve())
         if not any(self._is_relative_to(resolved, root) for root in allowed_roots):
             raise ResumeFileNotFoundError("Resume file not found.")

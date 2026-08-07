@@ -2,9 +2,9 @@ from .base import (
     BaseEvent,
     ErrorEvent,
     ModelCallErrorEvent,
-    ToolCallErrorEvent,
+    ModelLoadErrorEvent,
     ProgressUpdateEvent,
-    ModelLoadErrorEvent
+    ToolCallErrorEvent,
 )
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "ModelCallErrorEvent",
     "ModelLoadErrorEvent",
     "ToolCallErrorEvent",
-    "ProgressUpdateEvent"
+    "ProgressUpdateEvent",
 ]

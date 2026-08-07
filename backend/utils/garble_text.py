@@ -2,16 +2,15 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-
 # 常见“可读”字符范围：中文、英文、数字、常见中英文标点
-RE_CJK = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
-RE_ASCII_WORD = re.compile(r'[A-Za-z0-9]')
+RE_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+RE_ASCII_WORD = re.compile(r"[A-Za-z0-9]")
 RE_COMMON_PUNC = re.compile(
     r"""[.,;:!?'"()\[\]{}<>\-_/\\@#$%^&*+=|~`，。；：！？、“”‘’（）《》【】—…·]"""
 )
 
 # 典型 mojibake 片段（只作加分项，不作为主判据）
-RE_MOJIBAKE = re.compile(r'(Ã.|Â.|â.|ð.|�)')
+RE_MOJIBAKE = re.compile(r"(Ã.|Â.|â.|ð.|�)")
 
 
 @dataclass
@@ -24,23 +23,19 @@ class GarbleResult:
 def _is_private_use(ch: str) -> bool:
     cp = ord(ch)
     return (
-        0xE000 <= cp <= 0xF8FF or
-        0xF0000 <= cp <= 0xFFFFD or
-        0x100000 <= cp <= 0x10FFFD
+        0xE000 <= cp <= 0xF8FF or 0xF0000 <= cp <= 0xFFFFD or 0x100000 <= cp <= 0x10FFFD
     )
 
 
 def _is_readable_char(ch: str) -> bool:
     if ch.isspace():
         return True
-    return bool(
-        RE_CJK.match(ch) or
-        RE_ASCII_WORD.match(ch) or
-        RE_COMMON_PUNC.match(ch)
-    )
+    return bool(RE_CJK.match(ch) or RE_ASCII_WORD.match(ch) or RE_COMMON_PUNC.match(ch))
 
 
-def detect_garbled_text(text: str, *, min_len: int = 20, threshold: float = 0.35) -> GarbleResult:
+def detect_garbled_text(
+    text: str, *, min_len: int = 20, threshold: float = 0.35
+) -> GarbleResult:
     """
     返回是否疑似乱码，以及一个 0~1 左右的评分。
     分数越高，越像乱码。
@@ -57,7 +52,7 @@ def detect_garbled_text(text: str, *, min_len: int = 20, threshold: float = 0.35
     non_ws = [c for c in text if not c.isspace()]
     n = max(len(non_ws), 1)
 
-    replacement = sum(c == "\uFFFD" for c in non_ws) / n
+    replacement = sum(c == "\ufffd" for c in non_ws) / n
 
     control = 0
     private_use = 0
@@ -65,7 +60,7 @@ def detect_garbled_text(text: str, *, min_len: int = 20, threshold: float = 0.35
 
     for c in non_ws:
         cat = unicodedata.category(c)
-        if cat in {"Cc", "Cs"}:   # 控制字符、代理项
+        if cat in {"Cc", "Cs"}:  # 控制字符、代理项
             control += 1
         elif _is_private_use(c) or cat in {"Co", "Cn"}:  # 私有区、未分配
             private_use += 1
@@ -85,12 +80,12 @@ def detect_garbled_text(text: str, *, min_len: int = 20, threshold: float = 0.35
 
     # 综合评分：你可以按数据集再调
     score = (
-        replacement * 0.45 +
-        control_ratio * 0.20 +
-        private_ratio * 0.20 +
-        unreadable_ratio * 0.35 +
-        mojibake_ratio * 0.15 +
-        short_penalty
+        replacement * 0.45
+        + control_ratio * 0.20
+        + private_ratio * 0.20
+        + unreadable_ratio * 0.35
+        + mojibake_ratio * 0.15
+        + short_penalty
     )
 
     reasons = {

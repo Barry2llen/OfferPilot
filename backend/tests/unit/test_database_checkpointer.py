@@ -83,7 +83,12 @@ def test_database_checkpointer_round_trip_and_list_filters(
     second_config = checkpointer.put(
         first_config,
         second_checkpoint,
-        {"source": "loop", "step": 0, "run_id": "run-2", "parents": {"": first_checkpoint["id"]}},
+        {
+            "source": "loop",
+            "step": 0,
+            "run_id": "run-2",
+            "parents": {"": first_checkpoint["id"]},
+        },
         second_checkpoint["channel_versions"],
     )
 
@@ -300,10 +305,15 @@ def test_database_checkpointer_copy_delete_for_runs_and_prune_keep_latest(
         {"source": "input", "step": -1, "run_id": "run-keep", "parents": {}},
         first_checkpoint["channel_versions"],
     )
-    second_config = checkpointer.put(
+    checkpointer.put(
         first_config,
         second_checkpoint,
-        {"source": "loop", "step": 0, "run_id": "run-drop", "parents": {"": first_checkpoint["id"]}},
+        {
+            "source": "loop",
+            "step": 0,
+            "run_id": "run-drop",
+            "parents": {"": first_checkpoint["id"]},
+        },
         {},
     )
 
@@ -322,7 +332,12 @@ def test_database_checkpointer_copy_delete_for_runs_and_prune_keep_latest(
     checkpointer.put(
         first_config,
         second_checkpoint,
-        {"source": "loop", "step": 0, "run_id": "run-drop", "parents": {"": first_checkpoint["id"]}},
+        {
+            "source": "loop",
+            "step": 0,
+            "run_id": "run-drop",
+            "parents": {"": first_checkpoint["id"]},
+        },
         {},
     )
     checkpointer.prune(["thread-maintenance"])
@@ -372,7 +387,8 @@ def test_database_checkpointer_async_round_trip(
         ]
 
         listed = [
-            item async for item in checkpointer.alist(
+            item
+            async for item in checkpointer.alist(
                 make_config("thread-async"),
                 filter={"run_id": "run-async"},
             )

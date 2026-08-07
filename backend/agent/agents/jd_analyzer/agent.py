@@ -1,47 +1,46 @@
-
 import asyncio
 from typing import Sequence, override
 
-from langgraph.types import interrupt
-from langgraph.constants import START, END
-from langgraph.graph.state import StateGraph
-from langchain_core.runnables import Runnable
 from langchain.messages import HumanMessage, SystemMessage
 from langchain_core.language_models import LanguageModelInput
+from langchain_core.runnables import Runnable
+from langgraph.constants import END, START
+from langgraph.graph.state import StateGraph
+from langgraph.types import interrupt
 
 from exceptions.agent import ModelCallExecutionError
-from utils import document_parser
-from utils.logger import logger
-from utils.custom_events import (
-    _adispatch_custom_event_safely,
-    _dispatch_custom_event_safely,
-)
-from schemas.config import Config
 from schemas.command import BaseCommand
-from schemas.model_selection import ModelSelection
+from schemas.config import Config
 from schemas.job_description import (
-    JobDescription,
-    JobDescriptionEx,
     JdFact,
     JdFactsEx,
     JdRequirementBlock,
     JdRequirementBlockEx,
     JdSalary,
+    JobDescription,
+    JobDescriptionEx,
 )
-from .state import State
+from schemas.model_selection import ModelSelection
+from utils import document_parser
+from utils.custom_events import (
+    _adispatch_custom_event_safely,
+    _dispatch_custom_event_safely,
+)
+from utils.logger import logger
+
+from ...annotations.types import MaybeCallable
+from ...base import BaseAgent, BaseInterupt
+from ...events import ModelCallErrorEvent, ProgressUpdateEvent
+from ...graphs.model_call import ModelCallGraph
+from ...models import load_structured_model
+from ...tools import get_tools
 from .prompt import (
-    jd_web_search_system_prompt,
     jd_extraction_system_prompt,
     jd_facts_extraction_system_prompt,
+    jd_web_search_system_prompt,
 )
+from .state import State
 from .tool import mark_jd_extraction_failure, mark_jd_extraction_success
-from ...graphs.model_call import ModelCallGraph
-from ...tools import get_tools
-from ...annotations.types import MaybeCallable
-from ...events import ModelCallErrorEvent, ProgressUpdateEvent
-from ...base import BaseAgent, BaseInterupt
-from ...models import load_structured_model
-
 
 _FACT_EXTRACTION_CONCURRENCY = 5
 JD_STRUCTURED_OUTPUT_METHOD = "function_calling"
@@ -89,7 +88,9 @@ def _normalize_images(images: object) -> list[str]:
         return []
     if not isinstance(images, list):
         return []
-    return [image.strip() for image in images if isinstance(image, str) and image.strip()]
+    return [
+        image.strip() for image in images if isinstance(image, str) and image.strip()
+    ]
 
 
 def _image_data_url_to_content_block(data_url: str) -> dict[str, object]:
@@ -99,8 +100,8 @@ def _image_data_url_to_content_block(data_url: str) -> dict[str, object]:
         "image_url": {"url": data_url},
     }
 
-class JdAnalyzerAgent(BaseAgent[State]):
 
+class JdAnalyzerAgent(BaseAgent[State]):
     def __init__(
         self,
         *args,
@@ -152,9 +153,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
         if message_text:
             source_parts.append(f"[current_messages]\n{message_text}")
         if images:
-            source_parts.append(
-                f"[images]\n{len(images)} image(s) were provided."
-            )
+            source_parts.append(f"[images]\n{len(images)} image(s) were provided.")
         if len(source_parts) == 2 and not images:
             source_parts.append("[empty]\nNo JD source was provided.")
 
@@ -202,7 +201,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
 
         return State(
             messages=[
-                HumanMessage(content=content_blocks), # type: ignore
+                HumanMessage(content=content_blocks),  # type: ignore
             ],
             source_url=source_url,
             images=images,
@@ -219,7 +218,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
         for msg in reversed(messages):
             if getattr(msg, "type", "") == "tool":
                 tool_name = getattr(msg, "name", "") or ""
-                tool_content = _message_content_to_text(getattr(msg, "content", None)).strip()
+                tool_content = _message_content_to_text(
+                    getattr(msg, "content", None)
+                ).strip()
                 break
 
         if not tool_name:
@@ -286,7 +287,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
         """
         await _adispatch_custom_event_safely(
             "on_progress_update",
-            ProgressUpdateEvent(progress=0.2, message="Starting JD structure extraction."),
+            ProgressUpdateEvent(
+                progress=0.2, message="Starting JD structure extraction."
+            ),
         )
 
         model: MaybeCallable[ModelSelection] = state.get("model")  # type: ignore
@@ -302,7 +305,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     JobDescriptionEx,
                     method=JD_STRUCTURED_OUTPUT_METHOD,
                 )
-                logger.debug("Invoking model for JD structure extraction.")
+                logger.debug(lambda: "Invoking model for JD structure extraction.")
                 result = await extractor.ainvoke(
                     [
                         SystemMessage(content=jd_extraction_system_prompt),
@@ -322,7 +325,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     ),
                 )
 
-            logger.error(f"Model call failed after {max_retries} retries for JD extraction.")
+            logger.error(
+                f"Model call failed after {max_retries} retries for JD extraction."
+            )
             resp: BaseCommand = interrupt(
                 BaseInterupt(
                     type="error",
@@ -377,10 +382,14 @@ class JdAnalyzerAgent(BaseAgent[State]):
         )
 
         if total_blocks == 0:
-            job_description = self._build_final_result(jd_extracted, [], jd_text, source_url)
+            job_description = self._build_final_result(
+                jd_extracted, [], jd_text, source_url
+            )
             await _adispatch_custom_event_safely(
                 "on_progress_update",
-                ProgressUpdateEvent(progress=1.0, message="Completed JD analysis (no blocks)."),
+                ProgressUpdateEvent(
+                    progress=1.0, message="Completed JD analysis (no blocks)."
+                ),
             )
             return State(job_description=job_description)
 
@@ -399,14 +408,16 @@ class JdAnalyzerAgent(BaseAgent[State]):
                 f"[content]\n{block.content}"
             )
             try:
-                logger.debug(f"Extracting facts from JD block: {block.title}")
+                logger.debug(lambda: f"Extracting facts from JD block: {block.title}")
                 async with semaphore:
                     facts_result: JdFactsEx = await extractor.ainvoke(
                         [
                             SystemMessage(content=jd_facts_extraction_system_prompt),
                             HumanMessage(content=block_text),
                         ],
-                        max_repair_attempts=max(0, self.config.model_call_retry_attempts - 1),
+                        max_repair_attempts=max(
+                            0, self.config.model_call_retry_attempts - 1
+                        ),
                     )
 
                 return (
@@ -430,7 +441,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     ),
                 )
             except Exception as e:
-                logger.error(f"Error extracting facts from JD block '{block.title}': {e}")
+                logger.error(
+                    f"Error extracting facts from JD block '{block.title}': {e}"
+                )
                 await _adispatch_custom_event_safely(
                     "on_model_call_error",
                     ModelCallErrorEvent(
@@ -479,7 +492,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
                 failed_indexes = {index for index, result in results if result is None}
 
                 completed = len(blocks_with_facts)
-                progress = 0.55 + (0.4 * completed / total_blocks) if total_blocks else 0.95
+                progress = (
+                    0.55 + (0.4 * completed / total_blocks) if total_blocks else 0.95
+                )
                 await _adispatch_custom_event_safely(
                     "on_progress_update",
                     ProgressUpdateEvent(
@@ -494,7 +509,9 @@ class JdAnalyzerAgent(BaseAgent[State]):
                 )
 
                 if not failed_indexes:
-                    ordered_blocks = [blocks_with_facts[index] for index in range(total_blocks)]
+                    ordered_blocks = [
+                        blocks_with_facts[index] for index in range(total_blocks)
+                    ]
                     job_description = self._build_final_result(
                         jd_extracted, ordered_blocks, jd_text, source_url
                     )
@@ -505,9 +522,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
                             message="Completed JD analysis.",
                             additional_data={
                                 "block_count": len(ordered_blocks),
-                                "fact_count": sum(
-                                    len(b.facts) for b in ordered_blocks
-                                ),
+                                "fact_count": sum(len(b.facts) for b in ordered_blocks),
                             },
                         ),
                     )
@@ -519,9 +534,11 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     if index in failed_indexes
                 ]
                 logger.debug(
-                    f"Retrying fact extraction for blocks: "
-                    f"{[block.title for _, block in remaining_blocks]}, "
-                    f"attempt {attempt + 1}/{max_retries}."
+                    lambda: (
+                        f"Retrying fact extraction for blocks: "
+                        f"{[block.title for _, block in remaining_blocks]}, "
+                        f"attempt {attempt + 1}/{max_retries}."
+                    )
                 )
 
             # All retries exhausted
@@ -575,13 +592,15 @@ class JdAnalyzerAgent(BaseAgent[State]):
                 max_monthly=extracted.salary_max_monthly,
                 months_per_year=extracted.salary_months_per_year,
                 currency=extracted.salary_currency,
-            ) if (
+            )
+            if (
                 extracted.salary_raw
                 or extracted.salary_min_monthly is not None
                 or extracted.salary_max_monthly is not None
                 or extracted.salary_months_per_year is not None
                 or extracted.salary_currency is not None
-            ) else None,
+            )
+            else None,
             benefits=extracted.benefits,
             blocks=blocks_with_facts,
         )

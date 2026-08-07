@@ -122,6 +122,10 @@ MESSAGES: dict[str, dict[Locale, str]] = {
         "zh-CN": "模型调用失败。",
         "en-US": "The model call failed.",
     },
+    "contextCompactionFailed": {
+        "zh-CN": "上下文压缩失败：{detail}",
+        "en-US": "Context compaction failed: {detail}",
+    },
     "modelRetry": {
         "zh-CN": "模型调用失败，正在重试（第 {attempt}/{max_attempts} 次）。",
         "en-US": "The model call failed; retrying (attempt {attempt}/{max_attempts}).",
@@ -265,7 +269,9 @@ def request_locale(request: Request) -> Locale:
 def translate(key: str, locale: Locale = DEFAULT_LOCALE, **params: Any) -> str:
     """Return a translated message and interpolate only server-owned values."""
 
-    message = MESSAGES.get(key, {}).get(locale) or MESSAGES.get(key, {}).get(DEFAULT_LOCALE)
+    message = MESSAGES.get(key, {}).get(locale) or MESSAGES.get(key, {}).get(
+        DEFAULT_LOCALE
+    )
     if message is None:
         return key
     return message.format(**params)
@@ -321,10 +327,20 @@ def localize_error(error: BaseException | str, locale: Locale = DEFAULT_LOCALE) 
 
     if "still referenced by model selections" in lowered:
         return translate("providerReferenced", locale)
-    if "unsupported provider value" in lowered or name == "UnsupportedModelProviderError":
+    if (
+        "unsupported provider value" in lowered
+        or name == "UnsupportedModelProviderError"
+    ):
         return translate("modelProviderUnsupported", locale)
     if "selection_id is required" in lowered:
         return translate("selectionRequired", locale)
+    if raw.startswith("Context compaction failed:"):
+        marker = "Context compaction failed:"
+        return translate(
+            "contextCompactionFailed",
+            locale,
+            detail=_suffix(raw, marker),
+        )
     if "uploaded chat file is empty" in lowered or "uploaded file is empty" in lowered:
         return translate("emptyFile", locale)
     if "uploaded file name is required" in lowered:
@@ -350,9 +366,16 @@ def localize_error(error: BaseException | str, locale: Locale = DEFAULT_LOCALE) 
         return translate("fileProcessing", locale)
     if name == "ChatModelLoadError" or "model selection is required to load" in lowered:
         return translate("modelLoadFailed", locale)
-    if name in {"ModelCallExecutionError", "ChatModelLoadError"} or "model call failed" in lowered:
+    if (
+        name in {"ModelCallExecutionError", "ChatModelLoadError"}
+        or "model call failed" in lowered
+    ):
         return translate("modelCallFailed", locale)
-    if name in {"ResumeValidationError", "ValidationError", "ModelSelectionValidationError"}:
+    if name in {
+        "ResumeValidationError",
+        "ValidationError",
+        "ModelSelectionValidationError",
+    }:
         return translate("validation", locale)
     if name == "JobDescriptionAnalysisValidationError":
         return translate("invalidJd", locale)

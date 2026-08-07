@@ -17,7 +17,9 @@ class FakeCompiledGraph:
         self.invoke_calls.append((state, config))
         return {"result": "sync"}
 
-    async def ainvoke(self, state: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    async def ainvoke(
+        self, state: dict[str, Any], config: dict[str, Any]
+    ) -> dict[str, Any]:
         self.ainvoke_calls.append((state, config))
         return {"result": "async"}
 

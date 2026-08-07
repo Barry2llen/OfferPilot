@@ -2,17 +2,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from exceptions import (
     ResumeFileNotFoundError,
     ResumePreviewError,
     ResumePreviewFileNotFoundError,
 )
-from pydantic import BaseModel, ConfigDict, Field
-from utils.document_assets import render_file_to_images
 from utils import document_parser
-
+from utils.document_assets import render_file_to_images
 
 type ResumeParseStatus = Literal["unparsed", "processing", "parsed", "failed"]
+
 
 class ResumeDetail(BaseModel):
     model_config = ConfigDict(
@@ -31,7 +32,10 @@ class ResumeDetail(BaseModel):
         }
     )
 
-    id: int = Field(description="Resume record ID used to retrieve details and preview the original file.", examples=[1])
+    id: int = Field(
+        description="Resume record ID used to retrieve details and preview the original file.",
+        examples=[1],
+    )
     file_path: str | None = Field(
         default=None,
         description="Server-side resume file path, usually relative to the project root.",
@@ -140,9 +144,13 @@ class ResumeDocument(ResumeDetail):
             raise ResumePreviewError("Resume file path is not available.")
 
         path = Path(self.file_path)
-        resolved = path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+        resolved = (
+            path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+        )
         if not resolved.is_file():
-            raise ResumePreviewFileNotFoundError(f"Resume file not found: {self.file_path}")
+            raise ResumePreviewFileNotFoundError(
+                f"Resume file not found: {self.file_path}"
+            )
         return resolved
 
     def _require_text_file_path(self) -> Path:
@@ -150,11 +158,12 @@ class ResumeDocument(ResumeDetail):
             raise ResumeFileNotFoundError("Resume file path is not available.")
 
         path = Path(self.file_path)
-        resolved = path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+        resolved = (
+            path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+        )
         if not resolved.is_file():
             raise ResumeFileNotFoundError(f"Resume file not found: {self.file_path}")
         return resolved
-
 
 
 class ResumeListItem(BaseModel):

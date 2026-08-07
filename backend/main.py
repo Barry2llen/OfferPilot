@@ -1,4 +1,3 @@
-
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from agent.agents.supervisor import SupervisorAgent, get_supervisor_tools
 from agent.checkpointers import DatabaseCheckpointer
+from agent.compaction import DatabaseCompactionModelResolver
 from api import ai_router, job_description_router, model_config_router, resume_router
 from db.engine import (
     configure_async_database_manager,
@@ -18,8 +18,8 @@ from db.engine import (
     dispose_database_manager,
 )
 from schemas.config import Config, load_config
-from services.resume_extraction_jobs import ResumeExtractionJobManager
 from services.jd_analysis_jobs import JdAnalysisJobManager
+from services.resume_extraction_jobs import ResumeExtractionJobManager
 from utils.asyncio_windows import install_windows_connection_reset_filter
 from utils.frontend_static import mount_frontend
 from utils.i18n import (
@@ -36,6 +36,7 @@ class HealthResponse(BaseModel):
         examples=["Hello World!"],
     )
 
+
 def create_app(
     config: Config | None = None,
     frontend_dist: Path | str | None = None,
@@ -47,7 +48,9 @@ def create_app(
         install_windows_connection_reset_filter()
         app.state.config = target_config
         app.state.database = configure_database_manager(target_config.database)
-        app.state.async_database = configure_async_database_manager(target_config.database)
+        app.state.async_database = configure_async_database_manager(
+            target_config.database
+        )
         app.state.database.initialize_tables()
         app.state.resume_extraction_jobs = ResumeExtractionJobManager(
             config=target_config,
@@ -65,6 +68,9 @@ def create_app(
             checkpointer=app.state.checkpointer,
             config=target_config,
             tools=await get_supervisor_tools(config=target_config),
+            compaction_model_resolver=DatabaseCompactionModelResolver(
+                app.state.database
+            ),
         ).get_agent()
         yield
         await app.state.resume_extraction_jobs.shutdown()
@@ -90,12 +96,12 @@ def create_app(
             },
             {
                 "name": "model-config",
-                "description": "Model provider and model selection configuration for available AI services.",
+                "description": "Model provider, model selection, and Supervisor context compaction configuration for available AI services.",
             },
             {
                 "name": "ai",
                 "description": "AI chat operations using SupervisorAgent and database checkpoints for conversation state.",
-            }
+            },
         ],
         lifespan=lifespan,
     )
@@ -108,7 +114,9 @@ def create_app(
         return response
 
     @app.exception_handler(HTTPException)
-    async def localized_http_exception(request: Request, error: HTTPException) -> JSONResponse:
+    async def localized_http_exception(
+        request: Request, error: HTTPException
+    ) -> JSONResponse:
         detail = error.detail
         if isinstance(detail, str):
             detail = localize_error(detail, request_locale(request))
@@ -130,10 +138,13 @@ def create_app(
                 {
                     "type": item.get("type", "value_error"),
                     "loc": list(item.get("loc", ())),
-                    "msg": localize_validation_message(str(item.get("msg", "")), locale),
+                    "msg": localize_validation_message(
+                        str(item.get("msg", "")), locale
+                    ),
                 }
             )
         return JSONResponse(status_code=422, content={"detail": details})
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=target_config.cors.allow_origins,

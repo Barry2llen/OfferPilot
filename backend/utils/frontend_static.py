@@ -12,7 +12,6 @@ from starlette.responses import JSONResponse
 from starlette.routing import Match
 from starlette.staticfiles import StaticFiles
 
-
 FRONTEND_DIST_ENV = "OFFER_PILOT_FRONTEND_DIST"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FRONTEND_DIST = BACKEND_ROOT.parent / "frontend" / "dist"
@@ -72,7 +71,9 @@ def resolve_frontend_dist(frontend_dist: Path | str | None = None) -> Path | Non
     return candidate if (candidate / "index.html").is_file() else None
 
 
-def mount_frontend(app: FastAPI, frontend_dist: Path | str | None = None) -> Path | None:
+def mount_frontend(
+    app: FastAPI, frontend_dist: Path | str | None = None
+) -> Path | None:
     resolved_dist = resolve_frontend_dist(frontend_dist)
     app.state.frontend_dist = resolved_dist
 
@@ -115,9 +116,7 @@ def _is_api_path_used_as_spa_navigation(request: Request) -> bool:
 
     parent, separator, child = path.rpartition("/")
     return (
-        separator == "/"
-        and parent in {"/resumes", "/job-descriptions"}
-        and bool(child)
+        separator == "/" and parent in {"/resumes", "/job-descriptions"} and bool(child)
     )
 
 

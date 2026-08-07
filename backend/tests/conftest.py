@@ -10,7 +10,6 @@ from ruamel.yaml import YAML
 from db.engine import AsyncDatabaseManager, DatabaseManager
 from schemas.config import Config, SQLiteDatabaseConfig
 
-
 load_dotenv(Path.cwd() / ".env", override=False)
 
 

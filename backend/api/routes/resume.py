@@ -1,13 +1,26 @@
-from collections.abc import AsyncGenerator
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Request, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from db.repositories import ModelSelectionRepository, ResumeDocumentRepository, ResumeExtractionRepository
+from db.repositories import (
+    ModelSelectionRepository,
+    ResumeDocumentRepository,
+    ResumeExtractionRepository,
+)
 from exceptions import (
     EmptyResumeContentError,
     ResumeFileNotFoundError,
@@ -16,14 +29,14 @@ from exceptions import (
     UnsupportedResumeFileError,
 )
 from schemas.resume_document import (
-    ResumeDocument,
     ResumeDetail,
+    ResumeDocument,
     ResumeListItem,
 )
 from services import ModelSelectionService, ResumeService, UploadedResumeFile
 from services.resume_extraction_jobs import ResumeExtractionJobManager
-from utils.stream import render_sse_event
 from utils.i18n import request_locale
+from utils.stream import render_sse_event
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -129,7 +142,9 @@ async def list_resumes(
     description="Return original file information and a preview URL for a resume record ID.",
     response_description="Returns the requested resume details.",
     responses={
-        404: _error_response("The requested resume was not found.", example="Resume not found: 1"),
+        404: _error_response(
+            "The requested resume was not found.", example="Resume not found: 1"
+        ),
     },
 )
 async def get_resume(
@@ -167,9 +182,18 @@ async def get_resume(
                 }
             },
         },
-        404: _error_response("The requested model selection was not found.", example="Model selection not found: 1"),
-        415: _error_response("The uploaded file type is not supported.", example="Legacy .doc files are not supported."),
-        422: _error_response("The file is empty or its name is invalid.", example="Uploaded file is empty."),
+        404: _error_response(
+            "The requested model selection was not found.",
+            example="Model selection not found: 1",
+        ),
+        415: _error_response(
+            "The uploaded file type is not supported.",
+            example="Legacy .doc files are not supported.",
+        ),
+        422: _error_response(
+            "The file is empty or its name is invalid.",
+            example="Uploaded file is empty.",
+        ),
     },
 )
 async def upload_resume_file(
@@ -244,9 +268,17 @@ async def upload_resume_file(
                 }
             },
         },
-        404: _error_response("The requested resume was not found.", example="Resume not found: 1"),
-        415: _error_response("The uploaded resume file type is not supported.", example="Unsupported resume file type: .txt"),
-        422: _error_response("The file is empty or its name is invalid.", example="Uploaded file is empty."),
+        404: _error_response(
+            "The requested resume was not found.", example="Resume not found: 1"
+        ),
+        415: _error_response(
+            "The uploaded resume file type is not supported.",
+            example="Unsupported resume file type: .txt",
+        ),
+        422: _error_response(
+            "The file is empty or its name is invalid.",
+            example="Uploaded file is empty.",
+        ),
     },
 )
 async def replace_resume_file(
@@ -318,7 +350,9 @@ async def replace_resume_file(
     description="Delete a resume record and attempt to remove its stored original file.",
     response_description="Deleted successfully with no response body.",
     responses={
-        404: _error_response("The requested resume was not found.", example="Resume not found: 1"),
+        404: _error_response(
+            "The requested resume was not found.", example="Resume not found: 1"
+        ),
     },
 )
 async def delete_resume(
@@ -357,7 +391,10 @@ async def delete_resume(
                 }
             },
         },
-        404: _error_response("The requested resume or original file was not found.", example="Resume file not found: 1"),
+        404: _error_response(
+            "The requested resume or original file was not found.",
+            example="Resume file not found: 1",
+        ),
     },
 )
 async def preview_resume_file(

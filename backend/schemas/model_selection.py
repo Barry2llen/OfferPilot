@@ -82,15 +82,22 @@ class ModelSelectionResponse(BaseModel):
                     },
                     "model_name": "gpt-4o-mini",
                     "supports_image_input": True,
+                    "context_window_tokens": 128000,
                 }
             ]
         }
     )
 
     id: int = Field(description="Model selection record ID.", examples=[1])
-    provider: ModelProviderResponse = Field(description="Expanded model provider configuration summary.")
+    provider: ModelProviderResponse = Field(
+        description="Expanded model provider configuration summary."
+    )
     model_name: str = Field(description="Model name.", examples=["gpt-4o-mini"])
     supports_image_input: bool = Field(
         description="Whether this model supports image input.",
         examples=[True],
+    )
+    context_window_tokens: int = Field(
+        description="Resolved maximum context window for this model in tokens.",
+        examples=[128000],
     )

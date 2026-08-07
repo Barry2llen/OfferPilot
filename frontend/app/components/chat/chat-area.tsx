@@ -7,6 +7,7 @@ import Spinner from "@/app/components/ui/spinner";
 import type {
   ChatInterrupt,
   ChatMessage as ChatMessageType,
+  ContextCompactionStatus,
 } from "@/app/lib/chat/types";
 
 const AUTO_SCROLL_THRESHOLD_PX = 48;
@@ -19,6 +20,8 @@ interface ChatAreaProps {
   historyLoading: boolean;
   interrupt: ChatInterrupt | null;
   streamError: string | null;
+  contextCompactionStatus: ContextCompactionStatus;
+  modelContextWindowWarning: string | null;
   threadModelMismatchMessage: string | null;
   hasNoModel: boolean;
   onRetry: () => void;
@@ -32,6 +35,8 @@ export default function ChatArea({
   historyLoading,
   interrupt,
   streamError,
+  contextCompactionStatus,
+  modelContextWindowWarning,
   threadModelMismatchMessage,
   hasNoModel,
   onRetry,
@@ -44,7 +49,11 @@ export default function ChatArea({
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const hasAnyMessages =
-    messages.length > 0 || liveMessages.length > 0 || isStreaming;
+    messages.length > 0 ||
+    liveMessages.length > 0 ||
+    isStreaming ||
+    contextCompactionStatus !== "idle" ||
+    Boolean(modelContextWindowWarning);
 
   useEffect(() => {
     if (isAutoScrollEnabled) {
@@ -52,7 +61,15 @@ export default function ChatArea({
         behavior: isStreaming ? "auto" : "smooth",
       });
     }
-  }, [messages, liveMessages, isStreaming, interrupt, streamError, isAutoScrollEnabled]);
+  }, [
+    messages,
+    liveMessages,
+    isStreaming,
+    interrupt,
+    streamError,
+    contextCompactionStatus,
+    isAutoScrollEnabled,
+  ]);
 
   const handleScroll = () => {
     if (!containerRef.current) return;
@@ -85,6 +102,36 @@ export default function ChatArea({
       ) : (
         <div className="w-full">
           <>
+            {modelContextWindowWarning && (
+              <div
+                className="mb-4 rounded-2xl bg-warning-bg px-4 py-3 text-sm text-warning-text"
+                role="alert"
+                aria-live="polite"
+              >
+                {modelContextWindowWarning}
+              </div>
+            )}
+
+            {contextCompactionStatus !== "idle" && (
+              <div
+                className={`mb-4 rounded-2xl px-4 py-3 text-sm ${
+                  contextCompactionStatus === "failed"
+                    ? "bg-error-bg text-error-text"
+                    : contextCompactionStatus === "running"
+                      ? "bg-primary-50 text-primary-700"
+                      : "bg-success-bg text-success-text"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                {contextCompactionStatus === "running"
+                  ? t("chat.contextCompacting")
+                  : contextCompactionStatus === "failed"
+                    ? t("chat.contextCompactionFailed")
+                    : t("chat.contextCompacted")}
+              </div>
+            )}
+
             {messages.map((msg, index) => (
               <ChatMessage
                 key={getMessageKey(msg, index)}

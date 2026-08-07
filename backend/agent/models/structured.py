@@ -1,25 +1,25 @@
 from __future__ import annotations
 
 from typing import Any, Callable, Literal, overload, override
-from pydantic import BaseModel, ValidationError
 
 from langchain_core.exceptions import OutputParserException
-from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.messages import BaseMessage, AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.runnables import Runnable, RunnableConfig
+from pydantic import BaseModel, ValidationError
 
 from schemas.model_selection import ModelSelection
-from utils.logger import logger
 from utils.json import jsonify
+from utils.logger import logger
+
 from .chat import load_chat_model
 
 type StructuredOutputMethod = Literal["function_calling", "json_mode", "json_schema"]
 
 
-class StructuredModel[Struct: dict[str, Any] |  BaseModel](
+class StructuredModel[Struct: dict[str, Any] | BaseModel](
     Runnable[LanguageModelInput, Struct]
 ):
-    
     # More methods can be added if needed.
 
     def __init__(
@@ -37,8 +37,8 @@ class StructuredModel[Struct: dict[str, Any] |  BaseModel](
         config: RunnableConfig | None = None,
         **kwargs: Any,
     ) -> Struct:
-        return self._model.invoke(input, config=config, **kwargs) # type: ignore[return-value]
-    
+        return self._model.invoke(input, config=config, **kwargs)  # type: ignore[return-value]
+
     @override
     async def ainvoke(
         self,
@@ -47,7 +47,7 @@ class StructuredModel[Struct: dict[str, Any] |  BaseModel](
         checker: Callable[[Struct], Any] | None = None,
         max_repair_attempts: int = 0,
         **kwargs: Any,
-    ) -> Struct: # pyright: ignore[reportReturnType]
+    ) -> Struct:  # pyright: ignore[reportReturnType]
         """
         Invoke the structured model asynchronously.
 
@@ -74,64 +74,78 @@ class StructuredModel[Struct: dict[str, Any] |  BaseModel](
         """
 
         def optimize_error_message(error: Exception) -> str:
-            _type = 'txt'
+            _type = "txt"
             if isinstance(error, ValidationError):
                 res = error.json(include_url=False)
-                _type = 'json'
+                _type = "json"
             elif isinstance(error, OutputParserException):
                 res = str(error)
             else:
                 res = repr(error)
             return (
-                    "Your previous output failed validation.\n\n"
-                    f"Details:\n```{_type}\n{res}\n```\n\n"
-                    "Please return a corrected schema."
-                )
+                "Your previous output failed validation.\n\n"
+                f"Details:\n```{_type}\n{res}\n```\n\n"
+                "Please return a corrected schema."
+            )
 
         if max_repair_attempts < 0:
             raise ValueError("max_repair_attempts must be non-negative")
 
         if checker is None and max_repair_attempts == 0:
-            return await self._model.ainvoke(input, config=config, **kwargs) # type: ignore[return-value]
+            return await self._model.ainvoke(input, config=config, **kwargs)  # type: ignore[return-value]
 
-        if not isinstance(input, list) or not all(isinstance(i, BaseMessage) for i in input):
-            logger.warning("Input is not list[BaseMessage] typed, skipping schema conformance check and repair.")
+        if not isinstance(input, list) or not all(
+            isinstance(i, BaseMessage) for i in input
+        ):
+            logger.warning(
+                "Input is not list[BaseMessage] typed, skipping schema conformance check and repair."
+            )
             result = await self._model.ainvoke(input, config=config, **kwargs)
             if checker is not None:
-                checker(result) # type: ignore[arg-type]
-            return result # type: ignore[return-value]
+                checker(result)  # type: ignore[arg-type]
+            return result  # type: ignore[return-value]
 
         repaired_input = input
 
         for attempt in range(max_repair_attempts + 1):
             result: dict[str, Any] | BaseModel | None = None
             try:
-                logger.debug(f"Invoking structured model, attempt {attempt + 1}/{max_repair_attempts + 1}:\n{jsonify(repaired_input)}")
-                result = await self._model.ainvoke(repaired_input, config=config, **kwargs)
+                logger.debug(
+                    lambda: (
+                        f"Invoking structured model, attempt {attempt + 1}/{max_repair_attempts + 1}:\n{jsonify(repaired_input)}"
+                    )
+                )
+                result = await self._model.ainvoke(
+                    repaired_input, config=config, **kwargs
+                )
             except (ValidationError, OutputParserException) as e:
                 error = e
             else:
                 try:
                     if checker is not None:
-                        checker(result) # type: ignore[arg-type]
+                        checker(result)  # type: ignore[arg-type]
                 except Exception as e:
                     error = e
                 else:
-                    return result # type: ignore[return-value]
+                    return result  # type: ignore[return-value]
 
             if attempt == max_repair_attempts:
-                logger.error(f"Model output did not conform to schema after {max_repair_attempts} attempts: {error}")
-                raise ValueError(f"Model output did not conform to schema after {max_repair_attempts} attempts.") from error
+                logger.error(
+                    f"Model output did not conform to schema after {max_repair_attempts} attempts: {error}"
+                )
+                raise ValueError(
+                    f"Model output did not conform to schema after {max_repair_attempts} attempts."
+                ) from error
 
             repair_messages: list[BaseMessage] = []
             if result is not None:
                 repair_messages.append(AIMessage(content=str(result)))
-            repair_messages.append(
-                SystemMessage(content=optimize_error_message(error))
-            )
+            repair_messages.append(SystemMessage(content=optimize_error_message(error)))
             repaired_input = repaired_input + repair_messages
-            logger.warning(f"Model output did not conform to schema, attempting repair {attempt + 1}/{max_repair_attempts}:\n{error}")
-    
+            logger.warning(
+                f"Model output did not conform to schema, attempting repair {attempt + 1}/{max_repair_attempts}:\n{error}"
+            )
+
 
 @overload
 def load_structured_model[T: BaseModel](
@@ -139,8 +153,8 @@ def load_structured_model[T: BaseModel](
     schema: type[T],
     *,
     method: StructuredOutputMethod | None = None,
-) -> StructuredModel[T]:
-    ...
+) -> StructuredModel[T]: ...
+
 
 @overload
 def load_structured_model(
@@ -148,8 +162,8 @@ def load_structured_model(
     schema: dict[str, Any],
     *,
     method: StructuredOutputMethod | None = None,
-) -> StructuredModel[dict[str, Any]]:
-    ...
+) -> StructuredModel[dict[str, Any]]: ...
+
 
 def load_structured_model[T: BaseModel](
     model_selection: ModelSelection,
@@ -160,11 +174,14 @@ def load_structured_model[T: BaseModel](
     structured_kwargs: dict[str, Any] = {}
     if method is not None:
         structured_kwargs["method"] = method
-    structured_model = load_chat_model(model_selection, temperature=0).with_structured_output(
+    structured_model = load_chat_model(
+        model_selection, temperature=0
+    ).with_structured_output(
         schema,
         **structured_kwargs,
     )
     return StructuredModel(structured_model, schema=schema)
+
 
 __all__ = [
     "StructuredModel",

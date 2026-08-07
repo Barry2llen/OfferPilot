@@ -3,7 +3,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.types import Command
 
 from agent.tools import get_all_tools
@@ -119,6 +125,62 @@ def test_ai_chat_endpoint_invokes_supervisor_and_persists_checkpoint(
     }
     assert saved is not None
     assert saved.checkpoint["channel_values"]["messages"] == ["checkpointed"]
+
+
+def test_ai_chat_endpoint_returns_localized_502_for_interrupt(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    class FakeInterrupt:
+        value = {
+            "type": "error",
+            "message": "Context compaction failed: provider returned trace-id=abc123",
+        }
+        id = "interrupt-context-compaction"
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def ainvoke(self, state: dict, config: dict) -> dict:
+                del state, config
+                return {
+                    "messages": [],
+                    "__interrupt__": (FakeInterrupt(),),
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        chinese = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-context-compaction-zh",
+            },
+            headers={"Accept-Language": "zh-CN"},
+        )
+        english = client.post(
+            "/ai/chat",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-context-compaction-en",
+            },
+            headers={"Accept-Language": "en-US"},
+        )
+
+    assert chinese.status_code == 502
+    assert chinese.headers["content-language"] == "zh-CN"
+    assert chinese.json() == {
+        "detail": "上下文压缩失败：provider returned trace-id=abc123"
+    }
+    assert english.status_code == 502
+    assert english.headers["content-language"] == "en-US"
+    assert english.json() == {
+        "detail": "Context compaction failed: provider returned trace-id=abc123"
+    }
 
 
 def test_ai_chat_endpoint_generates_thread_id_when_missing(
@@ -399,6 +461,65 @@ def test_ai_chat_history_endpoint_returns_normalized_messages(
     ]
 
 
+def test_ai_chat_history_hides_compaction_sidecar_and_reports_success_marker(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        checkpointer = client.app.state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [
+                HumanMessage(content="原始用户消息"),
+                AIMessage(content="原始助手消息"),
+            ],
+        )
+        checkpoint["channel_values"]["context_compaction"] = {
+            "messages": [
+                SystemMessage(content="[Historical context summary]\n隐藏摘要"),
+                HumanMessage(content="紧凑视图中的最近消息"),
+            ],
+            "source_message_count": 2,
+            "source_message_ids": [None, None],
+            "status": "complete",
+            "auto_compacted": True,
+        }
+        context_version = f"context.{uuid4().hex[:16]}"
+        checkpoint["channel_versions"]["context_compaction"] = context_version
+        checkpoint["updated_channels"].append("context_compaction")
+        checkpointer.put(
+            {"configurable": {"thread_id": "thread-history-compacted"}},
+            checkpoint,
+            {
+                "source": "input",
+                "step": -1,
+                "run_id": "run-history-compacted",
+                "parents": {},
+            },
+            checkpoint["channel_versions"],
+        )
+
+        list_response = client.get("/ai/chats", params={"limit": 10, "offset": 0})
+        detail_response = client.get("/ai/chats/thread-history-compacted/history")
+
+    assert list_response.status_code == 200
+    compacted_item = next(
+        item
+        for item in list_response.json()["items"]
+        if item["thread_id"] == "thread-history-compacted"
+    )
+    assert compacted_item["context_compacted"] is True
+    assert detail_response.status_code == 200
+    payload = detail_response.json()
+    assert payload["context_compacted"] is True
+    assert [message["content"] for message in payload["messages"]] == [
+        "原始用户消息",
+        "原始助手消息",
+    ]
+    assert "隐藏摘要" not in detail_response.text
+
+
 def test_ai_chat_history_returns_reasoning_content_when_assistant_content_is_empty(
     temporary_app_config: Config,
 ) -> None:
@@ -421,7 +542,12 @@ def test_ai_chat_history_returns_reasoning_content_when_assistant_content_is_emp
         checkpointer.put(
             {"configurable": {"thread_id": "thread-history-reasoning"}},
             checkpoint,
-            {"source": "input", "step": -1, "run_id": "run-history-reasoning", "parents": {}},
+            {
+                "source": "input",
+                "step": -1,
+                "run_id": "run-history-reasoning",
+                "parents": {},
+            },
             checkpoint["channel_versions"],
         )
 
@@ -431,7 +557,10 @@ def test_ai_chat_history_returns_reasoning_content_when_assistant_content_is_emp
     assert list_response.status_code == 200
     list_payload = list_response.json()
     assert list_payload["items"][0]["thread_id"] == "thread-history-reasoning"
-    assert list_payload["items"][0]["last_message_preview"] == "你好！今天有什么可以帮你的吗？"
+    assert (
+        list_payload["items"][0]["last_message_preview"]
+        == "你好！今天有什么可以帮你的吗？"
+    )
 
     assert detail_response.status_code == 200
     detail_payload = detail_response.json()
@@ -528,7 +657,12 @@ def test_ai_chat_history_summarizes_web_search_tool_messages(
         checkpointer.put(
             {"configurable": {"thread_id": "thread-history-search"}},
             checkpoint,
-            {"source": "input", "step": -1, "run_id": "run-history-search", "parents": {}},
+            {
+                "source": "input",
+                "step": -1,
+                "run_id": "run-history-search",
+                "parents": {},
+            },
             checkpoint["channel_versions"],
         )
 
@@ -603,7 +737,12 @@ def test_ai_chat_history_summarizes_query_tool_message(
         checkpointer.put(
             {"configurable": {"thread_id": "thread-history-query"}},
             checkpoint,
-            {"source": "input", "step": -1, "run_id": "run-history-query", "parents": {}},
+            {
+                "source": "input",
+                "step": -1,
+                "run_id": "run-history-query",
+                "parents": {},
+            },
             checkpoint["channel_versions"],
         )
 
@@ -660,7 +799,12 @@ def test_ai_chat_history_summarizes_web_fetch_tool_messages(
         checkpointer.put(
             {"configurable": {"thread_id": "thread-history-fetch"}},
             checkpoint,
-            {"source": "input", "step": -1, "run_id": "run-history-fetch", "parents": {}},
+            {
+                "source": "input",
+                "step": -1,
+                "run_id": "run-history-fetch",
+                "parents": {},
+            },
             checkpoint["channel_versions"],
         )
 
@@ -785,7 +929,7 @@ def test_ai_chat_stream_endpoint_accepts_multipart_text_file_and_lists_chat_file
                 seen_states.append(state)
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -815,7 +959,10 @@ def test_ai_chat_stream_endpoint_accepts_multipart_text_file_and_lists_chat_file
 
     human_message = seen_states[0]["messages"][0]
     assert human_message.additional_kwargs["display_content"] == "请总结附件"
-    assert human_message.additional_kwargs["attachments"][0]["original_filename"] == "notes.md"
+    assert (
+        human_message.additional_kwargs["attachments"][0]["original_filename"]
+        == "notes.md"
+    )
     assert isinstance(human_message.content, list)
     assert "notes.md" in human_message.content[0]["text"]
     assert "alpha" in human_message.content[1]["text"]
@@ -921,7 +1068,10 @@ def test_ai_chat_stream_endpoint_sends_image_attachment_as_image_url_block(
 
     human_message = seen_states[0]["messages"][0]
     assert human_message.additional_kwargs["display_content"] == "解析图片"
-    assert human_message.additional_kwargs["attachments"][0]["original_filename"] == "flash.png"
+    assert (
+        human_message.additional_kwargs["attachments"][0]["original_filename"]
+        == "flash.png"
+    )
     assert isinstance(human_message.content, list)
     assert human_message.content[0]["type"] == "text"
     assert "flash.png" in human_message.content[0]["text"]
@@ -984,7 +1134,12 @@ def test_ai_chat_history_prefers_display_content_and_returns_attachments(
         client.app.state.checkpointer.put(
             {"configurable": {"thread_id": "thread-display-content"}},
             checkpoint,
-            {"source": "input", "step": -1, "run_id": "run-display-content", "parents": {}},
+            {
+                "source": "input",
+                "step": -1,
+                "run_id": "run-display-content",
+                "parents": {},
+            },
             checkpoint["channel_versions"],
         )
 
@@ -1058,7 +1213,12 @@ def test_ai_chat_history_delete_endpoint_keeps_reused_files_until_last_thread_de
             client.app.state.checkpointer.put(
                 {"configurable": {"thread_id": thread_id}},
                 checkpoint,
-                {"source": "input", "step": -1, "run_id": f"run-{thread_id}", "parents": {}},
+                {
+                    "source": "input",
+                    "step": -1,
+                    "run_id": f"run-{thread_id}",
+                    "parents": {},
+                },
                 checkpoint["channel_versions"],
             )
 
@@ -1134,7 +1294,7 @@ def test_ai_chat_endpoints_allow_non_vision_model_when_thread_requires_image_inp
             ):
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="vision ok")]}}
+                    "data": {"output": {"messages": [AIMessage(content="vision ok")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -1222,7 +1382,9 @@ def test_ai_chat_stream_endpoint_returns_sse_final_event(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="streamed response")]}},
+                    "data": {
+                        "output": {"messages": [AIMessage(content="streamed response")]}
+                    },
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -1241,12 +1403,20 @@ def test_ai_chat_stream_endpoint_returns_sse_final_event(
     assert (
         'event: thread\ndata: {"thread_id": "thread-stream", '
         '"resolved_attachments": [], "attachment_count": 0, '
-        '"requires_image_input": false}'
+        '"requires_image_input": false}' in response.text
+    )
+    assert (
+        'event: token\ndata: {"thread_id": "thread-stream", "content": "streamed "}'
         in response.text
     )
-    assert 'event: token\ndata: {"thread_id": "thread-stream", "content": "streamed "}' in response.text
-    assert 'event: token\ndata: {"thread_id": "thread-stream", "content": "response"}' in response.text
-    assert 'event: final\ndata: {"thread_id": "thread-stream", "content": "streamed response"}' in response.text
+    assert (
+        'event: token\ndata: {"thread_id": "thread-stream", "content": "response"}'
+        in response.text
+    )
+    assert (
+        'event: final\ndata: {"thread_id": "thread-stream", "content": "streamed response"}'
+        in response.text
+    )
 
 
 def test_ai_chat_stream_endpoint_returns_reasoning_event(
@@ -1285,7 +1455,7 @@ def test_ai_chat_stream_endpoint_returns_reasoning_event(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="最终答案")]}}
+                    "data": {"output": {"messages": [AIMessage(content="最终答案")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -1302,24 +1472,67 @@ def test_ai_chat_stream_endpoint_returns_reasoning_event(
     assert response.status_code == 200
     assert (
         'event: reasoning\ndata: {"thread_id": "thread-reasoning", '
-        '"content": "正在分析问题。"}'
-        in response.text
+        '"content": "正在分析问题。"}' in response.text
     )
     assert (
         'event: token\ndata: {"thread_id": "thread-reasoning", '
-        '"content": "最终答案"}'
-        in response.text
+        '"content": "最终答案"}' in response.text
     )
     assert (
         'event: reasoning_done\ndata: {"thread_id": "thread-reasoning", '
-        '"duration_ms": 12000}'
-        in response.text
+        '"duration_ms": 12000}' in response.text
     )
     assert (
         'event: final\ndata: {"thread_id": "thread-reasoning", '
-        '"content": "最终答案"}'
-        in response.text
+        '"content": "最终答案"}' in response.text
     )
+
+
+def test_ai_chat_stream_endpoint_returns_context_compaction_lifecycle_events(
+    temporary_app_config: Config,
+) -> None:
+    app = create_app(temporary_app_config)
+
+    with TestClient(app) as client:
+        selection_id = _create_model_selection(client)
+
+        class FakeSupervisorAgent:
+            async def astream_events(
+                self,
+                state: dict,
+                config: dict,
+                *,
+                version: str,
+            ):
+                del state, config, version
+                for phase in ("started", "completed", "failed"):
+                    yield {
+                        "event": "on_custom_event",
+                        "name": "on_context_compaction",
+                        "data": {"phase": phase},
+                    }
+                yield {
+                    "event": "on_chain_end",
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
+                }
+
+        client.app.state.supervisor_agent = FakeSupervisorAgent()
+
+        response = client.post(
+            "/ai/chat/stream",
+            json={
+                "selection_id": selection_id,
+                "prompt": "hello",
+                "thread_id": "thread-context-compaction-events",
+            },
+        )
+
+    assert response.status_code == 200
+    for phase in ("started", "completed", "failed"):
+        assert (
+            f'event: context_compaction\ndata: {{"thread_id": "thread-context-compaction-events", "phase": "{phase}"}}'
+            in response.text
+        )
 
 
 def test_ai_chat_stream_endpoint_falls_back_to_reasoning_content_when_final_content_is_empty(
@@ -1379,13 +1592,11 @@ def test_ai_chat_stream_endpoint_falls_back_to_reasoning_content_when_final_cont
     assert response.status_code == 200
     assert (
         'event: reasoning\ndata: {"thread_id": "thread-stream-reasoning-fallback", '
-        '"content": "你好！今天有什么可以帮你的吗？"}'
-        in response.text
+        '"content": "你好！今天有什么可以帮你的吗？"}' in response.text
     )
     assert (
         'event: final\ndata: {"thread_id": "thread-stream-reasoning-fallback", '
-        '"content": "你好！今天有什么可以帮你的吗？"}'
-        in response.text
+        '"content": "你好！今天有什么可以帮你的吗？"}' in response.text
     )
 
 
@@ -1425,7 +1636,9 @@ def test_ai_chat_stream_endpoint_returns_structured_final_content(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content=content_blocks)]}},
+                    "data": {
+                        "output": {"messages": [AIMessage(content=content_blocks)]}
+                    },
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -1442,8 +1655,7 @@ def test_ai_chat_stream_endpoint_returns_structured_final_content(
     assert response.status_code == 200
     assert (
         'event: token\ndata: {"thread_id": "thread-stream-multimodal", '
-        '"content": "你好！有什么我可以帮您的吗？"}'
-        in response.text
+        '"content": "你好！有什么我可以帮您的吗？"}' in response.text
     )
     assert (
         'event: final\ndata: {"thread_id": "thread-stream-multimodal", '
@@ -1505,7 +1717,10 @@ def test_ai_chat_stream_endpoint_returns_tool_events(
         'event: tool_end\ndata: {"thread_id": "thread-tools", "tool_name": "custom_tool", "output": "search result"}'
         in response.text
     )
-    assert 'event: final\ndata: {"thread_id": "thread-tools", "content": "done"}' in response.text
+    assert (
+        'event: final\ndata: {"thread_id": "thread-tools", "content": "done"}'
+        in response.text
+    )
 
 
 def test_ai_chat_stream_endpoint_summarizes_web_search_tool_output(
@@ -1581,8 +1796,7 @@ def test_ai_chat_stream_endpoint_summarizes_web_search_tool_output(
         'event: tool_end\ndata: {"thread_id": "thread-web-search-summary", '
         '"tool_name": "web_search_exa", "output": [{"url": "https://example.com/a", '
         '"title": "Example A", "favicon": "https://example.com/favicon.ico"}, '
-        '{"url": "https://example.com/b", "title": "Example B"}]}'
-        in response.text
+        '{"url": "https://example.com/b", "title": "Example B"}]}' in response.text
     )
     assert "private highlight" not in response.text
     assert "cost_dollars" not in response.text
@@ -1709,8 +1923,7 @@ def test_ai_chat_stream_endpoint_summarizes_search_tool_message_text_output(
         'event: tool_end\ndata: {"thread_id": "thread-search-text-summary", '
         '"tool_name": "web_search_exa", "output": [{"url": "https://example.com/a", '
         '"title": "Example A", "favicon": "https://example.com/favicon.ico"}, '
-        '{"url": "https://example.com/b", "title": "Example B"}]}'
-        in response.text
+        '{"url": "https://example.com/b", "title": "Example B"}]}' in response.text
     )
     assert "private highlight" not in response.text
     assert "private page text" not in response.text
@@ -1754,7 +1967,7 @@ def test_ai_chat_stream_endpoint_summarizes_mcp_web_search_text_blocks(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -1809,7 +2022,7 @@ def test_ai_chat_stream_endpoint_summarizes_web_search_json_string_output(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -1925,13 +2138,11 @@ def test_ai_chat_stream_endpoint_summarizes_wrapped_exa_json_outputs(
                     yield {
                         "event": "on_tool_end",
                         "name": tool_name,
-                        "data": {
-                            "output": json.dumps(tool_output, ensure_ascii=False)
-                        },
+                        "data": {"output": json.dumps(tool_output, ensure_ascii=False)},
                     }
                     yield {
                         "event": "on_chain_end",
-                        "data": {"output": {"messages": [AIMessage(content="done")]}}
+                        "data": {"output": {"messages": [AIMessage(content="done")]}},
                     }
 
             client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -1989,7 +2200,7 @@ def test_ai_chat_stream_endpoint_summarizes_single_web_search_result_object(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -2036,7 +2247,7 @@ def test_ai_chat_stream_endpoint_returns_search_empty_marker_instead_of_empty_li
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -2089,7 +2300,7 @@ def test_ai_chat_stream_endpoint_summarizes_web_fetch_tool_output(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="done")]}}
+                    "data": {"output": {"messages": [AIMessage(content="done")]}},
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -2109,8 +2320,7 @@ def test_ai_chat_stream_endpoint_summarizes_web_fetch_tool_output(
         '"tool_name": "web_fetch_exa", "output": '
         '[{"url": "https://api-docs.deepseek.com/zh-cn/", '
         '"title": "DeepSeek API Docs", '
-        '"favicon": "https://api-docs.deepseek.com/favicon.ico"}]}'
-        in response.text
+        '"favicon": "https://api-docs.deepseek.com/favicon.ico"}]}' in response.text
     )
     assert "private page text" not in response.text
 
@@ -2164,7 +2374,10 @@ def test_ai_chat_stream_endpoint_returns_tool_error_event(
         'event: tool_error\ndata: {"thread_id": "thread-tool-error", "tool_name": "web_search_exa", "detail": "tool failed"}'
         in response.text
     )
-    assert 'event: final\ndata: {"thread_id": "thread-tool-error", "content": "fallback"}' in response.text
+    assert (
+        'event: final\ndata: {"thread_id": "thread-tool-error", "content": "fallback"}'
+        in response.text
+    )
 
 
 def test_ai_chat_stream_endpoint_returns_interrupt_event_without_final(
@@ -2197,7 +2410,9 @@ def test_ai_chat_stream_endpoint_returns_interrupt_event_without_final(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="should not emit")]}},
+                    "data": {
+                        "output": {"messages": [AIMessage(content="should not emit")]}
+                    },
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -2257,7 +2472,9 @@ def test_ai_chat_stream_endpoint_returns_query_interrupt_choices(
                 }
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="should not emit")]}},
+                    "data": {
+                        "output": {"messages": [AIMessage(content="should not emit")]}
+                    },
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -2278,8 +2495,7 @@ def test_ai_chat_stream_endpoint_returns_query_interrupt_choices(
         '"firstChoiceDescription": "按系统推荐的完整方案继续推进。", '
         '"secondChoice": "只做后端", "secondChoiceDescription": "只处理后端协议和测试。", '
         '"thirdChoice": "暂不处理", "thirdChoiceDescription": "先暂停这次调整。", '
-        '"id": "interrupt-query"}'
-        in response.text
+        '"id": "interrupt-query"}' in response.text
     )
     assert "event: final" not in response.text
 
@@ -2455,7 +2671,9 @@ def test_ai_chat_stream_endpoint_resumes_retry_command(
                 seen.append((state, config, version))
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="retried response")]}},
+                    "data": {
+                        "output": {"messages": [AIMessage(content="retried response")]}
+                    },
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -2478,7 +2696,10 @@ def test_ai_chat_stream_endpoint_resumes_retry_command(
         "recursion_limit": 100,
     }
     assert version == "v2"
-    assert 'event: final\ndata: {"thread_id": "thread-retry", "content": "retried response"}' in response.text
+    assert (
+        'event: final\ndata: {"thread_id": "thread-retry", "content": "retried response"}'
+        in response.text
+    )
 
 
 def test_ai_chat_stream_endpoint_resumes_query_command(
@@ -2501,7 +2722,9 @@ def test_ai_chat_stream_endpoint_resumes_query_command(
                 seen.append((state, config, version))
                 yield {
                     "event": "on_chain_end",
-                    "data": {"output": {"messages": [AIMessage(content="query resumed")]}},
+                    "data": {
+                        "output": {"messages": [AIMessage(content="query resumed")]}
+                    },
                 }
 
         client.app.state.supervisor_agent = FakeSupervisorAgent()
@@ -2531,7 +2754,10 @@ def test_ai_chat_stream_endpoint_resumes_query_command(
         "recursion_limit": 100,
     }
     assert version == "v2"
-    assert 'event: final\ndata: {"thread_id": "thread-query", "content": "query resumed"}' in response.text
+    assert (
+        'event: final\ndata: {"thread_id": "thread-query", "content": "query resumed"}'
+        in response.text
+    )
 
 
 def test_ai_chat_stream_endpoint_rejects_retry_without_thread_id(
@@ -2566,15 +2792,23 @@ def test_ai_chat_stream_openapi_documents_interrupt_and_retry(
     assert "interrupt" in stream_operation["responses"]["200"]["description"]
     assert "reasoning" in stream_operation["responses"]["200"]["description"]
     assert "reasoning_done" in stream_operation["responses"]["200"]["description"]
-    assert "url, title, and favicon" in stream_operation["responses"]["200"]["description"]
+    assert (
+        "url, title, and favicon" in stream_operation["responses"]["200"]["description"]
+    )
     assert "retry" in stream_operation["description"]
     assert "query" in stream_operation["description"]
     assert "choice/note" in stream_operation["description"]
     assert "question" in stream_operation["responses"]["200"]["description"]
     assert "firstChoice" in stream_operation["responses"]["200"]["description"]
-    assert "firstChoiceDescription" in stream_operation["responses"]["200"]["description"]
-    assert "secondChoiceDescription" in stream_operation["responses"]["200"]["description"]
-    assert "thirdChoiceDescription" in stream_operation["responses"]["200"]["description"]
+    assert (
+        "firstChoiceDescription" in stream_operation["responses"]["200"]["description"]
+    )
+    assert (
+        "secondChoiceDescription" in stream_operation["responses"]["200"]["description"]
+    )
+    assert (
+        "thirdChoiceDescription" in stream_operation["responses"]["200"]["description"]
+    )
 
 
 def test_ai_chat_history_openapi_documents_history_endpoints(
@@ -2588,14 +2822,22 @@ def test_ai_chat_history_openapi_documents_history_endpoints(
     assert "/ai/chats" in payload["paths"]
     assert "/ai/chats/{thread_id}/history" in payload["paths"]
     assert "delete" in payload["paths"]["/ai/chats/{thread_id}"]
-    assert payload["paths"]["/ai/chats"]["get"]["summary"] == "List AI conversation history"
-    assert payload["paths"]["/ai/chats/{thread_id}"]["delete"]["summary"] == "Delete AI conversation history"
+    assert (
+        payload["paths"]["/ai/chats"]["get"]["summary"]
+        == "List AI conversation history"
+    )
+    assert (
+        payload["paths"]["/ai/chats/{thread_id}"]["delete"]["summary"]
+        == "Delete AI conversation history"
+    )
     assert (
         payload["paths"]["/ai/chats/{thread_id}/history"]["get"]["summary"]
         == "Get AI conversation history"
     )
     history_message_schema = payload["components"]["schemas"]["AIChatHistoryMessage"]
     assert "reasoning_duration_ms" in history_message_schema["properties"]
+    history_summary_schema = payload["components"]["schemas"]["AIChatHistorySummary"]
+    assert "context_compacted" in history_summary_schema["properties"]
 
 
 def test_base_command_accepts_retry_without_prompt() -> None:

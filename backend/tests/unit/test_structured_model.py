@@ -37,11 +37,13 @@ def test_load_structured_model_keeps_default_structured_output_options(
     monkeypatch.setattr(
         structured_module,
         "load_chat_model",
-        lambda model_selection, **kwargs: captured.update(
-            model_selection=model_selection,
-            chat_kwargs=kwargs,
-        )
-        or FakeChatModel(),
+        lambda model_selection, **kwargs: (
+            captured.update(
+                model_selection=model_selection,
+                chat_kwargs=kwargs,
+            )
+            or FakeChatModel()
+        ),
     )
 
     model = structured_module.load_structured_model(None, {"name": "Result"})
@@ -70,11 +72,13 @@ def test_load_structured_model_forwards_explicit_method(
     monkeypatch.setattr(
         structured_module,
         "load_chat_model",
-        lambda model_selection, **kwargs: captured.update(
-            model_selection=model_selection,
-            chat_kwargs=kwargs,
-        )
-        or FakeChatModel(),
+        lambda model_selection, **kwargs: (
+            captured.update(
+                model_selection=model_selection,
+                chat_kwargs=kwargs,
+            )
+            or FakeChatModel()
+        ),
     )
 
     model = structured_module.load_structured_model(

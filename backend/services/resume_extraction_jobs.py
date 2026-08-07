@@ -10,7 +10,6 @@ from db.repositories import ResumeDocumentRepository, ResumeExtractionRepository
 from schemas.config import Config
 from schemas.resume_document import ResumeDocument
 from services.resume_service import ResumeService
-from utils.stream import render_sse_event
 from utils.i18n import (
     DEFAULT_LOCALE,
     Locale,
@@ -18,6 +17,7 @@ from utils.i18n import (
     localize_model_retry_detail,
     localize_progress_message,
 )
+from utils.stream import render_sse_event
 
 
 @dataclass(slots=True)
@@ -146,7 +146,9 @@ class ResumeExtractionJobManager:
                     {
                         "resume_id": resume_id,
                         "progress": data.get("progress", 0),
-                        "message": localize_progress_message(data.get("message"), locale),
+                        "message": localize_progress_message(
+                            data.get("message"), locale
+                        ),
                         "additional_data": data.get("additional_data") or {},
                     },
                 )

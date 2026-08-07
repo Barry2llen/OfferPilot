@@ -105,7 +105,7 @@ def test_initialize_tables_creates_expected_tables(
                 text(
                     "SELECT name FROM sqlite_master "
                     "WHERE type = 'table' AND name IN "
-                    "('tb_model_provider', 'tb_model_selection', 'tb_chat', 'tb_chat_file', 'tb_chat_thread_file', "
+                    "('tb_model_provider', 'tb_model_selection', 'tb_context_compaction_settings', 'tb_chat', 'tb_chat_file', 'tb_chat_thread_file', "
                     "'tb_resume', 'tb_resume_extraction', 'tb_job_description_analysis', 'tb_graph_checkpoint', 'tb_graph_checkpoint_blob', "
                     "'tb_graph_checkpoint_write')"
                 )
@@ -115,6 +115,7 @@ def test_initialize_tables_creates_expected_tables(
     assert tables == {
         "tb_model_provider",
         "tb_model_selection",
+        "tb_context_compaction_settings",
         "tb_chat",
         "tb_chat_file",
         "tb_chat_thread_file",
@@ -134,8 +135,7 @@ def test_initialize_tables_creates_expected_chat_columns(
 
     with temporary_database_manager.session_scope() as session:
         columns = {
-            row[1]
-            for row in session.execute(text("PRAGMA table_info('tb_chat')"))
+            row[1] for row in session.execute(text("PRAGMA table_info('tb_chat')"))
         }
 
     assert {"id", "title", "messages", "created_at", "updated_at"} <= columns
@@ -167,9 +167,7 @@ def test_initialize_tables_creates_expected_model_selection_constraints(
 
     assert {"id", "provider_name", "model_name", "supports_image_input"} <= columns
     assert any(
-        row[2] == "tb_model_provider"
-        and row[3] == "provider_name"
-        and row[4] == "name"
+        row[2] == "tb_model_provider" and row[3] == "provider_name" and row[4] == "name"
         for row in foreign_keys
     )
     assert unique_index_columns == {"provider_name", "model_name"}
@@ -189,8 +187,7 @@ def test_initialize_tables_accepts_deepseek_model_provider(
         )
         provider = session.execute(
             text(
-                "SELECT provider FROM tb_model_provider "
-                "WHERE name = 'default-deepseek'"
+                "SELECT provider FROM tb_model_provider WHERE name = 'default-deepseek'"
             )
         ).scalar_one()
 
@@ -204,8 +201,7 @@ def test_initialize_tables_creates_expected_resume_columns(
 
     with temporary_database_manager.session_scope() as session:
         columns = {
-            row[1]
-            for row in session.execute(text("PRAGMA table_info('tb_resume')"))
+            row[1] for row in session.execute(text("PRAGMA table_info('tb_resume')"))
         }
 
     assert {
@@ -225,7 +221,9 @@ def test_initialize_tables_creates_expected_resume_extraction_columns(
     with temporary_database_manager.session_scope() as session:
         columns = {
             row[1]
-            for row in session.execute(text("PRAGMA table_info('tb_resume_extraction')"))
+            for row in session.execute(
+                text("PRAGMA table_info('tb_resume_extraction')")
+            )
         }
         foreign_keys = list(
             session.execute(text("PRAGMA foreign_key_list('tb_resume_extraction')"))
@@ -257,10 +255,14 @@ def test_initialize_tables_creates_expected_job_description_analysis_columns(
     with temporary_database_manager.session_scope() as session:
         columns = {
             row[1]
-            for row in session.execute(text("PRAGMA table_info('tb_job_description_analysis')"))
+            for row in session.execute(
+                text("PRAGMA table_info('tb_job_description_analysis')")
+            )
         }
         foreign_keys = list(
-            session.execute(text("PRAGMA foreign_key_list('tb_job_description_analysis')"))
+            session.execute(
+                text("PRAGMA foreign_key_list('tb_job_description_analysis')")
+            )
         )
 
     assert {

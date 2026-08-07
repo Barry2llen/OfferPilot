@@ -42,7 +42,9 @@ class ChatFileListItem(BaseModel):
     )
 
     id: str = Field(description="Short ID of the chat file.", examples=["A1B2C3"])
-    original_filename: str = Field(description="Original filename.", examples=["notes.md"])
+    original_filename: str = Field(
+        description="Original filename.", examples=["notes.md"]
+    )
     media_type: str | None = Field(
         default=None,
         description="Media type.",

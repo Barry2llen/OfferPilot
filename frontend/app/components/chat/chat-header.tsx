@@ -6,6 +6,7 @@ import { useAppContext } from "@/app/lib/context/app-context";
 const statusLabelKeys: Record<AgentStatus, string> = {
   idle: "chat.ready",
   generating: "chat.generating",
+  compacting: "chat.compacting",
   tool_calling: "chat.toolCalling",
   interrupted: "chat.interrupted",
   error: "chat.error",
@@ -14,6 +15,7 @@ const statusLabelKeys: Record<AgentStatus, string> = {
 const statusColors: Record<AgentStatus, string> = {
   idle: "bg-success-text",
   generating: "bg-primary-500 animate-pulse",
+  compacting: "bg-violet-500 animate-pulse",
   tool_calling: "bg-sky-blue animate-pulse",
   interrupted: "bg-warning-text",
   error: "bg-error-text",

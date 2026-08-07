@@ -8,9 +8,9 @@ from sqlalchemy import text
 from main import create_app
 from schemas.config import Config
 from schemas.job_description import (
-    JobDescription,
     JdFact,
     JdRequirementBlock,
+    JobDescription,
 )
 
 
@@ -50,7 +50,9 @@ def _sse_payload(response, event_name: str) -> dict:
     raise AssertionError(f"SSE event not found: {event_name}\n{response.text}")
 
 
-def _fake_job_description(raw_text: str = "岗位职责：负责后端服务开发。") -> JobDescription:
+def _fake_job_description(
+    raw_text: str = "岗位职责：负责后端服务开发。",
+) -> JobDescription:
     return JobDescription(
         raw_text=raw_text,
         source_url="https://example.com/jobs/123",
@@ -81,7 +83,9 @@ def _fake_job_description(raw_text: str = "岗位职责：负责后端服务开�
     )
 
 
-def _install_fake_jd_workflow(monkeypatch: pytest.MonkeyPatch, captured: dict | None = None) -> None:
+def _install_fake_jd_workflow(
+    monkeypatch: pytest.MonkeyPatch, captured: dict | None = None
+) -> None:
     class FakeJdAnalysisWorkflow:
         def __init__(self, config=None) -> None:
             self.config = config
@@ -275,7 +279,10 @@ def test_analyze_job_description_rejects_empty_input(
         )
 
     assert response.status_code == 422
-    assert "JD text, source URL, or at least one image is required." in response.json()["detail"]
+    assert (
+        "JD text, source URL, or at least one image is required."
+        in response.json()["detail"]
+    )
 
 
 def test_analyze_job_description_returns_404_for_missing_selection(
@@ -402,10 +409,21 @@ def test_openapi_json_contains_job_description_docs(
 
     paths = payload["paths"]
     assert paths["/job-descriptions"]["get"]["summary"] == "List JD analysis history"
-    assert paths["/job-descriptions"]["post"]["summary"] == "Create and stream JD analysis"
-    assert "text/event-stream" in paths["/job-descriptions"]["post"]["responses"]["200"]["content"]
-    assert paths["/job-descriptions/{analysis_id}"]["get"]["summary"] == "Get JD analysis details"
-    assert paths["/job-descriptions/{analysis_id}"]["delete"]["summary"] == "Delete JD analysis"
+    assert (
+        paths["/job-descriptions"]["post"]["summary"] == "Create and stream JD analysis"
+    )
+    assert (
+        "text/event-stream"
+        in paths["/job-descriptions"]["post"]["responses"]["200"]["content"]
+    )
+    assert (
+        paths["/job-descriptions/{analysis_id}"]["get"]["summary"]
+        == "Get JD analysis details"
+    )
+    assert (
+        paths["/job-descriptions/{analysis_id}"]["delete"]["summary"]
+        == "Delete JD analysis"
+    )
 
     schemas = payload["components"]["schemas"]
     assert "JobDescriptionAnalysisDetail" in schemas

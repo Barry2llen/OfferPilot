@@ -28,9 +28,13 @@ class CheckpointRepository:
             GraphCheckpointORM.checkpoint_ns == checkpoint_ns,
         )
         if checkpoint_id is not None:
-            statement = statement.where(GraphCheckpointORM.checkpoint_id == checkpoint_id)
+            statement = statement.where(
+                GraphCheckpointORM.checkpoint_id == checkpoint_id
+            )
         else:
-            statement = statement.order_by(GraphCheckpointORM.checkpoint_id.desc()).limit(1)
+            statement = statement.order_by(
+                GraphCheckpointORM.checkpoint_id.desc()
+            ).limit(1)
 
         return self._session.scalar(statement)
 
@@ -44,7 +48,9 @@ class CheckpointRepository:
         if thread_ids:
             statement = statement.where(GraphCheckpointORM.thread_id.in_(thread_ids))
         if checkpoint_ns is not None:
-            statement = statement.where(GraphCheckpointORM.checkpoint_ns == checkpoint_ns)
+            statement = statement.where(
+                GraphCheckpointORM.checkpoint_ns == checkpoint_ns
+            )
 
         statement = statement.order_by(
             GraphCheckpointORM.thread_id.asc(),
@@ -92,7 +98,9 @@ class CheckpointRepository:
         if not run_ids:
             return []
 
-        statement = select(GraphCheckpointORM).where(GraphCheckpointORM.run_id.in_(run_ids))
+        statement = select(GraphCheckpointORM).where(
+            GraphCheckpointORM.run_id.in_(run_ids)
+        )
         return self._session.scalars(statement).all()
 
     def list_writes(
@@ -198,19 +206,21 @@ class CheckpointRepository:
 
     def delete_thread(self, thread_id: str) -> None:
         self._session.execute(
-            delete(GraphCheckpointWriteORM).where(GraphCheckpointWriteORM.thread_id == thread_id)
+            delete(GraphCheckpointWriteORM).where(
+                GraphCheckpointWriteORM.thread_id == thread_id
+            )
         )
         self._session.execute(
-            delete(GraphCheckpointBlobORM).where(GraphCheckpointBlobORM.thread_id == thread_id)
+            delete(GraphCheckpointBlobORM).where(
+                GraphCheckpointBlobORM.thread_id == thread_id
+            )
         )
         self._session.execute(
             delete(GraphCheckpointORM).where(GraphCheckpointORM.thread_id == thread_id)
         )
         self._session.flush()
 
-    def delete_checkpoints(
-        self, keys: Sequence[tuple[str, str, str]]
-    ) -> None:
+    def delete_checkpoints(self, keys: Sequence[tuple[str, str, str]]) -> None:
         if not keys:
             return
 
@@ -268,9 +278,13 @@ class AsyncCheckpointRepository:
             GraphCheckpointORM.checkpoint_ns == checkpoint_ns,
         )
         if checkpoint_id is not None:
-            statement = statement.where(GraphCheckpointORM.checkpoint_id == checkpoint_id)
+            statement = statement.where(
+                GraphCheckpointORM.checkpoint_id == checkpoint_id
+            )
         else:
-            statement = statement.order_by(GraphCheckpointORM.checkpoint_id.desc()).limit(1)
+            statement = statement.order_by(
+                GraphCheckpointORM.checkpoint_id.desc()
+            ).limit(1)
 
         return await self._session.scalar(statement)
 
@@ -284,7 +298,9 @@ class AsyncCheckpointRepository:
         if thread_ids:
             statement = statement.where(GraphCheckpointORM.thread_id.in_(thread_ids))
         if checkpoint_ns is not None:
-            statement = statement.where(GraphCheckpointORM.checkpoint_ns == checkpoint_ns)
+            statement = statement.where(
+                GraphCheckpointORM.checkpoint_ns == checkpoint_ns
+            )
 
         statement = statement.order_by(
             GraphCheckpointORM.thread_id.asc(),
@@ -299,7 +315,9 @@ class AsyncCheckpointRepository:
         if not run_ids:
             return []
 
-        statement = select(GraphCheckpointORM).where(GraphCheckpointORM.run_id.in_(run_ids))
+        statement = select(GraphCheckpointORM).where(
+            GraphCheckpointORM.run_id.in_(run_ids)
+        )
         return (await self._session.scalars(statement)).all()
 
     async def list_writes(
@@ -405,19 +423,21 @@ class AsyncCheckpointRepository:
 
     async def delete_thread(self, thread_id: str) -> None:
         await self._session.execute(
-            delete(GraphCheckpointWriteORM).where(GraphCheckpointWriteORM.thread_id == thread_id)
+            delete(GraphCheckpointWriteORM).where(
+                GraphCheckpointWriteORM.thread_id == thread_id
+            )
         )
         await self._session.execute(
-            delete(GraphCheckpointBlobORM).where(GraphCheckpointBlobORM.thread_id == thread_id)
+            delete(GraphCheckpointBlobORM).where(
+                GraphCheckpointBlobORM.thread_id == thread_id
+            )
         )
         await self._session.execute(
             delete(GraphCheckpointORM).where(GraphCheckpointORM.thread_id == thread_id)
         )
         await self._session.flush()
 
-    async def delete_checkpoints(
-        self, keys: Sequence[tuple[str, str, str]]
-    ) -> None:
+    async def delete_checkpoints(self, keys: Sequence[tuple[str, str, str]]) -> None:
         if not keys:
             return
 

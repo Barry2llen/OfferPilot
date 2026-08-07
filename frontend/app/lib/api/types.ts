@@ -158,6 +158,7 @@ export interface ModelSelectionResponse {
   provider: ModelProviderResponse;
   model_name: string;
   supports_image_input: boolean;
+  context_window_tokens: number;
 }
 
 export interface ModelSelectionCreate {
@@ -170,6 +171,15 @@ export interface ModelSelectionUpdate {
   provider_name?: string | null;
   model_name?: string | null;
   supports_image_input?: boolean | null;
+}
+
+// ─── Context Compaction Settings ───
+export interface ContextCompactionSettingsResponse {
+  model_selection_id: number | null;
+}
+
+export interface ContextCompactionSettingsUpdate {
+  model_selection_id: number | null;
 }
 
 // ─── Chat Files ───
@@ -200,6 +210,7 @@ export interface AIChatHistorySummary {
   message_count: number;
   attachment_count: number;
   requires_image_input: boolean;
+  context_compacted: boolean;
   updated_at: string;
 }
 
@@ -228,6 +239,7 @@ export interface AIChatHistoryDetailResponse {
   message_count: number;
   attachment_count: number;
   requires_image_input: boolean;
+  context_compacted: boolean;
   updated_at: string;
   messages: AIChatHistoryMessage[];
 }
@@ -266,6 +278,7 @@ export interface AIChatStreamRequest {
 export type AgentStatus =
   | "idle"
   | "generating"
+  | "compacting"
   | "tool_calling"
   | "interrupted"
   | "error";

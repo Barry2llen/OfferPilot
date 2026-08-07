@@ -4,7 +4,6 @@ from typing import Any
 
 from langchain_core.messages import BaseMessage
 
-
 SEARCH_RESULT_TOOL_NAMES = {
     "web_search",
     "web_search_exa",
@@ -109,9 +108,7 @@ def summarize_search_tool_output(output: Any) -> list[dict[str, Any]]:
             for field in _SEARCH_RESULT_FRONTEND_FIELDS
         }
         clean_summary = {
-            field: value
-            for field, value in summary.items()
-            if value is not None
+            field: value for field, value in summary.items() if value is not None
         }
         if "url" in clean_summary:
             summaries.append(clean_summary)

@@ -1,4 +1,3 @@
-
 import asyncio
 from typing import cast
 
@@ -33,9 +32,7 @@ def _clear_web_search_tools_cache() -> None:
     _web_search_tools_locks.clear()
 
 
-async def get_web_search_tools(
-    config: Config | None = None
-) -> list[BaseTool]:
+async def get_web_search_tools(config: Config | None = None) -> list[BaseTool]:
     target_config = config or load_config()
     cache_key = _web_search_tools_cache_key(target_config)
     cached_tools = _web_search_tools_cache.get(cache_key)
@@ -62,10 +59,11 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
             return []
         return list(await get_web_search_mcp_tools())
 
-    import re
     import json
+    import re
+
     from exa_py import AsyncExa
-    from exa_py.api import ContentsOptions, SearchResponse, Result
+    from exa_py.api import ContentsOptions, Result, SearchResponse
 
     exa = AsyncExa(target_config.exa_api_key)
 
@@ -73,32 +71,43 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
         """
         Convert a single search result into a dict.
         """
-        
+
         # Remove None values and any keys that are non-primitive types with empty values to reduce noise
         # Additionally, remove 'id' and 'image' fields which are duplicative with field 'url' or useless for non-multimodal tools (just for now, can be made optional in the future)
-        return {k: v for k, v in result.__dict__.items() if v is not None and k not in ("id", "image") and (isinstance(v, int|float|bool) or v)}
+        return {
+            k: v
+            for k, v in result.__dict__.items()
+            if v is not None
+            and k not in ("id", "image")
+            and (isinstance(v, int | float | bool) or v)
+        }
 
     def _optimize_search_response(
-            target: str | list[str],
-            resp: SearchResponse[Result],
-            *,
-            target_name: str = "query",
-            index_name: str | None = None,
-        ) -> str:
+        target: str | list[str],
+        resp: SearchResponse[Result],
+        *,
+        target_name: str = "query",
+        index_name: str | None = None,
+    ) -> str:
         """
         Convert the search response into a LLM-optimized json format.
         """
 
-        results = [_convert_search_result(resp.results[i]) for i in range(len(resp.results))]
+        results = [
+            _convert_search_result(resp.results[i]) for i in range(len(resp.results))
+        ]
 
         if index_name:
-            results = [{index_name: i+1 if index_name == "rank" else i, **result} for i, result in enumerate(results)]
+            results = [
+                {index_name: i + 1 if index_name == "rank" else i, **result}
+                for i, result in enumerate(results)
+            ]
 
         res = {
             target_name: target,
-            'results': results,
+            "results": results,
         }
-        
+
         return json.dumps(res, indent=2, ensure_ascii=False)
 
     # TODO: Cut down web_search tool response tokens by limiting characters per result.
@@ -130,15 +139,12 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
         include_domains: list[str] | None = Field(
             default=None,
             description=(
-                "Optional domains to search within, such as ['sec.gov', "
-                "'openai.com']."
+                "Optional domains to search within, such as ['sec.gov', 'openai.com']."
             ),
         ),
         exclude_domains: list[str] | None = Field(
             default=None,
-            description=(
-                "Optional domains to exclude from results."
-            ),
+            description=("Optional domains to exclude from results."),
         ),
     ) -> str:
         """
@@ -147,12 +153,15 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
         web_fetch_exa when you already have URLs to read.
         """
 
-        contents = cast(ContentsOptions, {
-            "highlights": {
-                "max_characters": target_config.web_search.max_characters,
-                "guiding_query": target_config.web_search.guiding_query,
-            }
-        })
+        contents = cast(
+            ContentsOptions,
+            {
+                "highlights": {
+                    "max_characters": target_config.web_search.max_characters,
+                    "guiding_query": target_config.web_search.guiding_query,
+                }
+            },
+        )
         if max_age_hours is not None:
             contents["max_age_hours"] = max_age_hours
 
@@ -166,7 +175,9 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
             exclude_domains=exclude_domains,
             contents=contents,
         )
-        return _optimize_search_response(query, response, target_name="query", index_name="rank")
+        return _optimize_search_response(
+            query, response, target_name="query", index_name="rank"
+        )
 
     @tool
     async def web_fetch(
@@ -206,12 +217,8 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
 
         kwagrs = {
             "max_age_hours": 0 if livecrawl else -1,
-            "text": {
-                "verbosity": "compact"
-            },
-            "extras": {
-                "links": links if links >= 0 else 1000
-            }
+            "text": {"verbosity": "compact"},
+            "extras": {"links": links if links >= 0 else 1000},
         }
 
         response = await exa.get_contents(urls, **kwagrs)
@@ -221,21 +228,19 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
             for result in response.results:
                 if result.extras:
                     searched_links: list[str] = result.extras.get("links", [])
-                    filtered_links = [link for link in searched_links if pattern.search(link)]
+                    filtered_links = [
+                        link for link in searched_links if pattern.search(link)
+                    ]
                     result.extras = {**result.extras, "links": filtered_links}
 
         return _optimize_search_response(
-            urls,
-            response, target_name="fetch",
-            index_name="index"
+            urls, response, target_name="fetch", index_name="index"
         )
 
     @tool
     async def find_similar(
         url: str = Field(
-            description=(
-                "Known reference URL used to discover similar pages."
-            )
+            description=("Known reference URL used to discover similar pages.")
         ),
         num_results: int | None = Field(
             gt=2,
@@ -277,7 +282,9 @@ async def _load_web_search_tools(target_config: Config) -> list[BaseTool]:
             exclude_domains=exclude_domains,
             exclude_source_domain=exclude_source_domain,
         )
-        return _optimize_search_response(url, response, target_name="url", index_name="rank")
+        return _optimize_search_response(
+            url, response, target_name="url", index_name="rank"
+        )
 
     return [web_search, web_fetch, find_similar]
 

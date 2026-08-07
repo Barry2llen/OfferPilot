@@ -142,7 +142,9 @@ def test_replace_resume_file_rejects_unsupported_file_without_touching_existing_
         )
         original_path = _resolve_saved_path(created.file_path or "")
 
-        with pytest.raises(UnsupportedResumeFileError, match="Unsupported resume file type"):
+        with pytest.raises(
+            UnsupportedResumeFileError, match="Unsupported resume file type"
+        ):
             service.replace_resume_file(
                 created.id,
                 UploadedResumeFile(

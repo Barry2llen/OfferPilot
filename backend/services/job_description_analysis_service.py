@@ -49,7 +49,9 @@ class JobDescriptionAnalysisService:
     ) -> JobDescriptionAnalysisDetail:
         record = JobDescriptionAnalysisORM(
             status="processing",
-            source_url=source_url.strip() if source_url and source_url.strip() else None,
+            source_url=source_url.strip()
+            if source_url and source_url.strip()
+            else None,
             source_image_file_ids=image_file_ids,
             result={},
             model_selection_id=selection_id,
@@ -143,7 +145,9 @@ class JobDescriptionAnalysisService:
     def image_record_to_data_url(self, record: ChatFileORM) -> str:
         suffix = Path(record.original_filename).suffix.lower()
         mime_type = record.media_type or _IMAGE_SUFFIX_MIME_TYPES.get(suffix)
-        if suffix not in _IMAGE_SUFFIX_MIME_TYPES or mime_type not in set(_IMAGE_SUFFIX_MIME_TYPES.values()):
+        if suffix not in _IMAGE_SUFFIX_MIME_TYPES or mime_type not in set(
+            _IMAGE_SUFFIX_MIME_TYPES.values()
+        ):
             raise UnsupportedChatFileError(
                 f"Unsupported JD image file type: {suffix or '<missing>'}"
             )
@@ -154,11 +158,15 @@ class JobDescriptionAnalysisService:
     def stored_file_to_data_url(self, stored: StoredChatFile) -> str:
         suffix = Path(stored.filename).suffix.lower()
         mime_type = stored.media_type or _IMAGE_SUFFIX_MIME_TYPES.get(suffix)
-        if suffix not in _IMAGE_SUFFIX_MIME_TYPES or mime_type not in set(_IMAGE_SUFFIX_MIME_TYPES.values()):
+        if suffix not in _IMAGE_SUFFIX_MIME_TYPES or mime_type not in set(
+            _IMAGE_SUFFIX_MIME_TYPES.values()
+        ):
             raise UnsupportedChatFileError(
                 f"Unsupported JD image file type: {suffix or '<missing>'}"
             )
-        return self._path_to_data_url(Path(stored.path), _IMAGE_SUFFIX_MIME_TYPES[suffix])
+        return self._path_to_data_url(
+            Path(stored.path), _IMAGE_SUFFIX_MIME_TYPES[suffix]
+        )
 
     def _require_analysis(self, analysis_id: int) -> JobDescriptionAnalysisORM:
         record = self._repository.get_by_id(analysis_id)
@@ -168,7 +176,9 @@ class JobDescriptionAnalysisService:
             )
         return record
 
-    def _to_list_item(self, record: JobDescriptionAnalysisORM) -> JobDescriptionAnalysisListItem:
+    def _to_list_item(
+        self, record: JobDescriptionAnalysisORM
+    ) -> JobDescriptionAnalysisListItem:
         return JobDescriptionAnalysisListItem(
             id=record.id,
             status=record.status,
@@ -187,7 +197,9 @@ class JobDescriptionAnalysisService:
             completed_at=record.completed_at,
         )
 
-    def _to_detail(self, record: JobDescriptionAnalysisORM) -> JobDescriptionAnalysisDetail:
+    def _to_detail(
+        self, record: JobDescriptionAnalysisORM
+    ) -> JobDescriptionAnalysisDetail:
         result = self._parse_result(record.result)
         return JobDescriptionAnalysisDetail(
             **self._to_list_item(record).model_dump(),
@@ -213,7 +225,11 @@ class JobDescriptionAnalysisService:
 
     def _resolve_path(self, storage_path: str) -> Path:
         candidate = Path(storage_path)
-        resolved = candidate.resolve() if candidate.is_absolute() else (Path.cwd() / candidate).resolve()
+        resolved = (
+            candidate.resolve()
+            if candidate.is_absolute()
+            else (Path.cwd() / candidate).resolve()
+        )
         if not resolved.is_file():
             raise ChatFileNotFoundError("Chat file not found.")
         return resolved
