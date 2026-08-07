@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage
 
 from schemas.config.base import Config, ContextCompactionConfig
 from utils.logger import logger
@@ -63,9 +63,6 @@ def _identity_entries(
 
 
 def _is_summary_message(message: BaseMessage) -> bool:
-    if not isinstance(message, SystemMessage):
-        return False
-
     additional_kwargs = getattr(message, "additional_kwargs", {})
     if isinstance(additional_kwargs, Mapping):
         if additional_kwargs.get("_offerpilot_context_compaction") == "summary":

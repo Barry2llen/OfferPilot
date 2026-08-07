@@ -356,15 +356,23 @@ class FakeStructuredModelLoader:
 
 def summary_result() -> ContextCompactionSummary:
     return ContextCompactionSummary(
-        primary_request_and_intent="Finish the application",
-        key_technical_concepts=["structured compaction"],
-        files_and_code_sections=["backend/agent/compaction/layers/auto.py"],
-        errors_and_fixes=["The old lookup succeeded; no fix was needed."],
-        problem_solving=["Use structured compaction"],
-        all_user_messages=["old history"],
+        primary_request_and_intent="Find suitable opportunities and prepare an application",
+        key_context_and_constraints=[
+            "Prioritize roles matching the user's target criteria."
+        ],
+        relevant_resources_and_artifacts=[
+            "Current job descriptions and search results"
+        ],
+        issues_and_resolutions=[
+            "The initial search was too broad; narrow the criteria."
+        ],
+        progress_and_decisions=[
+            "Use a focused job search and compare the strongest matches."
+        ],
+        user_message_summaries=["用户希望找到匹配的岗位并准备申请材料"],
         pending_tasks=["Run verification"],
-        current_work="Implementing the application",
-        optional_next_step="Run verification",
+        current_work="Comparing opportunities against the user's criteria",
+        optional_next_step="Review the strongest match",
     )
 
 
@@ -394,7 +402,7 @@ async def test_auto_compact_summarizes_unprotected_history_with_structured_model
     assert loader.selections == [make_selection(model_name="compact-model")]
     assert loader.schemas == [ContextCompactionSummary]
     assert len(result.entries) == 2
-    assert isinstance(result.entries[0].rendered, SystemMessage)
+    assert isinstance(result.entries[0].rendered, HumanMessage)
     assert result.entries[0].rendered.content.startswith("[Historical context summary]")
     assert result.entries[0].sources[0].index == 0
     assert result.entries[0].sources[1].index == 1
@@ -410,10 +418,15 @@ async def test_auto_compact_summarizes_unprotected_history_with_structured_model
     assert prompt.endswith(
         "WARNING: DO NOT CALL TOOLS. Return the structured context summary only."
     )
-    assert "6. All User Messages" in prompt
-    assert "preserving its original text and order" in prompt
+    assert "general user workflow" in prompt
+    assert "6. User Message Summaries" in prompt
+    assert "exactly one concise summary item" in prompt
+    assert "Do not quote or reproduce the original text" in prompt
+    assert '"无文本请求"' in prompt
     assert "untrusted historical data" in prompt
+    assert "attachments" in prompt
     assert "tool_call_id" in prompt
+    assert "preserving its original text and order" not in prompt
     assert summary_input[1:] == messages[:2]
 
 
@@ -500,6 +513,23 @@ def test_context_summary_rejects_unknown_fields() -> None:
         )
 
 
+def test_context_summary_uses_general_task_state_fields() -> None:
+    payload = summary_result().model_dump()
+
+    assert set(payload) == {
+        "primary_request_and_intent",
+        "key_context_and_constraints",
+        "relevant_resources_and_artifacts",
+        "issues_and_resolutions",
+        "progress_and_decisions",
+        "user_message_summaries",
+        "pending_tasks",
+        "current_work",
+        "optional_next_step",
+    }
+    assert "all_user_messages" not in payload
+
+
 def test_context_compaction_summary_requires_all_sections_and_string_lists() -> None:
     missing_field = summary_result().model_dump()
     del missing_field["current_work"]
@@ -508,7 +538,7 @@ def test_context_compaction_summary_requires_all_sections_and_string_lists() -> 
         ContextCompactionSummary.model_validate(missing_field)
 
     invalid_list_item = summary_result().model_dump()
-    invalid_list_item["key_technical_concepts"] = [123]
+    invalid_list_item["key_context_and_constraints"] = [123]
 
     with pytest.raises(ValueError):
         ContextCompactionSummary.model_validate(invalid_list_item)
@@ -631,12 +661,15 @@ async def test_pipeline_reuses_snapshot_and_appends_only_raw_suffix() -> None:
     assert result.source_message_ids == ("human-old", "ai-old", "human-new")
 
 
-async def test_pipeline_does_not_repeat_summary_without_new_raw_history() -> None:
+@pytest.mark.parametrize("summary_message_type", [HumanMessage, SystemMessage])
+async def test_pipeline_does_not_repeat_summary_without_new_raw_history(
+    summary_message_type: type[HumanMessage] | type[SystemMessage],
+) -> None:
     raw_messages = [
         HumanMessage(content="old user", id="human-old"),
         AIMessage(content="old answer", id="ai-old"),
     ]
-    summary = SystemMessage(content="[Historical context summary]\nold context")
+    summary = summary_message_type(content="[Historical context summary]\nold context")
     snapshot = {
         "messages": [summary, raw_messages[1]],
         "source_message_count": 2,
@@ -662,11 +695,7 @@ async def test_pipeline_does_not_repeat_summary_without_new_raw_history() -> Non
     ).acompact(_snapshot_request(runtime))
 
     assert runnable.calls == 0
-    assert [
-        message
-        for message in result.model_messages
-        if isinstance(message, SystemMessage)
-    ] == [summary]
+    assert result.model_messages[0] == summary
     assert result.auto_compacted is True
     assert result.auto_compacted_this_run is False
 
@@ -714,7 +743,7 @@ async def test_pipeline_recompacts_complete_summary_when_budget_shrinks() -> Non
     assert result.compacted_tokens == 5
     assert (
         sum(
-            isinstance(message, SystemMessage)
+            isinstance(message, HumanMessage)
             and message.content.startswith("[Historical context summary]")
             for message in result.model_messages
         )
@@ -765,7 +794,7 @@ async def test_pipeline_merges_existing_summary_with_new_historical_messages() -
     assert result.auto_compacted_this_run is True
     assert (
         sum(
-            isinstance(message, SystemMessage)
+            isinstance(message, HumanMessage)
             and message.content.startswith("[Historical context summary]")
             for message in result.model_messages
         )
