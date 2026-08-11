@@ -253,6 +253,37 @@ describe("chat stream adapter", () => {
     expect(newThread.messages).toEqual([]);
   });
 
+  it("restores analysis metadata and failure status from chat history", () => {
+    const history = mapChatHistory(
+      [
+        {
+          role: "tool",
+          type: "tool",
+          name: "analyze_job_description",
+          content: {
+            resource_type: "job_description",
+            resource_id: 8,
+            status: "failed",
+            error: "模型失败",
+          },
+          status: "success",
+        },
+      ],
+      createChatState(),
+    );
+
+    expect(history.state.messages[0]).toMatchObject({
+      role: "tool",
+      toolStatus: "error",
+      toolAnalysis: {
+        resourceType: "job_description",
+        resourceId: 8,
+        status: "failed",
+        error: "模型失败",
+      },
+    });
+  });
+
   it("moves the header to error state when compaction fails", () => {
     const started = reduceChatEvent(
       beginChat(createChatState(), "整理上下文", undefined),

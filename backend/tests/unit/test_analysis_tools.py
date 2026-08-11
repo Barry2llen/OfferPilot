@@ -8,7 +8,11 @@ from fastapi.testclient import TestClient
 from langchain.tools import ToolRuntime
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
-from agent.tools.analysis import AnalysisToolDependencies, get_analysis_tools
+from agent.tools.analysis import (
+    AnalysisToolDependencies,
+    _content_and_artifact,
+    get_analysis_tools,
+)
 from db.models import ModelProviderORM, ModelSelectionORM
 from db.repositories import (
     ChatFileRepository,
@@ -213,7 +217,29 @@ def test_resume_analysis_tool_reuses_existing_record_and_current_model(
     assert result["resource_type"] == "resume"
     assert result["resource_id"] == document.id
     assert result["status"] == "parsed"
-    assert result["detail"]["raw_text"] == "parsed resume"
+    assert result["result"]["raw_text"] == "parsed resume"
+    assert "detail" not in result
+
+
+def test_analysis_tool_keeps_full_detail_out_of_model_content() -> None:
+    content, artifact = _content_and_artifact(
+        {
+            "resource_type": "job_description",
+            "resource_id": 3,
+            "job_id": "job-1",
+            "status": "parsed",
+            "detail": {
+                "id": 3,
+                "raw_text": "岗位原文",
+                "result": {"job_title": "后端工程师"},
+            },
+        }
+    )
+
+    payload = json.loads(content)
+    assert "detail" not in payload
+    assert payload["result"] == {"job_title": "后端工程师"}
+    assert artifact["detail"]["raw_text"] == "岗位原文"
 
 
 def test_resume_analysis_tool_creates_record_from_file_id(

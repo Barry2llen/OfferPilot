@@ -84,6 +84,12 @@ def structured_value(value: int) -> tuple[str, dict[str, int]]:
     return json.dumps({"value": value}), {"raw_value": value}
 
 
+@tool(response_format="content_and_artifact")
+def failed_structured_value(value: int) -> tuple[str, dict[str, int]]:
+    """Return a structured failure for testing."""
+    return json.dumps({"status": "failed", "value": value}), {"raw_value": value}
+
+
 def make_tool_config() -> dict:
     return {
         "configurable": {"thread_id": "thread-tool-test"},
@@ -268,6 +274,16 @@ def test_convert_tool_message_preserves_existing_tool_message_fields() -> None:
     assert result.artifact == {"question": "Choose next step."}
     assert result.status == "success"
     assert result.additional_kwargs["return_direct"] is True
+
+
+def test_convert_tool_message_marks_structured_failure_as_error() -> None:
+    result = ModelCallGraph._convert_tool_message(
+        json.dumps({"status": "failed", "error": "分析失败"}),
+        {"name": "failed_structured_value", "args": {}, "id": "call-failed"},
+        tool=failed_structured_value,
+    )
+
+    assert result.status == "error"
 
 
 def test_tool_node_returns_error_message_when_tool_raises() -> None:

@@ -140,11 +140,6 @@ def _build_result(
         key = "resume" if resource_type == "resume" else "job_description"
         detail = _model_dump(terminal.data.get(key))
         result["detail"] = detail
-        result["result"] = (
-            detail.get("result")
-            if resource_type == "job_description" and isinstance(detail, dict)
-            else detail
-        )
     else:
         result["error"] = str(
             terminal.data.get("detail")
@@ -156,7 +151,18 @@ def _build_result(
 
 
 def _content_and_artifact(result: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    return json.dumps(result, ensure_ascii=False), result
+    model_result = {
+        key: value for key, value in result.items() if key != "detail"
+    }
+    detail = result.get("detail")
+    if detail is not None:
+        model_result["result"] = (
+            detail.get("result")
+            if result.get("resource_type") == "job_description"
+            and isinstance(detail, dict)
+            else detail
+        )
+    return json.dumps(model_result, ensure_ascii=False), result
 
 
 def _resume_service(dependencies: AnalysisToolDependencies, session) -> ResumeService:

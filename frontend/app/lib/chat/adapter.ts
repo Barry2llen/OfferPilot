@@ -264,6 +264,21 @@ function toolCallToMessage(entry: ToolCallEntry, id: string): ChatMessage {
   };
 }
 
+function isAnalysisToolName(name?: string | null): boolean {
+  return name === "analyze_resume" || name === "analyze_job_description";
+}
+
+function historyToolStatus(
+  status: string | null | undefined,
+  analysis?: AnalysisToolProgress,
+): ToolCallEntry["status"] {
+  if (analysis?.status === "failed" || status === "error" || status === "failed") {
+    return "error";
+  }
+  if (status === "running") return "running";
+  return "success";
+}
+
 function mergeQueryInterruptInput(
   input: Record<string, unknown> | undefined,
   eventData: Record<string, unknown>,
@@ -1080,6 +1095,10 @@ export function mapChatHistory(
   for (const message of historyMessages) {
     const messageId = nextMessageId(next, (message.role as ChatMessage["role"]) || "assistant");
     next = { ...next, nextMessageId: messageId.nextMessageId };
+    const toolAnalysis =
+      message.role === "tool" && isAnalysisToolName(message.name)
+        ? analysisProgressFromValue(message.content)
+        : undefined;
     const mapped: ChatMessage = {
       id: messageId.id,
       role: message.role as ChatMessage["role"],
@@ -1091,8 +1110,12 @@ export function mapChatHistory(
       reasoningDurationMs: parseDurationMs(message.reasoning_duration_ms),
       toolCallId: message.tool_call_id ?? undefined,
       toolName: message.name ?? undefined,
-      toolStatus: message.status ?? undefined,
+      toolStatus:
+        message.role === "tool"
+          ? historyToolStatus(message.status, toolAnalysis)
+          : message.status ?? undefined,
       toolOutput: message.role === "tool" ? message.content : undefined,
+      toolAnalysis,
     };
     if (shouldDisplayHistoryMessage(mapped)) messages.push(mapped);
   }
