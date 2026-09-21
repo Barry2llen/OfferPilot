@@ -148,3 +148,17 @@ ON tb_graph_checkpoint_write (thread_id);
 
 CREATE INDEX IF NOT EXISTS ix_tb_graph_checkpoint_write_checkpoint_id
 ON tb_graph_checkpoint_write (checkpoint_id);
+
+-- Process-local executions are recorded for display, never automatically resumed.
+CREATE TABLE IF NOT EXISTS tb_chat_run (
+    sequence INTEGER PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL UNIQUE,
+    idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+    fingerprint VARCHAR(64) NOT NULL,
+    thread_id VARCHAR(255) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    submission JSON NOT NULL,
+    detail TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_tb_chat_run_thread_id ON tb_chat_run(thread_id);

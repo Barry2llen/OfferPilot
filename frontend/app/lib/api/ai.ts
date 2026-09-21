@@ -1,6 +1,7 @@
 import { apiRequest, apiUrl } from "./client";
 import { openSse, type SseEvent, type SseRequestOptions } from "./sse";
 import type {
+  ChatRun,
   AIChatHistoryListResponse,
   AIChatHistoryDetailResponse,
   AIChatResponse,
@@ -8,15 +9,46 @@ import type {
 } from "./types";
 
 export const aiChatApi = {
+  createRun: (body: AIChatStreamRequest | FormData, key: string) =>
+    apiRequest<ChatRun>("/ai/chat/runs", {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
+  listRuns: (threadId: string) =>
+    apiRequest<ChatRun[]>(
+      `/ai/chat/runs?thread_id=${encodeURIComponent(threadId)}`,
+    ),
+  answerInput: (
+    runId: string,
+    requestId: string,
+    answer: Record<string, unknown>,
+  ) =>
+    apiRequest<ChatRun>(`/ai/chat/runs/${runId}/inputs/${requestId}`, {
+      method: "POST",
+      body: JSON.stringify({ answer }),
+    }),
+  cancelRun: (runId: string) =>
+    apiRequest<ChatRun>(`/ai/chat/runs/${runId}/cancel`, { method: "POST" }),
+  runEvents: (
+    runId: string,
+    after: number,
+    signal: AbortSignal,
+    onOpen?: () => void,
+  ) =>
+    openSse({
+      url: apiUrl(`/ai/chat/runs/${runId}/events?after=${after}`),
+      method: "GET",
+      signal,
+      onOpen,
+    }),
   listChats: (limit = 20, offset = 0) =>
     apiRequest<AIChatHistoryListResponse>(
-      `/ai/chats?limit=${limit}&offset=${offset}`
+      `/ai/chats?limit=${limit}&offset=${offset}`,
     ),
 
   getHistory: (threadId: string) =>
-    apiRequest<AIChatHistoryDetailResponse>(
-      `/ai/chats/${threadId}/history`
-    ),
+    apiRequest<AIChatHistoryDetailResponse>(`/ai/chats/${threadId}/history`),
 
   deleteChat: (threadId: string) =>
     apiRequest<void>(`/ai/chats/${threadId}`, { method: "DELETE" }),

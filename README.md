@@ -39,7 +39,7 @@ The three subprojects keep their dependencies and commands independent:
 - File library: the frontend provides a file-library page and the backend
   exposes `/ai/files` endpoints for viewing and reusing historical chat
   attachments across conversations.
-- Agent runtime: LangChain/LangGraph tool calls, interrupt/retry handling,
+- Agent runtime: LangChain/LangGraph tool calls, native asynchronous user input and retries,
   and database checkpoints.
 - Desktop runtime: Electron starts the backend and frontend in development and
   starts the local packaged service from Electron resources after packaging.
@@ -222,7 +222,8 @@ under Electron's `userData/logs`.
   access.
 
 AI streaming events include `thread`, `token`, `tool_start`,
-`tool_end`, `tool_error`, `interrupt`, `final`, and `error`. The
+`tool_end`, `tool_error`, `input_required`, `input_resolved`, `run_status`,
+`snapshot`, `final`, and `error`. The
 frontend also supports `reasoning` events. A `thread` event can include
 `resolved_attachments`, `attachment_count`, and
 `requires_image_input`, which let the frontend restore formal file IDs and
@@ -235,8 +236,37 @@ Resume upload and replacement endpoints return parsing progress as
 an SSE connection does not cancel parsing; the persisted parsing status from
 the list/detail endpoints is authoritative.
 
-After receiving an `interrupt`, the client should send
-`command.type="retry"` with the same `thread_id` to resume execution.
+Chat execution belongs to `ChatRunManager`, independently of SSE connections.
+Use `POST /ai/chat/runs` with an `Idempotency-Key` header to submit a message,
+`GET /ai/chat/runs?thread_id=...` to inspect FIFO queue order, and
+`GET /ai/chat/runs/{run_id}/events?after=...` to subscribe/reconnect. Answer an
+`input_required` request via `POST /ai/chat/runs/{run_id}/inputs/{request_id}`
+with `{"answer":{"choice":"firstChoice","note":null}}` or
+`{"answer":{"type":"retry"}}`. The original coroutine continues without
+replaying the tool. Legacy query/retry commands on `/ai/chat/stream` return 410.
+
+`POST /ai/chat/runs/{run_id}/cancel` cancels and awaits that run. Success,
+failure and cancellation all advance to the next queued message. Cancel queued
+runs individually to prevent their execution. Disconnecting or changing pages
+does not cancel execution. Deleting a conversation cancels its runs before
+removing history.
+
+This is a **single-backend-process** design. A restart marks active runs
+`interrupted` and queued runs `cancelled`; neither is automatically resumed.
+The new `tb_chat_run` table is created from ORM metadata at startup. It stores
+submission/status data, not Python stacks or Futures. Existing conversation
+history remains readable. Abandoned checkpoint paths are finalized before new
+input; unknown tool outcomes are not automatically replayed. Cancellation does
+not roll back external side effects. Tool events precede the batch checkpoint
+and are not proof that the batch is durable.
+
+`chat_runs` in `backend/config.example.yaml` controls active/queued limits,
+input timeout (disabled by default), replay bytes/event counts, subscriber queue
+size and terminal cache retention. Snapshots replace expired event history.
+Synchronous `/ai/chat` fails explicitly if user input is required. Standalone
+resume/JD jobs fail after their automatic retries and can be started again.
+
+See [the chat run protocol](backend/docs/chat-runs.md) for lifecycle details.
 
 The frontend supports Simplified Chinese and English. The initial locale uses
 the persisted user choice, then the browser/system language, and falls back to

@@ -9,8 +9,8 @@ from schemas.chat_file import ChatAttachmentRef
 class AIChatCommand(BaseModel):
     type: Literal["prompt", "continue", "retry", "query"] = Field(
         description=(
-            "Streaming conversation command type. prompt starts new input, retry resumes and retries "
-            "the last failed interrupt, and query submits a choice from a query-tool interrupt."
+            "Streaming conversation command type. prompt starts new input, retry is deprecated; use the input-answer endpoint instead of "
+            "resuming graph execution. query is deprecated as well."
         ),
         examples=["query"],
     )
@@ -118,6 +118,11 @@ class AIChatResponse(BaseModel):
 
 
 class AIChatHistoryMessage(BaseModel):
+    id: str | None = Field(
+        default=None,
+        description="Stable message ID for reconciling run snapshots with history.",
+        examples=["message-001"],
+    )
     role: str = Field(
         description="Message role. human maps to user, ai maps to assistant, and tool remains tool.",
         examples=["assistant"],
@@ -318,7 +323,7 @@ class AIChatStreamRequest(BaseModel):
     )
     thread_id: str | None = Field(
         default=None,
-        description="Conversation thread ID. retry and query commands must reuse the thread ID returned by the previous interrupt.",
+        description="Conversation thread ID. Legacy retry/query commands are rejected; answers require a run_id and request_id.",
         examples=["conversation-001"],
     )
     file_ids: list[str] = Field(
@@ -328,7 +333,7 @@ class AIChatStreamRequest(BaseModel):
     )
     command: AIChatCommand | None = Field(
         default=None,
-        description="Streaming conversation command. When omitted, the request is treated as prompt; retry resumes a failed interrupt and query resumes a user-choice interrupt.",
+        description="Prompt command. Legacy retry/query values are parsed only to return a migration error; submit answers to the run input endpoint.",
         examples=[
             {
                 "type": "query",

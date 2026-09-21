@@ -39,3 +39,14 @@ exa_api_key: "your_exa_api_key_here"
 #   password: "postgres"
 #   driver: "psycopg"
 #   echo: false
+
+# Single-process chat execution, queue and interaction resource limits.
+chat_runs:
+  max_active: 8
+  max_queued_per_thread: 20
+  max_pending_inputs: 32
+  input_timeout_seconds: null
+  replay_events: 2048
+  replay_bytes: 4194304
+  subscriber_events: 256
+  terminal_retention_seconds: 1800

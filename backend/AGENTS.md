@@ -10,7 +10,7 @@ and asynchronous database managers, creates tables, initializes the
 Core directories:
 
 - `agent/`: Agent graphs, state, model calls, tools, supervisors, workflows,
-  interrupts, and database checkpoints.
+  asynchronous interaction ports, and database checkpoints.
 - `api/`: FastAPI routes. `api/routes/resume.py` handles resume upload,
   replacement, lookup, deletion, and original-file preview.
   `api/routes/model_config.py` handles model-provider and model-selection
@@ -54,6 +54,9 @@ Use `uv` for dependency management and command execution:
 - `uv sync`: install and lock dependencies.
 - `uv run python run_server.py --reload`: start the local FastAPI server with the Windows-compatible Psycopg event loop.
 - `uv run pytest`: run the complete test suite.
+- `uv run pyright -p ../pyrightconfig.json`: run repository-wide Python basic
+  type checking. Pass explicit file paths to check a scoped change, including
+  its tests; do not disable diagnostics to make a change pass.
 - `uv run pytest tests/unit/test_resume_api.py`: test resume APIs and
   OpenAPI documentation.
 - `uv run pytest tests/unit/test_model_config_api.py`: test provider and
@@ -83,8 +86,8 @@ four-space indentation, `snake_case` for modules/functions, and
   `Field(description=..., examples=...)`.
 - Use SQLAlchemy 2.x ORM syntax with explicit `Mapped` annotations.
 - Prefer `TypedDict` for Agent state and keep node functions focused.
-- Use `BaseInterrupt` for public LangGraph interrupt payloads and
-  `schemas.command.BaseCommand` with `Command(resume=...)` for recovery.
+- Use `InteractionContext.ask` / `ask_user` for native async user input.
+  Never serialize the Broker, Future, Task, or execution context into checkpoints.
 - Serialize SSE data through the route helpers; do not concatenate complex
   objects directly.
 - Load tools through `agent.tools.get_all_tools(config)`. Missing Exa keys
@@ -112,10 +115,10 @@ transitions, or compatibility decisions.
   by `thread_id` through `DatabaseCheckpointer`.
 - `/ai/chat/stream` returns `text/event-stream`. Keep event names stable:
   `thread`, `token`, `tool_start`, `tool_end`, `tool_error`,
-  `interrupt`, `final`, and `error`.
-- Stream retries use the LangGraph checkpoint. After an `interrupt`, the
-  client must send the same `thread_id` with
-  `command.type="retry"`.
+  `input_required`, `input_resolved`, `run_status`, `snapshot`, `final`, and `error`.
+- Answer requests by run_id/request_id through the input endpoint; do not
+  invoke the graph again. ChatRunManager owns FIFO scheduling and shutdown.
+  Closing SSE only detaches a subscriber. Restart never resumes an old run.
 - The supported request languages are `Accept-Language: en-US` and
   `Accept-Language: zh-CN`. Missing or unrecognized values fall back to
   `zh-CN`; localized responses set the matching `Content-Language`.

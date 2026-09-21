@@ -1,16 +1,16 @@
 import asyncio
 import importlib
 import json
-import time
+from typing import Any
 
 import pytest
 from langchain.tools import ToolRuntime, tool
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.errors import GraphInterrupt
 from langgraph.runtime import Runtime
-from langgraph.types import Interrupt
 
+from agent.base import BaseAgentState
 from agent.compaction import (
     CompactedMessage,
     CompactionResult,
@@ -18,10 +18,13 @@ from agent.compaction import (
     MessageRef,
 )
 from agent.graphs.model_call import ModelCallGraph
+from agent.interactions import InteractionContext
 from agent.prompts import PromptComposer, PromptFragment
 from agent.tools.query import query as query_tool
 from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
+from schemas.model_provider import ModelProvider
+from schemas.model_selection import ModelSelection
 
 
 @tool
@@ -34,28 +37,6 @@ def echo_value(value: int) -> str:
 def fail_value(value: int) -> str:
     """Raise an error for testing."""
     raise RuntimeError(f"boom: {value}")
-
-
-@tool
-def interrupt_value(value: int) -> str:
-    """Raise a graph interrupt for testing."""
-    raise GraphInterrupt(
-        (
-            Interrupt(
-                value={
-                    "type": "query",
-                    "question": "Choose next step.",
-                    "firstChoice": "first",
-                    "firstChoiceDescription": "Use the first option.",
-                    "secondChoice": "second",
-                    "secondChoiceDescription": "Use the second option.",
-                    "thirdChoice": "third",
-                    "thirdChoiceDescription": "Use the third option.",
-                },
-                id=f"interrupt-{value}",
-            ),
-        )
-    )
 
 
 @tool
@@ -84,23 +65,23 @@ def structured_value(value: int) -> tuple[str, dict[str, int]]:
     return json.dumps({"value": value}), {"raw_value": value}
 
 
-def make_tool_config() -> dict:
+def make_tool_config() -> RunnableConfig:
     return {
         "configurable": {"thread_id": "thread-tool-test"},
         "metadata": {"source": "unit-test"},
     }
 
 
-def make_runtime() -> Runtime[None]:
+def make_runtime() -> Runtime[InteractionContext | None]:
     return Runtime(context=None)
 
 
 def make_tool_runtime(
-    state: dict | None = None,
+    state: BaseAgentState | None = None,
     *,
     tool_call_id: str = "call-query",
-    config: dict | None = None,
-) -> ToolRuntime[None, dict]:
+    config: RunnableConfig | None = None,
+) -> ToolRuntime[None, BaseAgentState]:
     return ToolRuntime(
         state=state or make_state([]),
         context=None,
@@ -113,17 +94,21 @@ def make_tool_runtime(
 
 def run_tool_node(
     graph: ModelCallGraph,
-    state: dict,
-    config: dict | None = None,
-) -> dict:
+    state: BaseAgentState,
+    config: RunnableConfig | None = None,
+) -> BaseAgentState:
     return asyncio.run(
         graph._tool_node(state, make_runtime(), config or make_tool_config())
     )
 
 
-def make_state(messages: list, model: object | None = None) -> dict:
+def make_state(messages: list[BaseMessage], model: Any = None) -> BaseAgentState:
     return {
-        "model": object() if model is None else model,
+        "model": ModelSelection(
+            provider=ModelProvider(provider="OpenAI", name="test"), model_name="test"
+        )
+        if model is None
+        else model,
         "messages": messages,
     }
 
@@ -132,20 +117,6 @@ def test_model_call_graph_can_be_imported_and_initialized_without_tools() -> Non
     graph = ModelCallGraph(config=Config(), tools=None)
 
     assert callable(graph.tools)
-
-
-def test_interrupt_tool_queue_is_instance_scoped() -> None:
-    first_graph = ModelCallGraph(config=Config(), tools=[echo_value])
-    second_graph = ModelCallGraph(config=Config(), tools=[echo_value])
-
-    first_graph._add_interrupt_tool(
-        "message-first",
-        {"name": "echo_value", "args": {"value": 1}, "id": "call-first"},
-        echo_value,
-    )
-
-    assert len(first_graph._interrupt_tools) == 1
-    assert second_graph._interrupt_tools == []
 
 
 def test_tool_node_returns_original_state_when_tools_are_missing() -> None:
@@ -190,11 +161,13 @@ def test_tool_node_returns_error_message_when_tool_is_missing() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert isinstance(message, ToolMessage)
     assert message.status == "error"
     assert message.tool_call_id == "call-missing"
+    assert isinstance(message.content, str)
     assert "not found" in message.content.lower()
 
 
@@ -212,7 +185,8 @@ def test_tool_node_executes_tool_calls_and_returns_tool_message() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert isinstance(message, ToolMessage)
     assert message.tool_call_id == "call-echo"
@@ -238,10 +212,12 @@ def test_tool_node_preserves_structured_tool_message() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert isinstance(message, ToolMessage)
     assert message.tool_call_id == "call-structured"
+    assert isinstance(message.content, str)
     assert json.loads(message.content) == {"value": 4}
     assert message.artifact == {"raw_value": 4}
 
@@ -284,7 +260,8 @@ def test_tool_node_returns_error_message_when_tool_raises() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert isinstance(message, ToolMessage)
     assert message.status == "error"
@@ -292,42 +269,14 @@ def test_tool_node_returns_error_message_when_tool_raises() -> None:
     assert "boom: 5" in message.content
 
 
-def test_tool_node_queues_graph_interrupt_tool_for_interrupt_node() -> None:
-    graph = ModelCallGraph(config=Config(), tools=[interrupt_value])
-    state = make_state(
-        [
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "interrupt_value",
-                        "args": {"value": 7},
-                        "id": "call-interrupt",
-                    }
-                ],
-            )
-        ]
-    )
-
-    result = run_tool_node(graph, state)
-    message = result["messages"][0]
-
-    assert message.content == "[INTERRUPT_TOOL_CALLED]"
-    assert len(graph._interrupt_tools) == 1
-    queued_message_id, queued_tool_call, queued_tool = graph._interrupt_tools[0]
-    assert queued_message_id == message.id
-    assert queued_tool_call["id"] == "call-interrupt"
-    assert queued_tool.name == "interrupt_value"
-
-
 async def test_query_tool_keeps_display_context_out_of_llm_visible_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_interrupt(value: object) -> dict[str, str]:
+    async def fake_interrupt(value: object) -> dict[str, str]:
         return {"choice": "firstChoice", "note": "Use this."}
 
     query_module = importlib.import_module("agent.tools.query")
-    monkeypatch.setattr(query_module, "interrupt", fake_interrupt)
+    monkeypatch.setattr(query_module, "ask_user", fake_interrupt)
 
     result = await query_tool.ainvoke(
         {
@@ -348,6 +297,7 @@ async def test_query_tool_keeps_display_context_out_of_llm_visible_content(
     )
 
     assert isinstance(result, ToolMessage)
+    assert isinstance(result.content, str)
     assert json.loads(result.content) == {
         "choice": "firstChoice",
         "note": "Use this.",
@@ -383,7 +333,8 @@ def test_tool_node_executes_async_tool_calls_and_returns_tool_message() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert isinstance(message, ToolMessage)
     assert message.tool_call_id == "call-async"
@@ -420,7 +371,8 @@ def test_tool_node_injects_runtime_without_mutating_original_tool_call() -> None
     config = make_tool_config()
 
     result = run_tool_node(graph, state, config)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert message.content == "runtime-value=3"
     assert seen == [
@@ -430,7 +382,9 @@ def test_tool_node_injects_runtime_without_mutating_original_tool_call() -> None
             "config": config,
         }
     ]
-    assert state["messages"][0].tool_calls[0]["args"] == {"value": 3}
+    original_message = state.get("messages", [])[0]
+    assert isinstance(original_message, AIMessage)
+    assert original_message.tool_calls[0]["args"] == {"value": 3}
 
 
 def test_tool_node_does_not_mutate_args_when_runtime_tool_raises() -> None:
@@ -461,87 +415,66 @@ def test_tool_node_does_not_mutate_args_when_runtime_tool_raises() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert message.status == "error"
     assert "runtime boom: 5" in message.content
-    assert state["messages"][0].tool_calls[0]["args"] == {"value": 5}
+    original_message = state.get("messages", [])[0]
+    assert isinstance(original_message, AIMessage)
+    assert original_message.tool_calls[0]["args"] == {"value": 5}
 
 
-def test_tool_node_does_not_mutate_args_when_runtime_tool_interrupts() -> None:
+async def test_tool_node_executes_multiple_tools_concurrently_and_preserves_order() -> (
+    None
+):
+    entered = set()
+    both_started = asyncio.Event()
+    second_finished = asyncio.Event()
+
     @tool
-    async def runtime_interrupt(
-        value: int,
-        *,
-        runtime: ToolRuntime[None, dict],
-    ) -> str:
-        """Interrupt after receiving runtime for testing."""
-        raise GraphInterrupt(
-            (
-                Interrupt(
-                    value={"type": "query", "question": f"value={value}"},
-                    id=f"interrupt-{runtime.tool_call_id}",
-                ),
-            )
-        )
+    async def rendezvous(value: int) -> str:
+        """Require both calls to start and finish the second call first."""
+        entered.add(value)
+        if len(entered) == 2:
+            both_started.set()
+        await both_started.wait()
+        if value == 2:
+            second_finished.set()
+        else:
+            await second_finished.wait()
+        return f"value={value}"
 
-    graph = ModelCallGraph(config=Config(), tools=[runtime_interrupt])
+    graph = ModelCallGraph(config=Config(), tools=[rendezvous])
     state = make_state(
         [
             AIMessage(
                 content="",
                 tool_calls=[
                     {
-                        "name": "runtime_interrupt",
-                        "args": {"value": 7},
-                        "id": "call-runtime-interrupt",
+                        "name": "rendezvous",
+                        "args": {"value": value},
+                        "id": f"call-{value}",
                     }
+                    for value in (1, 2)
                 ],
             )
         ]
     )
-
-    result = run_tool_node(graph, state)
-    message = result["messages"][0]
-
-    assert message.content == "[INTERRUPT_TOOL_CALLED]"
-    assert len(graph._interrupt_tools) == 1
-    assert state["messages"][0].tool_calls[0]["args"] == {"value": 7}
-
-
-def test_tool_node_executes_multiple_tools_concurrently_and_preserves_order() -> None:
-    graph = ModelCallGraph(config=Config(), tools=[delayed_echo_value])
-    state = make_state(
-        [
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "delayed_echo_value",
-                        "args": {"value": 1, "delay": 0.2},
-                        "id": "call-1",
-                    },
-                    {
-                        "name": "delayed_echo_value",
-                        "args": {"value": 2, "delay": 0.2},
-                        "id": "call-2",
-                    },
-                ],
-            )
-        ]
-    )
-
-    start = time.perf_counter()
-    result = run_tool_node(graph, state)
-    elapsed = time.perf_counter() - start
-
-    messages = result["messages"]
-
-    assert elapsed < 0.35
-    assert [message.tool_call_id for message in messages] == ["call-1", "call-2"]
-    assert [message.content for message in messages] == [
-        "delayed-value=1",
-        "delayed-value=2",
+    async with asyncio.timeout(5):
+        result = await graph._tool_node(state, make_runtime(), make_tool_config())
+    assert entered == {1, 2}
+    assert [
+        message.tool_call_id
+        for message in result.get("messages", [])
+        if isinstance(message, ToolMessage)
+    ] == [
+        "call-1",
+        "call-2",
+    ]
+    assert [message.content for message in result.get("messages", [])] == [
+        "value=1",
+        "value=2",
     ]
 
 
@@ -564,12 +497,14 @@ def test_tool_node_isolates_errors_when_running_multiple_tools() -> None:
     )
 
     result = run_tool_node(graph, state)
-    messages = result["messages"]
+    messages = result.get("messages", [])
 
     assert len(messages) == 2
+    assert isinstance(messages[0], ToolMessage)
     assert messages[0].status == "error"
     assert messages[0].tool_call_id == "call-fail"
     assert "boom: 5" in messages[0].content
+    assert isinstance(messages[1], ToolMessage)
     assert messages[1].status == "success"
     assert messages[1].tool_call_id == "call-async"
     assert messages[1].content == "async-value=9"
@@ -579,7 +514,7 @@ def test_tool_node_uses_dynamic_tools_callable() -> None:
     seen_messages: list[list] = []
 
     def build_tools(runtime) -> list:
-        seen_messages.append(runtime.state["messages"])
+        seen_messages.append(runtime.state.get("messages", []))
         return [echo_value]
 
     graph = ModelCallGraph(config=Config(), tools=build_tools)
@@ -595,9 +530,10 @@ def test_tool_node_uses_dynamic_tools_callable() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
-    assert seen_messages == [state["messages"]]
+    assert seen_messages == [state.get("messages", [])]
     assert message.tool_call_id == "call-dynamic"
     assert message.content == "value=11"
 
@@ -619,7 +555,8 @@ def test_tool_node_returns_error_when_dynamic_tools_callable_fails() -> None:
     )
 
     result = run_tool_node(graph, state)
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, ToolMessage)
 
     assert isinstance(message, ToolMessage)
     assert message.status == "error"
@@ -699,7 +636,7 @@ def test_dicide_after_tool_returns_model_for_regular_tool_message() -> None:
         make_state([HumanMessage(content="hello")]),
     ],
 )
-def test_dicide_next_action_raises_for_invalid_state(state: dict) -> None:
+def test_dicide_next_action_raises_for_invalid_state(state: BaseAgentState) -> None:
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
 
     with pytest.raises(AgentStateError):
@@ -737,7 +674,7 @@ async def test_compiled_graph_ends_after_return_direct_tool(
 
     graph = ModelCallGraph(config=Config(), tools=[direct_value]).get_compiled_graph()
     result = await graph.ainvoke(make_state([HumanMessage(content="hello")]))
-    message = result["messages"][-1]
+    message = result.get("messages", [])[-1]
 
     assert fake_model.calls == 1
     assert isinstance(message, ToolMessage)
@@ -838,9 +775,9 @@ async def test_model_call_node_binds_tools_and_returns_response(
     assert loaded_models == [selected_model]
     assert events == [
         ("bind_tools", (echo_value,)),
-        ("ainvoke", state["messages"]),
+        ("ainvoke", state.get("messages", [])),
     ]
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_binds_dynamic_tools(
@@ -864,7 +801,7 @@ async def test_model_call_node_binds_dynamic_tools(
     )
 
     def build_tools(runtime) -> list:
-        assert runtime.state["messages"][0].content == "hello"
+        assert runtime.state.get("messages", [])[0].content == "hello"
         return [echo_value]
 
     graph = ModelCallGraph(config=Config(), tools=build_tools)
@@ -874,9 +811,9 @@ async def test_model_call_node_binds_dynamic_tools(
 
     assert events == [
         ("bind_tools", (echo_value,)),
-        ("ainvoke", state["messages"]),
+        ("ainvoke", state.get("messages", [])),
     ]
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_resolves_prompt_composer_to_system_messages(
@@ -906,7 +843,7 @@ async def test_model_call_node_resolves_prompt_composer_to_system_messages(
                 PromptFragment(
                     name="Metadata",
                     content=lambda runtime: (
-                        f"messages={len(runtime.state['messages'])}"
+                        f"messages={len(runtime.state.get('messages', []))}"
                     ),
                 ),
             ]
@@ -916,14 +853,14 @@ async def test_model_call_node_resolves_prompt_composer_to_system_messages(
 
     result = await graph._model_call_node(state)
 
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
     messages = seen_messages[0]
     assert isinstance(messages, list)
     assert len(messages) == 2
     assert messages[0].type == "system"
     assert "Instructions:\nUse attachments." in messages[0].content
     assert "Metadata:\nmessages=1" in messages[0].content
-    assert messages[1] == state["messages"][0]
+    assert messages[1] == state.get("messages", [])[0]
 
 
 async def test_model_call_node_resolves_dynamic_system_prompt_builder(
@@ -946,14 +883,17 @@ async def test_model_call_node_resolves_dynamic_system_prompt_builder(
     )
 
     def build_system_prompts(runtime) -> list[str]:
-        return ["dynamic one", f"message-count={len(runtime.state['messages'])}"]
+        return [
+            "dynamic one",
+            f"message-count={len(runtime.state.get('messages', []))}",
+        ]
 
     graph = ModelCallGraph(config=Config(), system_prompts=build_system_prompts)
     state = make_state([HumanMessage(content="hello")])
 
     result = await graph._model_call_node(state)
 
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
     messages = seen_messages[0]
     assert isinstance(messages, list)
     assert [message.type for message in messages] == ["system", "system", "human"]
@@ -961,7 +901,7 @@ async def test_model_call_node_resolves_dynamic_system_prompt_builder(
         "dynamic one",
         "message-count=1",
     ]
-    assert messages[2] == state["messages"][0]
+    assert messages[2] == state.get("messages", [])[0]
 
 
 async def test_model_call_node_accepts_awaitable_tools_callable(
@@ -990,7 +930,7 @@ async def test_model_call_node_accepts_awaitable_tools_callable(
     result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
     assert bound_tools == [(echo_value,)]
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_accepts_async_iterable_tools_callable(
@@ -1022,7 +962,7 @@ async def test_model_call_node_accepts_async_iterable_tools_callable(
     result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
     assert bound_tools == [(echo_value,)]
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_accepts_awaitable_tools(
@@ -1051,7 +991,7 @@ async def test_model_call_node_accepts_awaitable_tools(
     result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
     assert bound_tools == [(echo_value,)]
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_accepts_async_iterable_tools(
@@ -1080,7 +1020,7 @@ async def test_model_call_node_accepts_async_iterable_tools(
     result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
     assert bound_tools == [(echo_value,)]
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_records_reasoning_duration(
@@ -1116,7 +1056,8 @@ async def test_model_call_node_records_reasoning_duration(
 
     graph = ModelCallGraph(config=Config(), tools=[echo_value])
     result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
-    message = result["messages"][0]
+    message = result.get("messages", [])[0]
+    assert isinstance(message, AIMessage)
 
     assert message.additional_kwargs["reasoning_duration_ms"] == 2345
     assert custom_events == [("on_reasoning_done", {"duration_ms": 2345})]
@@ -1153,7 +1094,7 @@ async def test_model_call_node_retries_until_success(
     result = await graph._model_call_node(make_state([HumanMessage(content="hello")]))
 
     assert fake_model.calls == 2
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_resolves_callable_model_selection(
@@ -1188,7 +1129,7 @@ async def test_model_call_node_resolves_callable_model_selection(
 
     assert seen_states == [state]
     assert loaded_models == [resolved_model]
-    assert result["messages"] == [response]
+    assert result.get("messages", []) == [response]
 
 
 async def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
@@ -1204,10 +1145,6 @@ async def test_model_call_node_raises_domain_error_after_non_retry_interrupt(
     monkeypatch.setattr(
         "agent.graphs.model_call.load_chat_model",
         lambda model_selection: FakeModel(),
-    )
-    monkeypatch.setattr(
-        "agent.graphs.model_call.interrupt",
-        lambda payload: {"type": "abort", "prompt": "stop"},
     )
 
     graph = ModelCallGraph(
@@ -1236,10 +1173,6 @@ async def test_model_call_node_preserves_tool_resolution_error(
         "agent.graphs.model_call._adispatch_custom_event_safely",
         record_custom_event,
     )
-    monkeypatch.setattr(
-        "agent.graphs.model_call.interrupt",
-        lambda payload: {"type": "abort", "prompt": "stop"},
-    )
 
     graph = ModelCallGraph(config=Config(), tools=build_tools)
 
@@ -1249,6 +1182,7 @@ async def test_model_call_node_preserves_tool_resolution_error(
         )
 
     assert custom_events[0][0] == "on_model_load_error"
+    assert isinstance(custom_events[0][1], dict)
     assert "tool resolution failed" in custom_events[0][1]["error"]
     assert custom_events[0][1]["model"] is selected_model
 
@@ -1269,7 +1203,7 @@ class PersistedViewCompactor:
 
     async def acompact(self, request) -> CompactionResult:
         self.calls += 1
-        raw_messages = request.runtime.state["messages"]
+        raw_messages = request.runtime.state.get("messages", [])
         view = HumanMessage(content="compact model view", id="compact-view")
         return CompactionResult(
             entries=(
@@ -1321,7 +1255,7 @@ async def test_compaction_sidecar_is_checkpointed_before_business_model_call(
         compactor=compactor,
         context_budget_policy=FixedContextBudgetPolicy(),
     ).get_compiled_graph(checkpointer=saver)
-    config = {"configurable": {"thread_id": "sidecar-before-model"}}
+    config: RunnableConfig = {"configurable": {"thread_id": "sidecar-before-model"}}
 
     result = await graph.ainvoke(
         make_state([HumanMessage(content="raw history")], model="test-model"),
@@ -1332,8 +1266,8 @@ async def test_compaction_sidecar_is_checkpointed_before_business_model_call(
     assert seen_model_inputs == [
         [HumanMessage(content="compact model view", id="compact-view")]
     ]
-    assert result["messages"][0].content == "raw history"
-    assert result["messages"][-1].content == "business response"
+    assert result.get("messages", [])[0].content == "raw history"
+    assert result.get("messages", [])[-1].content == "business response"
     checkpoint = saver.get_tuple(config)
     assert checkpoint is not None
     stored_snapshot = checkpoint.checkpoint["channel_values"]["context_compaction"]
@@ -1358,10 +1292,6 @@ async def test_successful_compaction_sidecar_survives_business_model_failure(
         "agent.graphs.model_call.load_chat_model",
         lambda model_selection: FailingModel(),
     )
-    monkeypatch.setattr(
-        "agent.graphs.model_call.interrupt",
-        lambda payload: {"type": "abort", "prompt": "stop"},
-    )
     compactor = PersistedViewCompactor()
     saver = InMemorySaver()
     graph = ModelCallGraph(
@@ -1370,7 +1300,7 @@ async def test_successful_compaction_sidecar_survives_business_model_failure(
         compactor=compactor,
         context_budget_policy=FixedContextBudgetPolicy(),
     ).get_compiled_graph(checkpointer=saver)
-    config = {"configurable": {"thread_id": "sidecar-model-failure"}}
+    config: RunnableConfig = {"configurable": {"thread_id": "sidecar-model-failure"}}
 
     with pytest.raises(
         ModelCallExecutionError, match="Model call failed after 1 retries"

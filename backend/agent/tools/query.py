@@ -1,16 +1,17 @@
 import json
-from typing import Literal, NotRequired, TypedDict
 
-from langchain.tools import tool
-from langgraph.types import interrupt
+from langchain.tools import ToolRuntime, tool
 from pydantic import Field
 
+from agent.interactions import InteractionContext, ask_user
+from schemas.chat_run import QueryAnswer
+
 from ..base import (
-    BaseInterupt,
+    InputRequest,
 )
 
 
-class QueryInterupt(BaseInterupt):
+class QueryRequest(InputRequest):
     question: str
     firstChoice: str
     firstChoiceDescription: str
@@ -20,16 +21,9 @@ class QueryInterupt(BaseInterupt):
     thirdChoiceDescription: str
 
 
-type AnswerType = Literal["firstChoice", "secondChoice", "thirdChoice", "other"]
-
-
-class Answer(TypedDict):
-    choice: AnswerType
-    note: NotRequired[str | None]
-
-
-@tool(response_format="content_and_artifact", extras={"interrupt": True})
+@tool(response_format="content_and_artifact")
 async def query(
+    runtime: ToolRuntime[InteractionContext],
     question: str = Field(
         ..., description="The specific question to ask the user before continuing."
     ),
@@ -66,22 +60,25 @@ async def query(
     description explaining when that option is appropriate.
     """
 
-    resp: Answer = interrupt(
-        QueryInterupt(
-            type="query",
-            question=question,
-            firstChoice=firstChoice,
-            firstChoiceDescription=firstChoiceDescription,
-            secondChoice=secondChoice,
-            secondChoiceDescription=secondChoiceDescription,
-            thirdChoice=thirdChoice,
-            thirdChoiceDescription=thirdChoiceDescription,
+    ask = runtime.context.ask if runtime.context else ask_user
+    resp = QueryAnswer.model_validate(
+        await ask(
+            QueryRequest(
+                type="query",
+                question=question,
+                firstChoice=firstChoice,
+                firstChoiceDescription=firstChoiceDescription,
+                secondChoice=secondChoice,
+                secondChoiceDescription=secondChoiceDescription,
+                thirdChoice=thirdChoice,
+                thirdChoiceDescription=thirdChoiceDescription,
+            )
         )
     )
 
     content = {
-        "choice": resp["choice"],
-        "note": resp.get("note", None),
+        "choice": resp.choice,
+        "note": resp.note,
     }
     artifact = {
         "question": question,

@@ -77,14 +77,26 @@ class ContextCompactionConfig(BaseModel):
         )
 
 
-class Config(BaseModel):
-    """Configuration for the application."""
-
+class ChatRunsConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
+
+    max_active: int = Field(default=8, ge=1)
+    max_queued_per_thread: int = Field(default=20, ge=1)
+    max_pending_inputs: int = Field(default=32, ge=1)
+    input_timeout_seconds: float | None = Field(default=None, gt=0)
+    replay_events: int = Field(default=2048, ge=1)
+    replay_bytes: int = Field(default=4 * 1024 * 1024, ge=1)
+    subscriber_events: int = Field(default=256, ge=1)
+    terminal_retention_seconds: float = Field(default=1800, gt=0)
+
+
+class Config(BaseModel, frozen=True):
+    """Configuration for the application."""
 
     database: DatabaseConfig = Field(default_factory=SQLiteDatabaseConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     cors: CorsConfig = Field(default_factory=CorsConfig)
+    chat_runs: ChatRunsConfig = Field(default_factory=ChatRunsConfig)
     context_compaction: ContextCompactionConfig = Field(
         default_factory=ContextCompactionConfig
     )

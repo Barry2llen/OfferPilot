@@ -2,10 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ChatMessage from "@/app/components/chat/chat-message";
 import ChatWelcome from "@/app/components/chat/chat-welcome";
-import Button from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
 import type {
-  ChatInterrupt,
   ChatMessage as ChatMessageType,
   ContextCompactionStatus,
 } from "@/app/lib/chat/types";
@@ -18,13 +16,11 @@ interface ChatAreaProps {
   liveMessages: ChatMessageType[];
   isStreaming: boolean;
   historyLoading: boolean;
-  interrupt: ChatInterrupt | null;
   streamError: string | null;
   contextCompactionStatus: ContextCompactionStatus;
   modelContextWindowWarning: string | null;
   threadModelMismatchMessage: string | null;
   hasNoModel: boolean;
-  onRetry: () => void;
   onPrompt: (prompt: string) => void;
 }
 
@@ -33,13 +29,11 @@ export default function ChatArea({
   liveMessages,
   isStreaming,
   historyLoading,
-  interrupt,
   streamError,
   contextCompactionStatus,
   modelContextWindowWarning,
   threadModelMismatchMessage,
   hasNoModel,
-  onRetry,
   onPrompt,
 }: ChatAreaProps) {
   const { t } = useTranslation();
@@ -65,7 +59,6 @@ export default function ChatArea({
     messages,
     liveMessages,
     isStreaming,
-    interrupt,
     streamError,
     contextCompactionStatus,
     isAutoScrollEnabled,
@@ -77,7 +70,7 @@ export default function ChatArea({
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     setIsAutoScrollEnabled(distanceFromBottom <= AUTO_SCROLL_THRESHOLD_PX);
     setShowScrollToBottom(
-      distanceFromBottom >= SHOW_SCROLL_BUTTON_THRESHOLD_PX
+      distanceFromBottom >= SHOW_SCROLL_BUTTON_THRESHOLD_PX,
     );
   };
 
@@ -88,7 +81,7 @@ export default function ChatArea({
   };
 
   return (
-    <div 
+    <div
       className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 relative"
       ref={containerRef}
       onScroll={handleScroll}
@@ -133,13 +126,10 @@ export default function ChatArea({
             )}
 
             {messages.map((msg, index) => (
-              <ChatMessage
-                key={getMessageKey(msg, index)}
-                message={msg}
-              />
+              <ChatMessage key={getMessageKey(msg, index)} message={msg} />
             ))}
 
-            {liveMessages.map((msg, index) =>
+            {liveMessages.map((msg, index) => (
               <ChatMessage
                 key={getMessageKey(msg, index)}
                 message={msg}
@@ -149,7 +139,7 @@ export default function ChatArea({
                   index === liveMessages.length - 1
                 }
               />
-            )}
+            ))}
 
             {isStreaming && liveMessages.length === 0 && (
               <ChatMessage
@@ -159,17 +149,6 @@ export default function ChatArea({
               />
             )}
           </>
-
-          {interrupt && interrupt.type !== "query" && (
-            <div className="flex justify-center py-3">
-              <div className="flex items-center gap-2 rounded-full bg-warning-bg px-4 py-2 text-xs text-warning-text">
-                <span>{t("chat.agentInterrupted", { message: interrupt.message })}</span>
-                <Button variant="primary" size="sm" onClick={onRetry} pill>
-                  {t("chat.retry")}
-                </Button>
-              </div>
-            </div>
-          )}
 
           {streamError && (
             <div className="flex justify-center py-3">
@@ -200,8 +179,18 @@ export default function ChatArea({
             aria-label={t("chat.returnToLatest")}
             title={t("chat.returnToLatest")}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 14l-7 7m0 0l-7-7m7 7V3"
+              />
             </svg>
           </button>
         </div>

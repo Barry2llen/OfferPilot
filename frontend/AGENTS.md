@@ -77,7 +77,7 @@
   `Content-Language`.
 - SSE chat is handled by `aiChatApi.streamChat()` and
   `useChatStream()`. Event types include `thread`, `token`,
-  `reasoning`, `tool_start`, `tool_end`, `tool_error`, `interrupt`,
+  `reasoning`, `tool_start`, `tool_end`, `tool_error`, `input_required`, `input_resolved`, `run_status`, `snapshot`,
   `final`, and `error`.
 - When adding or changing backend fields or endpoints, update
   `app/lib/api/types.ts` and the corresponding API module.
@@ -131,3 +131,13 @@
   loading/error/empty states, and browser console errors.
 - Documentation-only changes do not require a build, but Markdown content and
   the git diff must be checked.
+
+## Chat execution and subscriptions
+
+- Create runs separately from subscriptions. Submit answers by run_id/request_id.
+- Track connection, execution, pending input requests and queue independently.
+- Match tool events by tool_call_id. Never merge tool executions by name.
+- Unmount/navigation closes subscriptions only; explicit stop cancels the run.
+- The next queued run starts after completion, failure or cancellation.
+- Snapshots replace the live projection at their watermark; never append a replay
+  twice or interpret a reconnect as a new user submission.

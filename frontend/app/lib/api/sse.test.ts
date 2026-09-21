@@ -26,10 +26,30 @@ async function collect(events: AsyncIterable<unknown>): Promise<unknown[]> {
 }
 
 describe("openSse", () => {
+  it("announces a GET subscription even when the waiting run has no new events", async () => {
+    let opened = false;
+    await collect(
+      openSse({
+        url: "/ai/chat/runs/run/events?after=5",
+        method: "GET",
+        onOpen: () => {
+          opened = true;
+        },
+        fetchImpl: async (_url, init) => {
+          expect(init?.method).toBe("GET");
+          expect(init?.body).toBeUndefined();
+          return responseFromChunks([": keepalive\n\n"]);
+        },
+      }),
+    );
+    expect(opened).toBe(true);
+  });
   it("parses CRLF, split UTF-8, and an EOF event without a newline", async () => {
     const payload = `event: progress\r\ndata: {"message":"解析中：简历"}\r\n\r\nevent: final\r\ndata: {"type":"final","content":"完成"}`;
     const encoded = new TextEncoder().encode(payload);
-    const splitAt = encoded.findIndex((value, index) => value === 0x80 && index > 0);
+    const splitAt = encoded.findIndex(
+      (value, index) => value === 0x80 && index > 0,
+    );
     const fetchImpl: SseFetch = async () =>
       responseFromChunks([encoded.slice(0, splitAt), encoded.slice(splitAt)]);
 
@@ -49,11 +69,13 @@ describe("openSse", () => {
   it("uses data.type as fallback and passes unknown events through", async () => {
     const fetchImpl: SseFetch = async () =>
       responseFromChunks([
-        "data: {\"type\":\"custom\",\"value\":1}\n\n",
-        "event: future\ndata: {\"value\":2}\n\n",
+        'data: {"type":"custom","value":1}\n\n',
+        'event: future\ndata: {"value":2}\n\n',
       ]);
 
-    await expect(collect(openSse({ url: "/stream", fetchImpl }))).resolves.toEqual([
+    await expect(
+      collect(openSse({ url: "/stream", fetchImpl })),
+    ).resolves.toEqual([
       { event: "custom", data: { type: "custom", value: 1 } },
       { event: "future", data: { value: 2 } },
     ]);
@@ -63,12 +85,12 @@ describe("openSse", () => {
     const fetchImpl: SseFetch = async () =>
       responseFromChunks([
         "event: broken\ndata: {not-json}\n\n",
-        "event: final\ndata: {\"ok\":true}\n\n",
+        'event: final\ndata: {"ok":true}\n\n',
       ]);
 
-    await expect(collect(openSse({ url: "/stream", fetchImpl }))).resolves.toEqual([
-      { event: "final", data: { ok: true } },
-    ]);
+    await expect(
+      collect(openSse({ url: "/stream", fetchImpl })),
+    ).resolves.toEqual([{ event: "final", data: { ok: true } }]);
   });
 
   it("serializes JSON bodies and leaves FormData untouched", async () => {
@@ -95,7 +117,9 @@ describe("openSse", () => {
     );
     expect(calls[1].body).toBe(form);
     expect(new Headers(calls[1].headers).get("Content-Type")).toBeNull();
-    expect(new Headers(calls[0].headers).get("Accept")).toBe("text/event-stream");
+    expect(new Headers(calls[0].headers).get("Accept")).toBe(
+      "text/event-stream",
+    );
   });
 
   it("throws ApiError for HTTP failures and errors when the body is absent", async () => {
@@ -104,12 +128,19 @@ describe("openSse", () => {
         status: 422,
         statusText: "Unprocessable Entity",
       });
-    await expect(collect(openSse({ url: "/failed", fetchImpl: failedFetch }))).rejects.toMatchObject(
-      { name: "ApiError", status: 422, detail: "请求失败" } satisfies Partial<ApiError>,
-    );
+    await expect(
+      collect(openSse({ url: "/failed", fetchImpl: failedFetch })),
+    ).rejects.toMatchObject({
+      name: "ApiError",
+      status: 422,
+      detail: "请求失败",
+    } satisfies Partial<ApiError>);
 
-    const noBodyFetch: SseFetch = async () => new Response(null, { status: 200 });
-    await expect(collect(openSse({ url: "/empty", fetchImpl: noBodyFetch }))).rejects.toThrow();
+    const noBodyFetch: SseFetch = async () =>
+      new Response(null, { status: 200 });
+    await expect(
+      collect(openSse({ url: "/empty", fetchImpl: noBodyFetch })),
+    ).rejects.toThrow();
   });
 
   it("treats abort as normal completion", async () => {
@@ -125,7 +156,9 @@ describe("openSse", () => {
     controller.abort();
 
     await expect(
-      collect(openSse({ url: "/aborted", signal: controller.signal, fetchImpl })),
+      collect(
+        openSse({ url: "/aborted", signal: controller.signal, fetchImpl }),
+      ),
     ).resolves.toEqual([]);
   });
 });

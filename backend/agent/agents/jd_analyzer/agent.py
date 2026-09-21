@@ -6,10 +6,8 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.runnables import Runnable
 from langgraph.constants import END, START
 from langgraph.graph.state import StateGraph
-from langgraph.types import interrupt
 
-from exceptions.agent import ModelCallExecutionError
-from schemas.command import BaseCommand
+from agent.interactions import ask_user
 from schemas.config import Config
 from schemas.job_description import (
     JdFact,
@@ -29,7 +27,7 @@ from utils.custom_events import (
 from utils.logger import logger
 
 from ...annotations.types import MaybeCallable
-from ...base import BaseAgent, BaseInterupt
+from ...base import BaseAgent, InputRequest
 from ...events import ModelCallErrorEvent, ProgressUpdateEvent
 from ...graphs.model_call import ModelCallGraph
 from ...models import load_structured_model
@@ -328,20 +326,13 @@ class JdAnalyzerAgent(BaseAgent[State]):
             logger.error(
                 f"Model call failed after {max_retries} retries for JD extraction."
             )
-            resp: BaseCommand = interrupt(
-                BaseInterupt(
+            await ask_user(
+                InputRequest(
                     type="error",
                     message=f"Model call failed after {max_retries} retries for extracting JD structure.",
                 )
             )
-            match resp["type"]:
-                case "retry":
-                    continue
-                case _:
-                    raise ModelCallExecutionError(
-                        f"Model call failed after {max_retries} retries and received interrupt "
-                        f"with type {resp['type']} and message {resp.get('prompt', '')}"
-                    )
+            continue
 
         await _adispatch_custom_event_safely(
             "on_progress_update",
@@ -542,8 +533,8 @@ class JdAnalyzerAgent(BaseAgent[State]):
                 )
 
             # All retries exhausted
-            resp: BaseCommand = interrupt(
-                BaseInterupt(
+            await ask_user(
+                InputRequest(
                     type="error",
                     message=(
                         f"Model call failed after {max_retries} retries for extracting "
@@ -551,14 +542,7 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     ),
                 )
             )
-            match resp["type"]:
-                case "retry":
-                    continue
-                case _:
-                    raise ModelCallExecutionError(
-                        f"Model call failed after {max_retries} retries and received interrupt "
-                        f"with type {resp['type']} and message {resp.get('prompt', '')}"
-                    )
+            continue
 
     def _build_final_result(
         self,

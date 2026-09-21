@@ -304,6 +304,30 @@ def localize_error(error: BaseException | str, locale: Locale = DEFAULT_LOCALE) 
     """Translate known application errors without rewriting unknown technical details."""
 
     raw = str(error)
+    if locale == "zh-CN":
+        run_errors = {
+            "This run is no longer active.": "此次运行已结束。",
+            "User input is required. Use the interactive chat endpoint.": "此操作需要用户输入，请使用交互式聊天入口。",
+            "Too many pending input requests.": "待回答问题已达到上限。",
+            "This input request is no longer available.": "此问题已失效，无法提交答案。",
+            "Invalid query answer.": "答案选项无效。",
+            "Invalid query note.": "补充说明格式无效。",
+            "Only retry is accepted for this request.": "此请求仅接受重试操作。",
+            "A different answer was already submitted.": "此问题已提交其他答案。",
+            "This input request has expired.": "此问题已过期。",
+            "The idempotency key was used for a different request.": "此提交标识已用于不同的请求。",
+            "This conversation cannot accept a new run.": "此会话当前无法接受新消息。",
+            "The conversation queue is full.": "此会话的排队消息已达到上限。",
+            "Chat run not found.": "未找到此次运行。",
+            "Backend stopped; execution cannot be resumed.": "后端已退出，无法恢复此次执行。",
+            "Backend stopped before execution.": "后端在开始执行前已退出。",
+            "Invalid idempotency key.": "提交标识无效。",
+            "User input timed out.": "等待用户输入已超时。",
+        }
+        if raw in run_errors:
+            return run_errors[raw]
+        if raw.startswith("Legacy query/retry commands"):
+            return "旧版回答接口已停用，请通过运行的问题回答接口提交。"
     name = error.__class__.__name__ if isinstance(error, BaseException) else ""
     lowered = raw.lower()
 

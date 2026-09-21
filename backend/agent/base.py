@@ -224,11 +224,11 @@ class BaseWorkflow[Result = Any, State: StateLike = BaseAgentState](ABC):
         return self._get_result(final_state or state)
 
 
-type InteruptType = Literal["error", "query", "warning", "other"]
+type InputRequestType = Literal["error", "query", "warning", "other"]
 
 
-class BaseInterupt(TypedDict):
-    type: NotRequired[InteruptType]
+class InputRequest(TypedDict):
+    type: NotRequired[InputRequestType]
     message: NotRequired[str | None]
 
 
@@ -246,7 +246,7 @@ __all__ = [
     "BaseAgent",
     "ContextCompactionSnapshot",
     "ContextCompactionStatus",
-    "InteruptType",
-    "BaseInterupt",
+    "InputRequestType",
+    "InputRequest",
     "get",
 ]

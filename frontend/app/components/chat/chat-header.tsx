@@ -9,6 +9,7 @@ const statusLabelKeys: Record<AgentStatus, string> = {
   compacting: "chat.compacting",
   tool_calling: "chat.toolCalling",
   interrupted: "chat.interrupted",
+  waiting_input: "chatRuns.waitingInput",
   error: "chat.error",
 };
 
@@ -18,6 +19,7 @@ const statusColors: Record<AgentStatus, string> = {
   compacting: "bg-violet-500 animate-pulse",
   tool_calling: "bg-sky-blue animate-pulse",
   interrupted: "bg-warning-text",
+  waiting_input: "bg-warning-text",
   error: "bg-error-text",
 };
 

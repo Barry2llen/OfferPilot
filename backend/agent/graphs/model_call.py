@@ -1,4 +1,6 @@
 import asyncio
+from copy import copy
+from dataclasses import replace
 from time import perf_counter
 from typing import override
 from uuid import uuid4
@@ -7,19 +9,17 @@ from langchain.tools import BaseTool, ToolRuntime
 from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END, START
-from langgraph.errors import GraphInterrupt
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
-from langgraph.types import interrupt
 
+from agent.interactions import InteractionContext, ask_user, interaction_context
 from exceptions import AgentStateError, ModelCallExecutionError
-from schemas.command import BaseCommand
 from schemas.config.base import Config
 from utils.custom_events import _adispatch_custom_event_safely
 from utils.json import jsonify
 from utils.logger import logger
 
-from ..base import BaseAgentState, BaseGraph, BaseInterupt
+from ..base import BaseAgentState, BaseGraph, InputRequest
 from ..compaction import (
     CompactionRequest,
     Compactor,
@@ -66,21 +66,6 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     system_prompts: PromptMessageBuilder[State]
     tools: ToolsBuilder[State]
 
-    def _add_interrupt_tool(
-        self, message_id: str, tool_call: ToolCall, tool: BaseTool
-    ) -> str:
-        logger.debug(
-            lambda: (
-                f"Tool {tool.name} is an interrupt tool, skip calling it synchronously."
-            )
-        )
-        self._interrupt_tools.append((message_id, tool_call, tool))
-        return "[INTERRUPT_TOOL_CALLED]"
-
-    @staticmethod
-    def _is_interrupt_tool(tool: BaseTool) -> bool:
-        return tool.extras is not None and tool.extras.get("interrupt", False)
-
     @staticmethod
     def _convert_tool_message(
         result: object,
@@ -126,7 +111,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     def _inject_runtime_if_requested(
         tool_call: ToolCall,
         tool: BaseTool,
-        runtime: ToolRuntime[None, State],
+        runtime: ToolRuntime[InteractionContext | None, State],
     ) -> ToolCall:
         if not (
             ModelCallGraph._schema_has_field(
@@ -155,7 +140,6 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
-        self._interrupt_tools: list[tuple[str, ToolCall, BaseTool]] = []
         self.compactor = compactor
         self.context_budget_policy = (
             context_budget_policy
@@ -183,6 +167,10 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             }  # type: ignore[return-value]
 
         try:
+            context = interaction_context.get()
+            if context and context.resolve_model and context.source == "supervisor":
+                state = copy(state)
+                state["model"] = await context.resolve_model()
             model_selection = self._resolve_model_selection(state)
             tools = await resolve_tools(self.tools, self.get_runtime(state))
             system_prompts = self.system_prompts(self.get_runtime(state))
@@ -259,13 +247,8 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 max_attempts=1,
             ),
         )
-        response: BaseCommand = interrupt(BaseInterupt(type="error", message=message))
-        if response["type"] == "retry":
-            return {"context_compaction_error": None}  # type: ignore[return-value]
-        raise ModelCallExecutionError(
-            f"{message} Interrupt received with type {response['type']} "
-            f"and message {response.get('prompt', '')}"
-        )
+        await ask_user(InputRequest(type="error", message=message))
+        return {"context_compaction_error": None}  # type: ignore[return-value]
 
     @staticmethod
     def _route_after_context_compaction(state: State) -> str:
@@ -276,7 +259,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     async def _tool_node(
         self,
         state: State,
-        runtime: Runtime[None],
+        runtime: Runtime[InteractionContext | None],
         config: RunnableConfig | None = None,
     ) -> State:
         """
@@ -342,12 +325,19 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 )
 
             tool = tools_dict[name]
+            context = interaction_context.get()
             injected_tool_call = self._inject_runtime_if_requested(
                 tool_call,
                 tool,
-                ToolRuntime[None, State](
+                ToolRuntime[InteractionContext | None, State](
                     state=state,
-                    context=runtime.context,
+                    context=replace(
+                        context,
+                        tool_call_id=tool_call_id,
+                        source=name,
+                    )
+                    if context is not None
+                    else None,
                     tool_call_id=tool_call_id,
                     config=config,
                     stream_writer=runtime.stream_writer,
@@ -359,16 +349,29 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
             message_id = str(uuid4())
             try:
-                result = (
-                    self._add_interrupt_tool(message_id, injected_tool_call, tool)
-                    if self._is_interrupt_tool(tool)
-                    else await tool.ainvoke(injected_tool_call, config)
+                context = interaction_context.get()
+                token = (
+                    interaction_context.set(
+                        replace(context, tool_call_id=tool_call_id, source=name)
+                    )
+                    if context
+                    else None
                 )
-            except GraphInterrupt:
-                logger.warning(
-                    f"Tool {name} raised GraphInterrupt, treating it as an interrupt tool."
-                )
-                result = self._add_interrupt_tool(message_id, injected_tool_call, tool)
+                try:
+                    await _adispatch_custom_event_safely(
+                        "on_app_tool_start",
+                        {
+                            "tool_call_id": tool_call_id,
+                            "tool_name": name,
+                            "input": args,
+                        },
+                    )
+                    result = await tool.ainvoke(injected_tool_call, config)
+                finally:
+                    if token is not None:
+                        interaction_context.reset(token)
+            except (TimeoutError, ModelCallExecutionError):
+                raise
             except Exception as e:
                 logger.error(f"Error calling tool {name} with args {args}: {e}")
                 await _adispatch_custom_event_safely(
@@ -380,65 +383,32 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                         tool_call_id=tool_call_id,
                     ),
                 )
-                return ToolMessage(
+                result = ToolMessage(
                     content=f"Error calling tool {name} with args {args}: {e}",
                     tool_call_id=tool_call_id,
                     name=name,
                     status="error",
                 )
 
-            return self._convert_tool_message(result, tool_call, message_id, tool)
-
-        results = await asyncio.gather(
-            *(_call_tool(tool_call) for tool_call in tool_calls)
-        )
-        return {"messages": list(results)}  # type: ignore
-
-    async def _exec_interrupt_tool_node(
-        self,
-        state: State,
-        config: RunnableConfig | None = None,
-    ) -> State:
-        """
-        Execute tools that may cause an interrupt one by one.
-        """
-
-        if len(self._interrupt_tools) == 0:
-            return state
-
-        message_id, tool_call, tool = self._interrupt_tools[-1]
-        tool_call_id = tool_call.get("id") or ""
-
-        try:
-            result = await tool.ainvoke(tool_call, config)
-        except GraphInterrupt:
-            raise
-        except Exception as e:
-            logger.error(
-                f"Error calling interrupt tool {tool.name} with args {tool_call['args']}: {e}"
-            )
+            message = self._convert_tool_message(result, tool_call, message_id, tool)
+            context = interaction_context.get()
+            if context and context.source == "supervisor":
+                context.messages.append(message)
             await _adispatch_custom_event_safely(
-                "on_tool_call_error",
-                ToolCallErrorEvent(
-                    error=str(e),
-                    tool_name=tool.name,
-                    args=tool_call["args"],
-                    tool_call_id=tool_call_id,
-                ),
+                "on_app_tool_end",
+                {"tool_call_id": tool_call_id, "tool_name": name, "output": message},
             )
-            result = ToolMessage(
-                content=f"Error calling interrupt tool {tool.name} with args {tool_call['args']}: {e}",
-                tool_call_id=tool_call_id,
-                name=tool.name,
-                status="error",
-            )
+            return message
 
-        self._interrupt_tools.pop()
-        return {
-            "messages": [
-                self._convert_tool_message(result, tool_call, message_id, tool)
-            ]
-        }  # type: ignore
+        tasks = [asyncio.create_task(_call_tool(call)) for call in tool_calls]
+        try:
+            results = await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        return {"messages": list(results)}  # type: ignore
 
     async def _model_call_node(self, state: State) -> State:
         """
@@ -447,6 +417,10 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         """
 
         while True:
+            context = interaction_context.get()
+            if context and context.resolve_model and context.source == "supervisor":
+                state = copy(state)
+                state["model"] = await context.resolve_model()
             model_selection = self._resolve_model_selection(state)
             try:
                 tools = await resolve_tools(self.tools, self.get_runtime(state))
@@ -466,14 +440,9 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     ),
                 )
 
-                resp: BaseCommand = interrupt(BaseInterupt(type="error", message=msg))
+                await ask_user(InputRequest(type="error", message=msg))
 
-                if resp["type"] == "retry":
-                    continue
-                else:
-                    raise ModelCallExecutionError(
-                        f"Model loading failed with error: {msg}. Interrupt received with type {resp['type']} and message {resp.get('prompt', '')}"
-                    )
+                continue
 
         model_input = [
             *system_prompts,
@@ -504,6 +473,9 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                             "on_reasoning_done",
                             {"duration_ms": duration_ms},
                         )
+                    context = interaction_context.get()
+                    if context and context.source == "supervisor":
+                        context.messages.append(response)
                     return {"messages": [response]}  # type: ignore
                 except Exception as e:
                     await _adispatch_custom_event_safely(
@@ -518,21 +490,14 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
             logger.error(f"Model call failed after {max_retries} retries.")
 
-            resp: BaseCommand = interrupt(
-                BaseInterupt(
+            await ask_user(
+                InputRequest(
                     type="error",
                     message=f"Model call failed after {max_retries} retries.",
                 )
             )
 
-            if resp["type"] == "retry":
-                continue
-            else:
-                raise ModelCallExecutionError(
-                    "Model call failed after "
-                    f"{max_retries} retries and code received interrupt with type "
-                    f"{resp['type']} and message {resp.get('prompt', '')}"
-                )
+            continue
 
     def _dicide_next_action(self, state: State) -> str:
         """
@@ -594,7 +559,6 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         graph = StateGraph(BaseAgentState)
         graph.add_node("model", self._model_call_node)
         graph.add_node("tool", self._tool_node)  # type: ignore
-        graph.add_node("interrupt_tool", self._exec_interrupt_tool_node)
         if self.compactor is not None:
             graph.add_node("compact", self._prepare_context_node)
             graph.add_node(
@@ -618,16 +582,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         graph.add_conditional_edges(
             "model", self._dicide_next_action, {"tool": "tool", "end": END}
         )
-        graph.add_edge("tool", "interrupt_tool")
         next_model_node = "compact" if self.compactor is not None else "model"
         graph.add_conditional_edges(
-            "interrupt_tool",
-            lambda state: (
-                True
-                if len(self._interrupt_tools) > 0
-                else self._dicide_after_tool(state)
-            ),
-            {True: "interrupt_tool", "model": next_model_node, "end": END},
+            "tool",
+            self._dicide_after_tool,
+            {"model": next_model_node, "end": END},
         )
 
         return graph

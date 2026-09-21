@@ -1,0 +1,16 @@
+{
+  "include": ["backend"],
+  "exclude": [
+    "backend/.venv",
+    "backend/dev",
+    "backend/data",
+    "backend/logs",
+    "backend/build",
+    "backend/dist"
+  ],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.13",
+  "venvPath": "backend",
+  "venv": ".venv",
+  "executionEnvironments": [{ "root": "backend" }]
+}
