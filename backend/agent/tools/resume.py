@@ -1,9 +1,9 @@
 from langchain_core.tools import tool
 
-from ..base import BaseInterupt
+from ..base import InputRequest
 
 
-class ListResumesInterupt(BaseInterupt): ...
+class ListResumesRequest(InputRequest): ...
 
 
 @tool(response_format="content_and_artifact")

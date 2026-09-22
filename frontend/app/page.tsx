@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { aiChatApi } from "@/app/lib/api/ai";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
 import { useChatStream } from "@/app/hooks/use-chat-stream";
@@ -9,8 +8,9 @@ import ChatHeader from "@/app/components/chat/chat-header";
 import ChatInput, {
   type ChatComposerPayload,
 } from "@/app/components/chat/chat-input";
+import ChatRunPanel from "@/app/components/chat/chat-run-panel";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
-import type { ModelSelectionResponse, QueryChoice } from "@/app/lib/api/types";
+import type { ModelSelectionResponse } from "@/app/lib/api/types";
 import { shouldWarnForSmallerContextWindow } from "@/app/lib/chat/model-context-warning";
 
 export default function Home() {
@@ -26,27 +26,31 @@ export default function Home() {
   const {
     messages,
     liveMessages,
-    interrupt,
     streamError,
     isStreaming,
     contextCompactionStatus,
     startChat,
     stopStream,
-    retry,
-    answerQuery,
-    loadHistory,
+    runs,
+    pendingInputs,
+    connectionState,
+    submitting,
+    historyLoading,
+    answerInput,
+    cancelRun,
+    cancelQueued,
     clearMessages,
-    resetStreamingState,
   } = useChatStream();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [models, setModels] = useState<ModelSelectionResponse[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [modelContextWindowWarning, setModelContextWindowWarning] = useState(false);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [modelContextWindowWarning, setModelContextWindowWarning] =
+    useState(false);
 
   const currentModel = models.find(
-    (model) => model.id === state.currentModelSelection
+    (model) => model.id === state.currentModelSelection,
   );
   const threadModelMismatchMessage =
     state.currentThreadRequiresImageInput &&
@@ -65,6 +69,7 @@ export default function Home() {
       .then((data) => {
         if (!mounted) return;
         setModels(data);
+        setModelsLoaded(true);
       })
       .catch(() => {
         if (!mounted) return;
@@ -79,6 +84,15 @@ export default function Home() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      modelsLoaded &&
+      state.currentModelSelection !== null &&
+      !models.some((model) => model.id === state.currentModelSelection)
+    )
+      setModelSelection(null);
+  }, [modelsLoaded, models, state.currentModelSelection, setModelSelection]);
 
   const handleSend = useCallback(
     (payload: ChatComposerPayload, onAccepted: () => void) => {
@@ -96,7 +110,7 @@ export default function Home() {
           fileIds: payload.fileIds,
           draftAttachments: payload.draftAttachments,
           onAccepted,
-        }
+        },
       );
     },
     [
@@ -104,82 +118,26 @@ export default function Home() {
       startChat,
       state.currentModelSelection,
       state.currentThreadId,
-    ]
-  );
-
-  const handleRetry = useCallback(() => {
-    if (!state.currentModelSelection || !state.currentThreadId) return;
-    retry(state.currentModelSelection, state.currentThreadId);
-  }, [
-    retry,
-    state.currentModelSelection,
-    state.currentThreadId,
-  ]);
-
-  const handleAnswerQuery = useCallback(
-    (choice: QueryChoice, note?: string | null) => {
-      if (!state.currentModelSelection || !state.currentThreadId) return;
-      answerQuery(state.currentModelSelection, state.currentThreadId, choice, note);
-    },
-    [
-      answerQuery,
-      state.currentModelSelection,
-      state.currentThreadId,
-    ]
+    ],
   );
 
   const handleSelectThread = useCallback(
-    async (threadId: string) => {
-      stopStream();
+    (threadId: string) => {
+      if (threadId === state.currentThreadId) return;
       setModelContextWindowWarning(false);
-      if (!threadId) {
-        resetStreamingState();
-        clearMessages();
-        setThreadId(null);
-        setThreadRequiresImageInput(false);
-        return;
-      }
-      setHistoryLoading(true);
-      setThreadId(threadId);
-      try {
-        const history = await aiChatApi.getHistory(threadId);
-        setThreadRequiresImageInput(history.requires_image_input);
-        loadHistory(history.messages, history.context_compacted);
-      } catch {
-        resetStreamingState();
-        clearMessages();
-        setThreadId(null);
-        setThreadRequiresImageInput(false);
-      } finally {
-        setHistoryLoading(false);
-      }
+      setThreadId(threadId || null);
+      setThreadRequiresImageInput(false);
     },
-    [
-      clearMessages,
-      loadHistory,
-      resetStreamingState,
-      setThreadId,
-      setThreadRequiresImageInput,
-      stopStream,
-    ]
+    [setThreadId, setThreadRequiresImageInput, state.currentThreadId],
   );
 
   const handleNewChat = useCallback(() => {
-    stopStream();
     setModelContextWindowWarning(false);
-    resetStreamingState();
     clearMessages();
     setThreadId(null);
     setThreadRequiresImageInput(false);
     setAgentStatus("idle");
-  }, [
-    clearMessages,
-    resetStreamingState,
-    setAgentStatus,
-    setThreadId,
-    setThreadRequiresImageInput,
-    stopStream,
-  ]);
+  }, [clearMessages, setAgentStatus, setThreadId, setThreadRequiresImageInput]);
 
   const handleCloseSidebar = useCallback(() => {
     setSidebarOpen(false);
@@ -204,7 +162,13 @@ export default function Home() {
         ),
       );
     },
-    [messages.length, models, setModelSelection, state.currentModelSelection, state.currentThreadId]
+    [
+      messages.length,
+      models,
+      setModelSelection,
+      state.currentModelSelection,
+      state.currentThreadId,
+    ],
   );
 
   const handleQuickPrompt = useCallback(
@@ -220,7 +184,7 @@ export default function Home() {
       startChat,
       state.currentModelSelection,
       state.currentThreadId,
-    ]
+    ],
   );
 
   const hasNoModel = state.currentModelSelection === null;
@@ -254,26 +218,31 @@ export default function Home() {
           liveMessages={liveMessages}
           isStreaming={isStreaming}
           historyLoading={historyLoading}
-          interrupt={interrupt}
           streamError={streamError}
           contextCompactionStatus={contextCompactionStatus}
           modelContextWindowWarning={modelContextWindowWarningMessage}
           threadModelMismatchMessage={threadModelMismatchMessage}
           hasNoModel={hasNoModel}
-          onRetry={handleRetry}
           onPrompt={handleQuickPrompt}
         />
 
+        <ChatRunPanel
+          runs={runs}
+          inputs={pendingInputs}
+          connectionState={connectionState}
+          onAnswer={answerInput}
+          onCancel={cancelRun}
+          onCancelQueued={cancelQueued}
+        />
         <ChatInput
           onSend={handleSend}
           onStop={stopStream}
-          onRetry={handleRetry}
           isStreaming={isStreaming}
-          isInterrupted={!!interrupt}
           disabled={hasNoModel}
-          noticeMessage={threadModelMismatchMessage ?? modelContextWindowWarningMessage}
-          interrupt={interrupt}
-          onAnswerQuery={handleAnswerQuery}
+          submitting={submitting}
+          noticeMessage={
+            threadModelMismatchMessage ?? modelContextWindowWarningMessage
+          }
         />
       </div>
     </div>

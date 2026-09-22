@@ -1,14 +1,24 @@
+import asyncio
 import json
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse
-from langchain_core.messages import BaseMessage
-from langgraph.types import Command
+from langchain_core.messages import message_to_dict
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -21,9 +31,7 @@ from db.repositories import (
 from exceptions import (
     ChatFileNotFoundError,
     ChatFileProcessingError,
-    ChatModelLoadError,
     EmptyChatFileContentError,
-    ModelCallExecutionError,
     ResumeValidationError,
     UnsupportedChatFileError,
 )
@@ -36,15 +44,14 @@ from schemas.ai import (
     AIChatStreamRequest,
 )
 from schemas.chat_file import ChatFileDetail, ChatFileListItem
+from schemas.chat_run import ChatRunResponse, InputAnswer
 from services import (
     ChatFileService,
     ChatHistoryService,
     ModelSelectionService,
     UploadedChatFile,
 )
-from utils.i18n import localize_error, request_locale, translate
-from utils.stream import render_sse_event, to_jsonable
-from utils.tool_outputs import summarize_tool_output
+from utils.i18n import request_locale
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -256,151 +263,6 @@ def _make_thread_id(thread_id: str | None) -> str:
     return thread_id or uuid4().hex
 
 
-def _agent_config(thread_id: str, *, recursion_limit: int) -> dict:
-    return {
-        "configurable": {"thread_id": thread_id},
-        "recursion_limit": recursion_limit,
-    }
-
-
-def _extract_content(messages: list[BaseMessage]) -> Any:
-    if not messages:
-        return ""
-
-    last_message = messages[-1]
-    content = last_message.content
-    if _has_display_content(content):
-        if isinstance(content, str):
-            return content
-        return to_jsonable(content)
-
-    reasoning_content = _extract_message_reasoning(last_message)
-    if reasoning_content:
-        return reasoning_content
-
-    return to_jsonable(content)
-
-
-def _has_display_content(content: Any) -> bool:
-    if isinstance(content, str):
-        return bool(content.strip())
-    if isinstance(content, list | tuple):
-        return len(content) > 0
-    return content is not None
-
-
-def _extract_message_reasoning(message: Any) -> str:
-    additional_kwargs = getattr(message, "additional_kwargs", None)
-    if not isinstance(additional_kwargs, dict):
-        return ""
-
-    reasoning_content = additional_kwargs.get("reasoning_content")
-    if isinstance(reasoning_content, str) and reasoning_content.strip():
-        return reasoning_content
-    return ""
-
-
-def _extract_chunk_text(chunk: Any) -> str:
-    content = getattr(chunk, "content", chunk)
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict) and isinstance(item.get("text"), str):
-                parts.append(item["text"])
-        return "".join(parts)
-    return ""
-
-
-def _extract_chunk_reasoning(chunk: Any) -> str:
-    additional_kwargs = getattr(chunk, "additional_kwargs", None)
-    if not isinstance(additional_kwargs, dict):
-        return ""
-
-    reasoning_content = additional_kwargs.get("reasoning_content")
-    return reasoning_content if isinstance(reasoning_content, str) else ""
-
-
-def _extract_reasoning_duration_ms(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int) and value >= 0:
-        return value
-    if isinstance(value, float) and value >= 0:
-        return round(value)
-    return None
-
-
-def _extract_event_output(event: dict[str, Any]) -> dict[str, Any] | None:
-    data = event.get("data")
-    if not isinstance(data, dict):
-        return None
-    output = data.get("output")
-    return output if isinstance(output, dict) and "messages" in output else None
-
-
-def _extract_interrupt_payloads(event: dict[str, Any]) -> list[dict[str, Any]]:
-    data = event.get("data")
-    if not isinstance(data, dict):
-        return []
-
-    return _extract_interrupt_payloads_from_chunk(data.get("chunk"))
-
-
-def _extract_interrupt_payloads_from_chunk(chunk: Any) -> list[dict[str, Any]]:
-    if not isinstance(chunk, dict) or "__interrupt__" not in chunk:
-        return []
-
-    interrupts = chunk["__interrupt__"]
-    if not isinstance(interrupts, list | tuple):
-        interrupts = [interrupts]
-
-    payloads: list[dict[str, Any]] = []
-    for interrupt in interrupts:
-        value = getattr(interrupt, "value", interrupt)
-        interrupt_id = getattr(interrupt, "id", None)
-
-        if isinstance(value, dict):
-            payload: dict[str, Any] = {
-                "type": value.get("type", "other"),
-                "message": value.get("message"),
-            }
-            extra = {
-                key: item
-                for key, item in value.items()
-                if key not in {"type", "message"}
-            }
-            payload.update(extra)
-        else:
-            payload = {
-                "type": "other",
-                "message": str(value),
-            }
-
-        if interrupt_id is not None:
-            payload["id"] = interrupt_id
-        payloads.append(payload)
-
-    return payloads
-
-
-def _is_tool_error_output(output: Any) -> bool:
-    if getattr(output, "status", None) == "error":
-        return True
-    if isinstance(output, dict) and output.get("status") == "error":
-        return True
-    return False
-
-
-def _is_query_interrupt_tool_error(tool_name: str, detail: str) -> bool:
-    if tool_name != "query":
-        return False
-    return "Interrupt(" in detail and "type" in detail and "query" in detail
-
-
 def _get_model_selection(selection_id: int, session: Session):
     selection_service = ModelSelectionService(ModelSelectionRepository(session))
     selection = selection_service.get_by_id(selection_id)
@@ -422,6 +284,18 @@ def _raise_chat_input_error(error: Exception) -> None:
     if isinstance(error, ChatFileProcessingError):
         raise HTTPException(status_code=422, detail=str(error)) from error
     raise error
+
+
+def _read_chat_history(
+    request: Request, thread_id: str
+) -> AIChatHistoryDetailResponse | None:
+    # The worker owns the session through both database reads and message conversion.
+    with request.app.state.database.get_session_factory()() as session:
+        return ChatHistoryService(
+            CheckpointRepository(session),
+            request.app.state.checkpointer,
+            ChatThreadFileRepository(session),
+        ).get_history(thread_id)
 
 
 @router.get(
@@ -449,14 +323,22 @@ async def list_chat_histories(
         description="Number of items to skip.",
         examples=[0],
     ),
-    session: Session = Depends(_get_request_db_session),
 ) -> AIChatHistoryListResponse:
-    history_service = ChatHistoryService(
-        CheckpointRepository(session),
-        request.app.state.checkpointer,
-        ChatThreadFileRepository(session),
-    )
-    return history_service.list_histories(limit=limit, offset=offset)
+    manager = request.app.state.chat_runs
+    page = await asyncio.to_thread(manager.repository.conversation_page, limit, offset)
+    items = []
+    for row in page:
+        if row["has_checkpoint"]:
+            history = await asyncio.to_thread(
+                _read_chat_history, request, row["thread_id"]
+            )
+            if history is not None:
+                items.append(history)
+        else:
+            pending = await manager.unstarted_history(row["thread_id"])
+            if pending is not None:
+                items.append(AIChatHistoryDetailResponse(**pending))
+    return AIChatHistoryListResponse(items=items, limit=limit, offset=offset)
 
 
 @router.get(
@@ -479,14 +361,12 @@ async def list_chat_histories(
 async def get_chat_history(
     thread_id: str,
     request: Request,
-    session: Session = Depends(_get_request_db_session),
 ) -> AIChatHistoryDetailResponse:
-    history_service = ChatHistoryService(
-        CheckpointRepository(session),
-        request.app.state.checkpointer,
-        ChatThreadFileRepository(session),
-    )
-    history = history_service.get_history(thread_id)
+    history = await asyncio.to_thread(_read_chat_history, request, thread_id)
+    if history is None:
+        pending = await request.app.state.chat_runs.unstarted_history(thread_id)
+        if pending is not None:
+            history = AIChatHistoryDetailResponse(**pending)
     if history is None:
         raise HTTPException(
             status_code=404,
@@ -501,7 +381,8 @@ async def get_chat_history(
     summary="Delete AI conversation history",
     description=(
         "Delete the LangGraph checkpoint, checkpoint blobs, and pending writes for a thread_id. "
-        "The conversation cannot be retried or continued after deletion."
+        "Deletion waits for admitted preparations and active execution before deleting history and attachment links. "
+        "Failed cleanup keeps the conversation closed to new runs until deletion succeeds."
     ),
     response_description="Deleted successfully with no response body.",
     responses={
@@ -518,20 +399,25 @@ async def delete_chat_history(
         description="Conversation thread ID to delete.",
         examples=["conversation-001"],
     ),
-    session: Session = Depends(_get_request_db_session),
 ) -> Response:
-    history_service = ChatHistoryService(
-        CheckpointRepository(session),
-        request.app.state.checkpointer,
-    )
-    deleted = history_service.delete_history(thread_id)
+    def cleanup() -> bool:
+        with request.app.state.database.get_session_factory()() as session:
+            history_service = ChatHistoryService(
+                CheckpointRepository(session),
+                request.app.state.checkpointer,
+            )
+            deleted = history_service.delete_history(thread_id)
+            _build_chat_file_service(request, session).delete_thread_attachments(
+                thread_id
+            )
+            session.commit()
+            return deleted
+
+    deleted = await request.app.state.chat_runs.delete_thread(thread_id, cleanup)
     if not deleted:
         raise HTTPException(
-            status_code=404,
-            detail=f"Chat history not found: {thread_id}",
+            status_code=404, detail=f"Chat history not found: {thread_id}"
         )
-    _build_chat_file_service(request, session).delete_thread_attachments(thread_id)
-    session.commit()
     return Response(status_code=204)
 
 
@@ -617,10 +503,19 @@ async def get_chat_file_raw(
     summary="Call the AI chat API",
     description=(
         "Call SupervisorAgent with the selected model and persist conversation state through "
-        "DatabaseCheckpointer. Supports JSON requests and multipart requests with files[] / file_ids[]."
+        "DatabaseCheckpointer. Supports JSON requests and multipart requests with files[] / file_ids[]. "
+        "Idempotency-Key retries return the persisted result even after the event cache expires. "
+        "Requests wait in the conversation FIFO, including behind runs awaiting human input. "
+        "A missing key is generated; an empty key or one longer than 128 characters returns 422. "
+        "Reusing a key with a different submission locale returns 409. "
+        "Runs needing human input fail with 502; use the interactive endpoint instead."
     ),
     response_description="Returns the AI response and the conversation thread ID.",
     responses={
+        409: _error_response(
+            "Conflicting idempotency key or an old run whose result cannot be reliably recovered.",
+            example="The result of this run is no longer available.",
+        ),
         404: _error_response(
             "The requested model selection was not found.",
             example="Model selection not found: 1",
@@ -639,347 +534,270 @@ async def get_chat_file_raw(
         ),
     },
 )
-async def chat(
-    request: Request,
-    session: Session = Depends(_get_request_db_session),
-) -> AIChatResponse:
-    payload = await _parse_ai_chat_payload(request, stream=False)
-    selection = _get_model_selection(payload.selection_id, session)
-    thread_id = _make_thread_id(payload.thread_id)
-    chat_file_service = _build_chat_file_service(request, session)
-    prepared_prompt = None
-    try:
-        prepared_prompt = chat_file_service.prepare_prompt(
-            thread_id=thread_id,
-            selection=selection,
-            prompt=payload.prompt or "",
-            file_ids=payload.file_ids,
-            uploaded_files=payload.uploaded_files,
-        )
-        state = {
-            "model": selection,
-            "messages": [prepared_prompt.human_message],
-        }
-        final_state = await request.app.state.supervisor_agent.ainvoke(
-            state,
-            _agent_config(
-                thread_id,
-                recursion_limit=request.app.state.config.graph_recursion_limit,
-            ),
-        )
-        interrupt_payloads = _extract_interrupt_payloads_from_chunk(final_state)
-        if interrupt_payloads:
-            session.rollback()
-            if prepared_prompt is not None:
-                for path in prepared_prompt.created_file_paths:
-                    path.unlink(missing_ok=True)
-            message = next(
-                (
-                    payload["message"]
-                    for payload in interrupt_payloads
-                    if isinstance(payload.get("message"), str)
-                    and payload["message"].strip()
-                ),
-                translate("agentInterrupted", request_locale(request)),
-            )
-            raise HTTPException(status_code=502, detail=message)
-        session.commit()
-    except (
-        ChatFileNotFoundError,
-        ChatFileProcessingError,
-        EmptyChatFileContentError,
-        ResumeValidationError,
-        UnsupportedChatFileError,
-    ) as error:
-        session.rollback()
-        _raise_chat_input_error(error)
-    except (ChatModelLoadError, ModelCallExecutionError, ValueError) as error:
-        session.rollback()
-        if prepared_prompt is not None:
-            for path in prepared_prompt.created_file_paths:
-                path.unlink(missing_ok=True)
-        raise HTTPException(status_code=502, detail=str(error)) from error
+async def chat(request: Request) -> AIChatResponse:
+    run = await _submit_chat_run(request, interactive=False)
+    manager = request.app.state.chat_runs
+    result = await manager.result(run["run_id"])
+    return AIChatResponse(thread_id=run["thread_id"], content=result)
 
-    return AIChatResponse(
+
+def _chat_fingerprint(
+    payload: ParsedAIChatPayload, interactive: bool, locale: str
+) -> str:
+    return sha256(
+        json.dumps(
+            {
+                "thread_id": payload.thread_id,
+                "selection_id": payload.selection_id,
+                "prompt": payload.prompt,
+                "command": payload.command.model_dump() if payload.command else None,
+                "file_ids": payload.file_ids,
+                "interactive": interactive,
+                "locale": locale,
+                "uploads": [
+                    (f.filename, f.content_type, sha256(f.content).hexdigest())
+                    for f in payload.uploaded_files
+                ],
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+
+
+async def _submit_chat_run(request: Request, *, interactive=True):
+    payload = await _parse_ai_chat_payload(request, stream=True)
+    if payload.command and payload.command.type != "prompt":
+        raise HTTPException(
+            410,
+            "Legacy query/retry commands are no longer supported. Submit an answer to /ai/chat/runs/{run_id}/inputs/{request_id}.",
+        )
+    key = request.headers.get("Idempotency-Key")
+    if key is None:
+        key = uuid4().hex
+    if not 1 <= len(key) <= 128:
+        raise HTTPException(422, "Invalid idempotency key.")
+    fingerprint = await asyncio.to_thread(
+        _chat_fingerprint, payload, interactive, request_locale(request)
+    )
+    manager = request.app.state.chat_runs
+    previous = await manager.lookup_key(key, fingerprint)
+    if previous:
+        return previous
+    thread_id = _make_thread_id(payload.thread_id)
+
+    def prepare():
+        with request.app.state.database.get_session_factory()() as session:
+            selection = _get_model_selection(payload.selection_id, session)
+            service = _build_chat_file_service(request, session)
+            prompt = (
+                (payload.command.prompt if payload.command else None)
+                or payload.prompt
+                or ""
+            )
+            try:
+                prepared = service.prepare_prompt(
+                    thread_id=thread_id,
+                    selection=selection,
+                    prompt=prompt,
+                    file_ids=payload.file_ids,
+                    uploaded_files=payload.uploaded_files,
+                )
+                prepared.human_message.id = uuid4().hex
+                session.commit()
+            except (
+                ChatFileNotFoundError,
+                ChatFileProcessingError,
+                EmptyChatFileContentError,
+                ResumeValidationError,
+                UnsupportedChatFileError,
+            ) as error:
+                session.rollback()
+                _raise_chat_input_error(error)
+            return {
+                "prompt": prompt,
+                "selection_id": payload.selection_id,
+                "human_message": message_to_dict(prepared.human_message),
+                "file_ids": [a.file_id for a in prepared.attachments],
+                "resolved_attachments": [
+                    a.model_dump(mode="json") for a in prepared.attachments
+                ],
+                "requires_image_input": prepared.requires_image_input,
+                "attachment_count": prepared.attachment_count,
+                "locale": request_locale(request),
+            }
+
+    return await manager.enqueue(
+        key=key,
+        fingerprint=fingerprint,
         thread_id=thread_id,
-        content=_extract_content(final_state.get("messages", [])),
+        prepare=prepare,
+        interactive=interactive,
+    )
+
+
+_RUN_ERRORS: dict[int | str, dict[str, Any]] = {
+    code: _error_response(description, example=description)
+    for code, description in {
+        404: "Chat run not found.",
+        409: "Conflicting request or unavailable conversation.",
+        410: "The input request has expired.",
+        422: "Invalid submission or answer.",
+        429: "The conversation queue is full.",
+    }.items()
+}
+
+_RUN_BODY = {
+    "requestBody": {
+        "required": True,
+        "content": {
+            media: {
+                "schema": {
+                    "type": "object",
+                    "required": ["selection_id"],
+                    "properties": {
+                        "selection_id": {
+                            "type": "integer",
+                            "description": "Model selection ID.",
+                            "example": 1,
+                        },
+                        "prompt": {
+                            "type": "string",
+                            "description": "User message; optional with attachments.",
+                        },
+                        "thread_id": {
+                            "type": "string",
+                            "description": "Existing conversation ID; omitted for a new conversation.",
+                        },
+                        "file_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Previously uploaded attachment IDs.",
+                        },
+                        **(
+                            {
+                                "files": {
+                                    "type": "array",
+                                    "items": {"type": "string", "format": "binary"},
+                                }
+                            }
+                            if media == "multipart/form-data"
+                            else {}
+                        ),
+                    },
+                }
+            }
+            for media in ("application/json", "multipart/form-data")
+        },
+    }
+}
+
+
+@router.post(
+    "/chat/runs",
+    openapi_extra=_RUN_BODY,
+    response_model=ChatRunResponse,
+    status_code=202,
+    summary="Create a chat run",
+    description="Accept JSON or multipart chat input and enqueue it in conversation order. Use Idempotency-Key to safely retry a submission. Missing keys are generated; empty keys or keys longer than 128 characters return 422. A changed submission locale with the same key returns 409.",
+    response_description="The accepted run and its current queue status.",
+    responses=_RUN_ERRORS,
+)
+async def create_chat_run(
+    request: Request,
+    idempotency_key: str | None = Header(
+        default=None,
+        max_length=128,
+        description="Stable key reused when retrying the same submission.",
+    ),
+):
+    return await _submit_chat_run(request)
+
+
+@router.get(
+    "/chat/runs",
+    response_model=list[ChatRunResponse],
+    summary="List conversation runs",
+    description="List submitted runs in FIFO order, including pending input requests and runs lost on restart.",
+    response_description="Ordered conversation runs.",
+    responses=_RUN_ERRORS,
+)
+async def list_chat_runs(
+    request: Request, thread_id: str = Query(description="Conversation ID.")
+):
+    return await request.app.state.chat_runs.list(thread_id)
+
+
+@router.get(
+    "/chat/runs/{run_id}",
+    response_model=ChatRunResponse,
+    summary="Get a chat run",
+    description="Read execution state independently of any SSE subscription.",
+    response_description="Run status and pending input requests.",
+    responses=_RUN_ERRORS,
+)
+async def get_chat_run(request: Request, run_id: str):
+    return await request.app.state.chat_runs.get(run_id)
+
+
+@router.get(
+    "/chat/runs/{run_id}/events",
+    summary="Subscribe to chat events",
+    description="Replay events after the supplied sequence, then follow live events. A snapshot replaces expired replay history. Disconnecting does not cancel execution.",
+    response_description="Sequenced SSE events or a display snapshot.",
+    responses=_RUN_ERRORS,
+)
+async def subscribe_chat_run(
+    request: Request,
+    run_id: str,
+    after: int = Query(default=0, ge=0, description="Last applied event ID."),
+):
+    await request.app.state.chat_runs.get(run_id)
+    return StreamingResponse(
+        request.app.state.chat_runs.stream(run_id, after),
+        media_type="text/event-stream",
     )
 
 
 @router.post(
-    "/chat/stream",
-    summary="Stream the AI chat API",
-    description=(
-        "Call SupervisorAgent with the selected model and return the thread, tool activity, "
-        "interrupts, and final response over SSE. Send prompt for the first request; after an interrupt, "
-        "reuse the thread_id with command.type=retry to retry a failed node or command.type=query to "
-        "submit a query tool choice/note. Supports JSON and multipart requests with files[] / file_ids[]."
-    ),
-    response_description="Returns a text/event-stream response.",
-    responses={
-        200: {
-            "description": (
-                "Returns SSE events including thread, token, reasoning, reasoning_done, tool_start, "
-                "tool_end, tool_error, context_compaction, interrupt, and final; failures use error. "
-                "The context_compaction event reports started, completed, or failed phases. Query interrupts include "
-                "question, firstChoice, firstChoiceDescription, secondChoice, secondChoiceDescription, "
-                "thirdChoice, and thirdChoiceDescription. Search tool output contains only the safe frontend "
-                "summary fields url, title, and favicon. The thread event also includes resolved_attachments, "
-                "attachment_count, and requires_image_input."
-            ),
-            "content": {
-                "text/event-stream": {
-                    "schema": {"type": "string"},
-                    "example": 'event: final\ndata: {"content":"Hello"}\n\n',
-                }
-            },
-        },
-        404: _error_response(
-            "The requested model selection was not found.",
-            example="Model selection not found: 1",
-        ),
-        415: _error_response(
-            "The uploaded chat file type is not supported.",
-            example="Unsupported chat file type: .exe",
-        ),
-        422: _error_response(
-            "The chat attachment is invalid or could not be processed.",
-            example="Uploaded chat file is empty.",
-        ),
-    },
+    "/chat/runs/{run_id}/inputs/{request_id}",
+    response_model=ChatRunResponse,
+    summary="Answer an input request",
+    description="Wake the original execution without invoking the graph again. Identical repeat answers are idempotent; conflicting answers are rejected.",
+    response_description="Current run state.",
+    responses=_RUN_ERRORS,
 )
-async def chat_stream(
-    request: Request,
-    session: Session = Depends(_get_request_db_session),
-) -> StreamingResponse:
-    payload = await _parse_ai_chat_payload(request, stream=True)
-    selection = _get_model_selection(payload.selection_id, session)
+async def answer_chat_input(
+    request: Request, run_id: str, request_id: str, payload: InputAnswer
+):
+    manager = request.app.state.chat_runs
+    await manager.get(run_id)
+    await manager.broker.submit(run_id, request_id, payload.answer.model_dump())
+    return await manager.get(run_id)
 
-    command_type = payload.command.type if payload.command else "prompt"
-    thread_id = (
-        payload.thread_id
-        if command_type == "retry"
-        else _make_thread_id(payload.thread_id)
+
+@router.post(
+    "/chat/runs/{run_id}/cancel",
+    response_model=ChatRunResponse,
+    summary="Cancel a chat run",
+    description="Cancel and await this run. Later queued messages still execute; cancel each queued run to remove it.",
+    response_description="The terminated run state.",
+    responses=_RUN_ERRORS,
+)
+async def cancel_chat_run(request: Request, run_id: str):
+    return await request.app.state.chat_runs.cancel(run_id)
+
+
+@router.post(
+    "/chat/stream",
+    openapi_extra=_RUN_BODY,
+    summary="Start and subscribe to a chat run",
+    description="Compatibility entry point for prompt submissions. Execution survives SSE disconnection. Answers use the separate run input endpoint; legacy query/retry commands return 410.",
+    response_description="SSE events including thread, token, reasoning, tool_start/end/error, input_required/resolved, run_status, snapshot, final and error.",
+    responses=_RUN_ERRORS,
+)
+async def chat_stream(request: Request):
+    run = await _submit_chat_run(request)
+    return StreamingResponse(
+        request.app.state.chat_runs.stream(run["run_id"], -1),
+        media_type="text/event-stream",
     )
-    prepared_prompt = None
-
-    if command_type in {"retry", "query"}:
-        assert payload.command is not None
-        chat_file_service = _build_chat_file_service(request, session)
-        resume_payload: dict[str, Any]
-        if command_type == "query":
-            resume_payload = {
-                "choice": payload.command.choice,
-                "note": payload.command.note,
-            }
-        else:
-            resume_payload = payload.command.model_dump(exclude_none=True)
-        agent_input: dict[str, Any] | Command = Command(resume=resume_payload)
-        requires_image_input = chat_file_service.thread_requires_image_input(
-            thread_id or ""
-        )
-        attachment_count = ChatThreadFileRepository(session).count_by_thread(
-            thread_id or ""
-        )
-        resolved_attachments: list[dict[str, Any]] = []
-    else:
-        prompt = (
-            payload.command.prompt
-            if payload.command and payload.command.prompt
-            else payload.prompt
-        )
-        chat_file_service = _build_chat_file_service(request, session)
-        try:
-            prepared_prompt = chat_file_service.prepare_prompt(
-                thread_id=thread_id or "",
-                selection=selection,
-                prompt=prompt or "",
-                file_ids=payload.file_ids,
-                uploaded_files=payload.uploaded_files,
-            )
-        except (
-            ChatFileNotFoundError,
-            ChatFileProcessingError,
-            EmptyChatFileContentError,
-            ResumeValidationError,
-            UnsupportedChatFileError,
-        ) as error:
-            session.rollback()
-            _raise_chat_input_error(error)
-
-        agent_input = {
-            "model": selection,
-            "messages": [prepared_prompt.human_message],
-        }
-        requires_image_input = prepared_prompt.requires_image_input
-        attachment_count = prepared_prompt.attachment_count
-        resolved_attachments = [
-            attachment.model_dump(mode="json")
-            for attachment in prepared_prompt.attachments
-        ]
-        session.commit()
-
-    async def event_stream() -> AsyncGenerator[str, None]:
-        yield render_sse_event(
-            "thread",
-            {
-                "thread_id": thread_id,
-                "resolved_attachments": resolved_attachments,
-                "attachment_count": attachment_count,
-                "requires_image_input": requires_image_input,
-            },
-        )
-        final_state: dict[str, Any] | None = None
-        try:
-            async for event in request.app.state.supervisor_agent.astream_events(
-                agent_input,
-                _agent_config(
-                    thread_id,
-                    recursion_limit=request.app.state.config.graph_recursion_limit,
-                ),
-                version="v2",
-            ):
-                event_name = event.get("event")
-                data = event.get("data") if isinstance(event.get("data"), dict) else {}
-                tool_name = str(event.get("name") or "")
-
-                interrupt_payloads = _extract_interrupt_payloads(event)
-                if interrupt_payloads:
-                    for interrupt_payload in interrupt_payloads:
-                        message = interrupt_payload.get("message")
-                        if isinstance(message, str):
-                            interrupt_payload["message"] = localize_error(
-                                message,
-                                request_locale(request),
-                            )
-                        yield render_sse_event(
-                            "interrupt",
-                            {
-                                "thread_id": thread_id,
-                                **interrupt_payload,
-                            },
-                        )
-                    return
-
-                if event_name == "on_tool_start":
-                    yield render_sse_event(
-                        "tool_start",
-                        {
-                            "thread_id": thread_id,
-                            "tool_name": tool_name,
-                            "input": data.get("input"),
-                        },
-                    )
-                    continue
-
-                if event_name == "on_tool_end":
-                    output = data.get("output")
-                    if _is_tool_error_output(output):
-                        yield render_sse_event(
-                            "tool_error",
-                            {
-                                "thread_id": thread_id,
-                                "tool_name": tool_name,
-                                "detail": _extract_content([output])
-                                if isinstance(output, BaseMessage)
-                                else str(output),
-                            },
-                        )
-                        continue
-
-                    yield render_sse_event(
-                        "tool_end",
-                        {
-                            "thread_id": thread_id,
-                            "tool_name": tool_name,
-                            "output": summarize_tool_output(tool_name, output),
-                        },
-                    )
-                    continue
-
-                if event_name == "on_tool_error":
-                    detail = str(data.get("error") or data.get("output") or "")
-                    if _is_query_interrupt_tool_error(tool_name, detail):
-                        continue
-                    yield render_sse_event(
-                        "tool_error",
-                        {
-                            "thread_id": thread_id,
-                            "tool_name": tool_name,
-                            "detail": detail,
-                        },
-                    )
-                    continue
-
-                if event_name == "on_custom_event" and tool_name == "on_reasoning_done":
-                    duration_ms = _extract_reasoning_duration_ms(
-                        data.get("duration_ms")
-                    )
-                    if duration_ms is not None:
-                        yield render_sse_event(
-                            "reasoning_done",
-                            {
-                                "thread_id": thread_id,
-                                "duration_ms": duration_ms,
-                            },
-                        )
-                    continue
-
-                if (
-                    event_name == "on_custom_event"
-                    and tool_name == "on_context_compaction"
-                ):
-                    phase = data.get("phase")
-                    if phase in {"started", "completed", "failed"}:
-                        yield render_sse_event(
-                            "context_compaction",
-                            {
-                                "thread_id": thread_id,
-                                "phase": phase,
-                            },
-                        )
-                    continue
-
-                if event_name in {"on_chat_model_stream", "on_llm_stream"}:
-                    chunk = data.get("chunk")
-                    text = _extract_chunk_text(chunk)
-                    if text:
-                        yield render_sse_event(
-                            "token",
-                            {
-                                "thread_id": thread_id,
-                                "content": text,
-                            },
-                        )
-                    else:
-                        reasoning = _extract_chunk_reasoning(chunk)
-                        if reasoning:
-                            yield render_sse_event(
-                                "reasoning",
-                                {
-                                    "thread_id": thread_id,
-                                    "content": reasoning,
-                                },
-                            )
-
-                output = _extract_event_output(event)
-                if output is not None:
-                    final_state = output
-        except Exception as error:
-            yield render_sse_event(
-                "error",
-                {"detail": localize_error(error, request_locale(request))},
-            )
-            return
-
-        yield render_sse_event(
-            "final",
-            {
-                "thread_id": thread_id,
-                "content": _extract_content(
-                    final_state.get("messages", []) if final_state else []
-                ),
-            },
-        )
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")

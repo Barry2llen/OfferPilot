@@ -7,6 +7,21 @@ export type Locale = (typeof SUPPORTED_LOCALES)[number];
 const LOCALE_STORAGE_KEY = "offerpilot.locale";
 
 const zhCN = {
+  chatRuns: {
+    waitingInput: "等待输入",
+    stopCurrent: "停止当前运行",
+    enqueue: "加入队列",
+    send: "发送",
+    reconnecting: "连接中断，正在重新订阅；后台运行仍在继续。",
+    queued: "排队消息：{{count}}",
+    cancelQueued: "取消全部排队消息",
+    remove: "移除",
+    attachments: "附件消息",
+    stopNotice: "停止当前运行后，仍会自动执行下一条排队消息。",
+    interrupted: "后端已退出，此次运行无法恢复，请重新发送：{{prompt}}",
+    failed: "运行失败：{{prompt}}",
+    cancelled: "运行已取消：{{prompt}}",
+  },
   app: {
     documentTitle: "OfferPilot - AI 求职助手",
     errorTitle: "应用遇到问题",
@@ -96,8 +111,10 @@ const zhCN = {
     deleteConversationTitle: "删除会话",
     deleteConversationMessage: "确定要删除这条会话吗？删除后无法恢复。",
     agentInterrupted: "Agent 已中断: {{message}}",
-    threadImageMismatch: "当前会话包含以图片模式注入的附件，切换到仅文本模型后可能无法正确利用原始图片内容。",
-    modelContextWindowWarning: "已切换到更小的上下文窗口模型，当前会话历史可能无法完整容纳；建议新建会话或切回更大窗口模型。",
+    threadImageMismatch:
+      "当前会话包含以图片模式注入的附件，切换到仅文本模型后可能无法正确利用原始图片内容。",
+    modelContextWindowWarning:
+      "已切换到更小的上下文窗口模型，当前会话历史可能无法完整容纳；建议新建会话或切回更大窗口模型。",
     returnToLatest: "回到最新",
     addAttachment: "添加附件",
     uploadFile: "上传文件",
@@ -216,7 +233,8 @@ const zhCN = {
     cancelReplace: "取消替换",
     copyParsedText: "复制解析文本",
     deleteTitle: "删除简历",
-    deleteMessage: "确定要删除「{{name}}」吗？此操作会删除数据库记录和原始文件。",
+    deleteMessage:
+      "确定要删除「{{name}}」吗？此操作会删除数据库记录和原始文件。",
     aiAnalysis: "AI 解析",
     originalResume: "简历原件",
     summary: "摘要",
@@ -239,7 +257,8 @@ const zhCN = {
     processingDescription: "正在解析候选人简历",
     failedDescription: "解析失败，建议替换文件后重试",
     waitingDescription: "等待解析",
-    uploadDescription: "上传或替换文件后，OfferPilot 会自动提取简历摘要、章节和关键事实。",
+    uploadDescription:
+      "上传或替换文件后，OfferPilot 会自动提取简历摘要、章节和关键事实。",
     parsedAt: "解析于 {{date}}",
     sectionsFacts: "{{sections}} 个章节 · {{facts}} 条事实",
     shortSectionsFacts: "{{sections}} 章 · {{facts}} 事实",
@@ -353,10 +372,12 @@ const zhCN = {
     advancedTab: "高级",
     providersTitle: "供应商",
     providerCount: "{{count}} 个供应商",
-    noCompactionModels: "尚未配置模型。请先在模型配置中添加模型，或继续跟随当前对话模型。",
+    noCompactionModels:
+      "尚未配置模型。请先在模型配置中添加模型，或继续跟随当前对话模型。",
     goToModelConfig: "前往模型配置",
     contextCompactionTitle: "上下文压缩模型",
-    contextCompactionDescription: "选择用于超长对话历史总结的模型；不指定时跟随当前对话模型。",
+    contextCompactionDescription:
+      "选择用于超长对话历史总结的模型；不指定时跟随当前对话模型。",
     contextCompactionModel: "Auto-compact 模型",
     followCurrentConversationModel: "跟随当前对话模型",
     contextCompactionUpdated: "上下文压缩模型已更新",
@@ -373,7 +394,8 @@ const zhCN = {
     editSelection: "编辑模型选择",
     addSelection: "添加模型选择",
     deleteProviderTitle: "删除供应商配置",
-    deleteProviderMessage: "确定要删除「{{name}}」吗？如果该供应商仍有模型选择引用，删除将失败。",
+    deleteProviderMessage:
+      "确定要删除「{{name}}」吗？如果该供应商仍有模型选择引用，删除将失败。",
     deleteSelectionTitle: "删除模型选择",
     deleteSelectionMessage: "确定要删除「{{name}}」吗？",
     providerUpdated: "供应商配置已更新",
@@ -433,10 +455,28 @@ const zhCN = {
 } as const;
 
 const enUS = {
+  chatRuns: {
+    waitingInput: "Waiting for input",
+    stopCurrent: "Stop current run",
+    enqueue: "Add to queue",
+    send: "Send",
+    reconnecting: "Reconnecting. Execution continues in the background.",
+    queued: "Queued messages: {{count}}",
+    cancelQueued: "Cancel all queued",
+    remove: "Remove",
+    attachments: "Attachment message",
+    stopNotice:
+      "Stopping the current run still starts the next queued message.",
+    interrupted:
+      "The backend stopped. This run cannot resume; resend: {{prompt}}",
+    failed: "Run failed: {{prompt}}",
+    cancelled: "Run cancelled: {{prompt}}",
+  },
   app: {
     documentTitle: "OfferPilot - AI Career Assistant",
     errorTitle: "Something went wrong",
-    errorDescription: "The page could not be loaded. Please refresh and try again.",
+    errorDescription:
+      "The page could not be loaded. Please refresh and try again.",
     reload: "Reload page",
   },
   language: {
@@ -504,7 +544,8 @@ const enUS = {
     interrupted: "Interrupted",
     error: "Error",
     contextCompacting: "Organizing context, please wait...",
-    contextCompacted: "Context compacted. Future turns will use the compact view.",
+    contextCompacted:
+      "Context compacted. Future turns will use the compact view.",
     contextCompactionFailed: "Context compaction failed. Please retry.",
     newChat: "New chat",
     chatTitle: "AI Chat",
@@ -520,16 +561,20 @@ const enUS = {
     noMessage: "(No messages)",
     deleteConversation: "Delete",
     deleteConversationTitle: "Delete conversation",
-    deleteConversationMessage: "Are you sure you want to delete this conversation? This cannot be undone.",
+    deleteConversationMessage:
+      "Are you sure you want to delete this conversation? This cannot be undone.",
     agentInterrupted: "Agent interrupted: {{message}}",
-    threadImageMismatch: "This conversation contains image-mode attachments. A text-only model may not be able to use the original image content correctly.",
-    modelContextWindowWarning: "You switched to a model with a smaller context window. This conversation may not fit its full history; consider starting a new chat or switching back to a larger window.",
+    threadImageMismatch:
+      "This conversation contains image-mode attachments. A text-only model may not be able to use the original image content correctly.",
+    modelContextWindowWarning:
+      "You switched to a model with a smaller context window. This conversation may not fit its full history; consider starting a new chat or switching back to a larger window.",
     returnToLatest: "Back to latest",
     addAttachment: "Add attachment",
     uploadFile: "Upload file",
     chooseFromLibrary: "Choose from library",
     configureModel: "Configure a model selection first...",
-    promptPlaceholder: "Describe a career task, such as “Improve the project experience in this resume”",
+    promptPlaceholder:
+      "Describe a career task, such as “Improve the project experience in this resume”",
     stop: "Stop",
     send: "Send",
     retry: "Retry",
@@ -543,7 +588,8 @@ const enUS = {
     queryOptionOne: "Option one",
     queryOptionTwo: "Option two",
     queryOptionThree: "Option three",
-    queryDefaultDescription: "Continue with the option recommended by the Agent.",
+    queryDefaultDescription:
+      "Continue with the option recommended by the Agent.",
     querySecondDescription: "Choose the second alternative.",
     queryThirdDescription: "Choose the third alternative.",
     queryOther: "Let me enter another option",
@@ -597,10 +643,12 @@ const enUS = {
   },
   welcome: {
     greeting: "Hi, I'm OfferPilot",
-    description: "An AI career assistant that helps you analyze resumes and prepare for interviews",
+    description:
+      "An AI career assistant that helps you analyze resumes and prepare for interviews",
     configureFirst: "Configure an AI model to get started",
     goToSettings: "Configure now",
-    comingSoon: "More features are coming: JD analysis · Mock interviews · Job tracking",
+    comingSoon:
+      "More features are coming: JD analysis · Mock interviews · Job tracking",
   },
   quickTasks: {
     analyze: "Analyze resume",
@@ -608,10 +656,12 @@ const enUS = {
     analyzePrompt: "Analyze the main strengths and highlights of this resume.",
     improve: "Improve wording",
     improveDescription: "Make project experience more compelling",
-    improvePrompt: "Based on this resume, improve the project experience descriptions to make them more impactful.",
+    improvePrompt:
+      "Based on this resume, improve the project experience descriptions to make them more impactful.",
     check: "Find gaps",
     checkDescription: "Check resume completeness",
-    checkPrompt: "Check this resume for completeness and point out what should be added or improved.",
+    checkPrompt:
+      "Check this resume for completeness and point out what should be added or improved.",
   },
   attachments: {
     image: "Image",
@@ -627,7 +677,8 @@ const enUS = {
   files: {
     retry: "Retry",
     title: "File Library",
-    description: "View uploaded chat attachments and reuse them in conversations",
+    description:
+      "View uploaded chat attachments and reuse them in conversations",
     searchPlaceholder: "Search by filename or file ID",
     noFiles: "No chat files",
     noFilesDescription: "Upload an attachment in AI Chat to see it here",
@@ -642,30 +693,36 @@ const enUS = {
     cancelReplace: "Cancel replacement",
     copyParsedText: "Copy parsed text",
     deleteTitle: "Delete resume",
-    deleteMessage: "Are you sure you want to delete “{{name}}”? This removes the database record and original file.",
+    deleteMessage:
+      "Are you sure you want to delete “{{name}}”? This removes the database record and original file.",
     aiAnalysis: "AI Analysis",
     originalResume: "Original resume",
     summary: "Summary",
     keywords: "Key keywords",
-    keywordsEmpty: "Skills, experience, and fact keywords will appear after parsing.",
+    keywordsEmpty:
+      "Skills, experience, and fact keywords will appear after parsing.",
     sections: "Structured sections",
-    sectionsEmpty: "Parsed text and structured sections will appear after you upload or replace a file.",
+    sectionsEmpty:
+      "Parsed text and structured sections will appear after you upload or replace a file.",
     fullText: "Full parsed text",
     noPreviewFile: "No original file to preview",
     noPreviewFileDescription: "Use the actions below to replace the file.",
     previewTitle: "Resume preview",
     unsupportedPreview: "This format cannot be previewed online",
-    unsupportedPreviewDescription: "You can still view the AI analysis and full text.",
+    unsupportedPreviewDescription:
+      "You can still view the AI analysis and full text.",
     chapter: "Section {{index}}",
     parsed: "Parsed",
     parsing: "Parsing",
     parseFailed: "Parsing failed",
     unparsed: "Not parsed",
-    parsedDescription: "Structured parsing is complete. Review sections, facts, and full text.",
+    parsedDescription:
+      "Structured parsing is complete. Review sections, facts, and full text.",
     processingDescription: "Parsing the candidate resume",
     failedDescription: "Parsing failed. Replace the file and try again.",
     waitingDescription: "Waiting to be parsed",
-    uploadDescription: "After you upload or replace a file, OfferPilot automatically extracts the summary, sections, and key facts.",
+    uploadDescription:
+      "After you upload or replace a file, OfferPilot automatically extracts the summary, sections, and key facts.",
     parsedAt: "Parsed {{date}}",
     sectionsFacts: "{{sections}} sections · {{facts}} facts",
     shortSectionsFacts: "{{sections}} sections · {{facts}} facts",
@@ -678,9 +735,11 @@ const enUS = {
     defaultTitle: "Resume #{{id}}",
     dragHero: "Drag a resume file here",
     dragInline: "Drag a resume file here, or click to choose",
-    supportedFormats: "PDF, DOCX, PNG, JPG, and JPEG are supported and will be parsed automatically",
+    supportedFormats:
+      "PDF, DOCX, PNG, JPG, and JPEG are supported and will be parsed automatically",
     chooseFile: "Choose file",
-    unsupportedFormat: "Unsupported file format. Use PDF, DOCX, PNG, JPG, or JPEG.",
+    unsupportedFormat:
+      "Unsupported file format. Use PDF, DOCX, PNG, JPG, or JPEG.",
     chooseModel: "Choose a model for resume parsing first",
     recentUploads: "Recent uploads",
     stats: "{{total}} resumes, {{parsed}} parsed",
@@ -688,7 +747,8 @@ const enUS = {
     filter: "Filter",
     sort: "Sort",
     noResumes: "No resumes",
-    noResumesDescription: "Upload your first resume to see parsing status and recent uploads here.",
+    noResumesDescription:
+      "Upload your first resume to see parsing status and recent uploads here.",
   },
   upload: {
     busy: "A resume is already uploading or parsing. Please wait.",
@@ -712,11 +772,13 @@ const enUS = {
     processing: "Processing",
     retry: "Retry",
     title: "JD Analysis",
-    description: "Save and structure job descriptions from text, URLs, or images",
+    description:
+      "Save and structure job descriptions from text, URLs, or images",
     modelConfig: "Model settings",
     textPlaceholder: "Paste the job description",
     chooseImages: "Choose images",
-    imageDescription: "Upload local PNG, JPG, or JPEG images, or reuse images from the file library",
+    imageDescription:
+      "Upload local PNG, JPG, or JPEG images, or reuse images from the file library",
     notSelectedImages: "No images selected",
     sourceUrl: "Source URL",
     analyzing: "Analyzing...",
@@ -727,7 +789,8 @@ const enUS = {
     detail: "Details",
     deleteInProgress: "Deleting...",
     deleteTitle: "Delete JD analysis",
-    deleteMessage: "Are you sure you want to delete “{{name}}”? File library images will not be deleted.",
+    deleteMessage:
+      "Are you sure you want to delete “{{name}}”? File library images will not be deleted.",
     uploadLocalImage: "Upload local image",
     searchLibraryImages: "Search file library images",
     pickerTitle: "Choose images",
@@ -735,7 +798,8 @@ const enUS = {
     closePicker: "Close image picker",
     close: "Close",
     libraryNoImages: "No images in the file library",
-    libraryNoImagesDescription: "Upload a local image; it will be saved to the file library when submitted",
+    libraryNoImagesDescription:
+      "Upload a local image; it will be saved to the file library when submitted",
     noMatchingImages: "No matching file library images",
     selectedImages: "{{count}} images selected",
     countBlocksFacts: "{{blocks}} requirement blocks · {{facts}} facts",
@@ -779,10 +843,12 @@ const enUS = {
     advancedTab: "Advanced",
     providersTitle: "Providers",
     providerCount: "{{count}} providers",
-    noCompactionModels: "No model selections are configured yet. Add a model in Model configuration, or continue following the current conversation model.",
+    noCompactionModels:
+      "No model selections are configured yet. Add a model in Model configuration, or continue following the current conversation model.",
     goToModelConfig: "Go to model configuration",
     contextCompactionTitle: "Context compaction model",
-    contextCompactionDescription: "Choose the model used to summarize long conversation history, or follow the current conversation model.",
+    contextCompactionDescription:
+      "Choose the model used to summarize long conversation history, or follow the current conversation model.",
     contextCompactionModel: "Auto-compact model",
     followCurrentConversationModel: "Follow current conversation model",
     contextCompactionUpdated: "Context compaction model updated",
@@ -799,7 +865,8 @@ const enUS = {
     editSelection: "Edit model selection",
     addSelection: "Add model selection",
     deleteProviderTitle: "Delete provider configuration",
-    deleteProviderMessage: "Are you sure you want to delete “{{name}}”? Deletion fails while model selections still reference it.",
+    deleteProviderMessage:
+      "Are you sure you want to delete “{{name}}”? Deletion fails while model selections still reference it.",
     deleteSelectionTitle: "Delete model selection",
     deleteSelectionMessage: "Are you sure you want to delete “{{name}}”?",
     providerUpdated: "Provider configuration updated",
@@ -815,7 +882,8 @@ const enUS = {
     providerType: "Provider type",
     configName: "Configuration name",
     configNamePlaceholder: "e.g. default-openai",
-    configNameDescription: "This name is the reference key for model selections and cannot be changed after creation",
+    configNameDescription:
+      "This name is the reference key for model selections and cannot be changed after creation",
     apiKey: "API Key",
     apiKeyOptional: "Optional",
     apiKeyKeep: "Leave blank to keep the current key",
@@ -829,7 +897,8 @@ const enUS = {
     chooseProvider: "Choose a provider...",
     providerConfigured: "✓ Configured",
     providerNotConfigured: "✗ Key not configured",
-    noAvailableProviders: "No providers available. Create a provider configuration first.",
+    noAvailableProviders:
+      "No providers available. Create a provider configuration first.",
     modelName: "Model name",
     modelNamePlaceholder: "e.g. gpt-4o-mini",
     imageInput: "Image input supported",
@@ -864,7 +933,8 @@ function isLocale(value: string | null | undefined): value is Locale {
 
 function detectSystemLocale(): Locale {
   if (typeof navigator === "undefined") return "zh-CN";
-  const languages = navigator.languages.length > 0 ? navigator.languages : [navigator.language];
+  const languages =
+    navigator.languages.length > 0 ? navigator.languages : [navigator.language];
   for (const language of languages) {
     const normalized = language.toLowerCase();
     if (normalized.startsWith("en")) return "en-US";
@@ -891,14 +961,14 @@ export function getCurrentLocale(): Locale {
 
 export function formatLocaleNumber(
   value: number,
-  locale: Locale = getCurrentLocale()
+  locale: Locale = getCurrentLocale(),
 ): string {
   return new Intl.NumberFormat(locale).format(value);
 }
 
 export function formatLocaleList(
   values: readonly string[],
-  locale: Locale = getCurrentLocale()
+  locale: Locale = getCurrentLocale(),
 ): string {
   if (typeof Intl !== "undefined" && typeof Intl.ListFormat === "function") {
     return new Intl.ListFormat(locale, {
@@ -919,18 +989,16 @@ function syncDocumentLocale(locale: Locale): void {
   document.title = i18nInstance.t("app.documentTitle");
 }
 
-void i18nInstance
-  .use(initReactI18next)
-  .init({
-    resources: {
-      "zh-CN": { translation: zhCN },
-      "en-US": { translation: enUS },
-    },
-    lng: getInitialLocale(),
-    fallbackLng: "zh-CN",
-    interpolation: { escapeValue: false },
-    returnNull: false,
-  });
+void i18nInstance.use(initReactI18next).init({
+  resources: {
+    "zh-CN": { translation: zhCN },
+    "en-US": { translation: enUS },
+  },
+  lng: getInitialLocale(),
+  fallbackLng: "zh-CN",
+  interpolation: { escapeValue: false },
+  returnNull: false,
+});
 
 syncDocumentLocale(getInitialLocale());
 i18nInstance.on("initialized", () => syncDocumentLocale(getCurrentLocale()));

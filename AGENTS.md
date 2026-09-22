@@ -26,7 +26,7 @@ The backend is under `backend/` and uses Python `>=3.13`, FastAPI, Pydantic v2, 
 - Do not put ORM logic directly in API routes. Agent nodes must not handle HTTP details, and configuration parsing must stay out of business services.
 - FastAPI routes must maintain `summary`, `description`, `response_description`, and important error responses.
 - Public Pydantic fields should provide `Field(..., description=..., examples=...)`.
-- `/ai/chat/stream` event names must remain stable: `thread`, `token`, `tool_start`, `tool_end`, `tool_error`, `interrupt`, `final`, and `error`. The frontend also handles `reasoning`; update the frontend types and parser when changing the stream protocol.
+- `/ai/chat/stream` event names must remain stable: `thread`, `token`, `tool_start`, `tool_end`, `tool_error`, `input_required`, `input_resolved`, `run_status`, `snapshot`, `final`, and `error`. The frontend also handles `reasoning`; update the frontend types and parser when changing the stream protocol.
 - API, request/response, SSE, configuration, database, or model integration changes must update OpenAPI descriptions, tests, and necessary documentation.
 - In production FastAPI registers the business API, `/docs`, `/openapi.json`, and `/health`, then mounts `frontend/dist`. Deep-page navigation returns the SPA entry, missing static assets remain 404, and the API still starts when build output is absent.
 - User-facing API and SSE messages must use the request locale. `Accept-Language` supports `en-US` and `zh-CN`; unknown or missing values fall back to `zh-CN`. Preserve user/model content and persisted technical details.

@@ -1,6 +1,7 @@
 from .base import Base
 from .chat import ChatORM
 from .chat_file import ChatFileORM
+from .chat_run import ChatRunORM
 from .chat_thread_file import ChatThreadFileORM
 from .context_compaction_settings import ContextCompactionSettingsORM
 from .graph_checkpoint import (
@@ -19,6 +20,7 @@ __all__ = [
     "ChatFileORM",
     "ChatThreadFileORM",
     "ChatORM",
+    "ChatRunORM",
     "ContextCompactionSettingsORM",
     "GraphCheckpointBlobORM",
     "GraphCheckpointORM",

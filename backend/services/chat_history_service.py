@@ -186,7 +186,7 @@ def _to_history_message(message: Any) -> AIChatHistoryMessage:
         reasoning_duration_ms = _message_reasoning_duration_ms(message)
         if reasoning_duration_ms is not None:
             payload["reasoning_duration_ms"] = reasoning_duration_ms
-    for attr in ("name", "tool_call_id", "status"):
+    for attr in ("id", "name", "tool_call_id", "status"):
         value = _message_attr(message, attr)
         if value is not None:
             payload[attr] = str(value)

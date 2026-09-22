@@ -13,6 +13,7 @@ export type SseFetch = (
 
 export interface SseRequestOptions {
   signal?: AbortSignal;
+  onOpen?: () => void;
 }
 
 export interface OpenSseOptions extends SseRequestOptions {
@@ -35,7 +36,10 @@ function createParserState(): ParserState {
   return { eventName: "" };
 }
 
-function parseDataLine(state: ParserState, dataText: string): SseEvent | undefined {
+function parseDataLine(
+  state: ParserState,
+  dataText: string,
+): SseEvent | undefined {
   const eventName = state.eventName;
   state.eventName = "";
 
@@ -51,7 +55,10 @@ function parseDataLine(state: ParserState, dataText: string): SseEvent | undefin
   }
 }
 
-function consumeLine(state: ParserState, rawLine: string): SseEvent | undefined {
+function consumeLine(
+  state: ParserState,
+  rawLine: string,
+): SseEvent | undefined {
   const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
   const trimmed = line.trim();
 
@@ -75,9 +82,10 @@ function consumeLine(state: ParserState, rawLine: string): SseEvent | undefined 
   return undefined;
 }
 
-function prepareBody(
-  body: OpenSseOptions["body"],
-): { body: BodyInit | undefined; isJson: boolean } {
+function prepareBody(body: OpenSseOptions["body"]): {
+  body: BodyInit | undefined;
+  isJson: boolean;
+} {
   if (body === null || body === undefined) {
     return { body: undefined, isJson: false };
   }
@@ -148,6 +156,7 @@ export async function* openSse(
 
     reader = response.body?.getReader();
     if (!reader) throw new Error(i18n.t("errors.noResponseBody"));
+    options.onOpen?.();
 
     const decoder = new TextDecoder();
     const state = createParserState();
@@ -173,7 +182,6 @@ export async function* openSse(
       const event = consumeLine(state, buffer);
       if (event) yield event;
     }
-
   } catch (error: unknown) {
     if (options.signal?.aborted || isAbortError(error)) return;
     throw error;

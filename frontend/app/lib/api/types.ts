@@ -1,10 +1,6 @@
 // ─── Provider Enum ───
 export type Provider =
-  | "OpenAI"
-  | "Google"
-  | "Anthropic"
-  | "DeepSeek"
-  | "OpenAI Compatible";
+  "OpenAI" | "Google" | "Anthropic" | "DeepSeek" | "OpenAI Compatible";
 
 // ─── Resumes ───
 export interface ResumeListItem {
@@ -77,8 +73,7 @@ export interface JobDescriptionAnalysisListItem {
   completed_at: string | null;
 }
 
-export interface JobDescriptionAnalysisDetail
-  extends JobDescriptionAnalysisListItem {
+export interface JobDescriptionAnalysisDetail extends JobDescriptionAnalysisListItem {
   raw_text: string;
   result: JobDescriptionResult | null;
 }
@@ -221,6 +216,7 @@ export interface AIChatHistoryListResponse {
 }
 
 export interface AIChatHistoryMessage {
+  id?: string | null;
   role: string;
   type: string;
   content: string | unknown;
@@ -257,7 +253,8 @@ export interface AIChatResponse {
 }
 
 export type AIChatCommandType = "prompt" | "continue" | "retry" | "query";
-export type QueryChoice = "firstChoice" | "secondChoice" | "thirdChoice" | "other";
+export type QueryChoice =
+  "firstChoice" | "secondChoice" | "thirdChoice" | "other";
 
 export interface AIChatCommand {
   type: AIChatCommandType;
@@ -280,6 +277,7 @@ export type AgentStatus =
   | "generating"
   | "compacting"
   | "tool_calling"
+  | "waiting_input"
   | "interrupted"
   | "error";
 
@@ -289,3 +287,45 @@ export interface ValidationError {
   msg: string;
   type: string;
 }
+export type ChatRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_input"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+export interface PendingInput {
+  request_id: string;
+  run_id: string;
+  thread_id: string;
+  tool_call_id: string | null;
+  type: "query" | "error";
+  message?: string;
+  question?: string;
+  firstChoice?: string;
+  firstChoiceDescription?: string;
+  secondChoice?: string;
+  secondChoiceDescription?: string;
+  thirdChoice?: string;
+  thirdChoiceDescription?: string;
+}
+export interface ChatRun {
+  run_id: string;
+  thread_id: string;
+  status: ChatRunStatus;
+  sequence: number;
+  prompt: string;
+  selection_id: number;
+  message_id: string;
+  detail: string | null;
+  pending_inputs: PendingInput[];
+  last_event_id: number;
+  requires_image_input: boolean;
+  resolved_attachments: ChatAttachmentRef[];
+}
+
+export type ConnectionState = "connected" | "reconnecting" | "idle";
+export type InputAnswer =
+  | { choice: QueryChoice; note?: string | null }
+  | { type: "retry" };

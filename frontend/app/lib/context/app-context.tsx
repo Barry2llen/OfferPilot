@@ -3,6 +3,7 @@ import {
   useContext,
   useReducer,
   useCallback,
+  useEffect,
   type ReactNode,
 } from "react";
 import type { AgentStatus } from "@/app/lib/api/types";
@@ -21,6 +22,8 @@ type AppAction =
   | { type: "SET_THREAD_REQUIRES_IMAGE_INPUT"; payload: boolean }
   | { type: "SET_AGENT_STATUS"; payload: AgentStatus }
   | { type: "BUMP_CHAT_HISTORY_VERSION" };
+
+const SELECTION_STORAGE_KEY = "offerpilot.chat.selection";
 
 const initialState: AppState = {
   currentModelSelection: null,
@@ -56,7 +59,42 @@ const AppContext = createContext<{
 } | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [state, dispatch] = useReducer(appReducer, initialState, (defaults) => {
+    try {
+      const parsed: unknown = JSON.parse(
+        localStorage.getItem(SELECTION_STORAGE_KEY) || "{}",
+      );
+      const saved =
+        parsed && typeof parsed === "object"
+          ? (parsed as Record<string, unknown>)
+          : {};
+      return {
+        ...defaults,
+        currentThreadId: typeof saved.thread === "string" ? saved.thread : null,
+        currentModelSelection:
+          typeof saved.model === "number" &&
+          Number.isSafeInteger(saved.model) &&
+          saved.model > 0
+            ? saved.model
+            : null,
+      };
+    } catch {
+      return defaults;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        SELECTION_STORAGE_KEY,
+        JSON.stringify({
+          thread: state.currentThreadId,
+          model: state.currentModelSelection,
+        }),
+      );
+    } catch {
+      /* Persistence is optional; keep the in-memory selection. */
+    }
+  }, [state.currentThreadId, state.currentModelSelection]);
   return (
     <AppContext.Provider value={{ state, dispatch }}>
       {children}
@@ -75,26 +113,27 @@ export function useAppActions() {
 
   return {
     setModelSelection: useCallback(
-      (id: number | null) => dispatch({ type: "SET_MODEL_SELECTION", payload: id }),
-      [dispatch]
+      (id: number | null) =>
+        dispatch({ type: "SET_MODEL_SELECTION", payload: id }),
+      [dispatch],
     ),
     setThreadId: useCallback(
       (id: string | null) => dispatch({ type: "SET_THREAD_ID", payload: id }),
-      [dispatch]
+      [dispatch],
     ),
     setThreadRequiresImageInput: useCallback(
       (value: boolean) =>
         dispatch({ type: "SET_THREAD_REQUIRES_IMAGE_INPUT", payload: value }),
-      [dispatch]
+      [dispatch],
     ),
     setAgentStatus: useCallback(
       (status: AgentStatus) =>
         dispatch({ type: "SET_AGENT_STATUS", payload: status }),
-      [dispatch]
+      [dispatch],
     ),
     bumpChatHistoryVersion: useCallback(
       () => dispatch({ type: "BUMP_CHAT_HISTORY_VERSION" }),
-      [dispatch]
+      [dispatch],
     ),
   };
 }

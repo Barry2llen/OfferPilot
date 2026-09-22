@@ -22,7 +22,7 @@ def test_config_validation_rejects_mixed_database_fields() -> None:
     }
 
     with pytest.raises(ValidationError):
-        Config(**wrong_config)
+        Config.model_validate(wrong_config)
 
 
 def test_default_config_uses_sqlite() -> None:
@@ -80,14 +80,16 @@ def test_load_config_parses_graph_recursion_limit(
 
 
 def test_postgresql_config_parses_correctly() -> None:
-    config = Config(
-        database={
-            "type": "postgresql",
-            "host": "127.0.0.1",
-            "port": 5432,
-            "database": "offer_pilot",
-            "user": "postgres",
-            "password": "secret",
+    config = Config.model_validate(
+        {
+            "database": {
+                "type": "postgresql",
+                "host": "127.0.0.1",
+                "port": 5432,
+                "database": "offer_pilot",
+                "user": "postgres",
+                "password": "secret",
+            }
         }
     )
 

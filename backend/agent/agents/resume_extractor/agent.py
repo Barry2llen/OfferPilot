@@ -4,11 +4,9 @@ from typing import override
 from langchain.messages import HumanMessage, SystemMessage
 from langgraph.constants import END, START
 from langgraph.graph.state import StateGraph
-from langgraph.types import interrupt
 
-from exceptions.agent import ModelCallExecutionError
+from agent.interactions import ask_user
 from exceptions.resume import ResumePreviewConversionError
-from schemas.command import BaseCommand
 from schemas.model_selection import ModelSelection
 from schemas.resume import (
     Resume,
@@ -26,7 +24,7 @@ from utils.custom_events import (
 from utils.logger import logger
 
 from ...annotations.types import MaybeCallable
-from ...base import BaseAgent, BaseInterupt
+from ...base import BaseAgent, InputRequest
 from ...events import ModelCallErrorEvent, ProgressUpdateEvent
 from ...models.structured import load_structured_model
 from ...nodes.wrappers import require_fields
@@ -147,22 +145,14 @@ class ResumeExtractorAgent(BaseAgent[State]):
 
             logger.error(f"Model call failed after {max_retries} retries.")
 
-            resp: BaseCommand = interrupt(
-                BaseInterupt(
+            await ask_user(
+                InputRequest(
                     type="error",
                     message=f"Model call failed after {max_retries} retries for extracting sections from the resume text.",
                 )
             )
 
-            match resp["type"]:
-                case "retry":
-                    continue
-                case _:
-                    raise ModelCallExecutionError(
-                        "Model call failed after "
-                        f"{max_retries} retries and code received interrupt with type "
-                        f"{resp['type']} and message {resp.get('prompt', '')}"
-                    )
+            continue
 
         _dispatch_custom_event_safely(
             "on_progress_update",
@@ -264,22 +254,14 @@ class ResumeExtractorAgent(BaseAgent[State]):
 
             logger.error(f"Model call failed after {max_retries} retries.")
 
-            resp: BaseCommand = interrupt(
-                BaseInterupt(
+            await ask_user(
+                InputRequest(
                     type="error",
                     message=f"Model call failed after {max_retries} retries for extracting sections from the resume text.",
                 )
             )
 
-            match resp["type"]:
-                case "retry":
-                    continue
-                case _:
-                    raise ModelCallExecutionError(
-                        "Model call failed after "
-                        f"{max_retries} retries and code received interrupt with type "
-                        f"{resp['type']} and message {resp.get('prompt', '')}"
-                    )
+            continue
 
         _dispatch_custom_event_safely(
             "on_progress_update",
@@ -468,22 +450,14 @@ class ResumeExtractorAgent(BaseAgent[State]):
                     )
                 )
 
-            resp: BaseCommand = interrupt(
-                BaseInterupt(
+            await ask_user(
+                InputRequest(
                     type="error",
                     message=f"Model call failed after {max_retries} retries for extracting facts from some sections of the resume.",
                 )
             )
 
-            match resp["type"]:
-                case "retry":
-                    continue
-                case _:
-                    raise ModelCallExecutionError(
-                        "Model call failed after "
-                        f"{max_retries} retries and code received interrupt with type "
-                        f"{resp['type']} and message {resp.get('prompt', '')}"
-                    )
+            continue
 
     @override
     def get_graph(self) -> StateGraph[State]:

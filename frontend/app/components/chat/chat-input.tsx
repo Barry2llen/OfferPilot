@@ -11,11 +11,12 @@ import {
   isSupportedChatAttachment,
 } from "@/app/lib/api/chat-files";
 import { formatLocaleNumber } from "@/app/lib/i18n";
-import type { ChatFileListItem, QueryChoice } from "@/app/lib/api/types";
 import type {
-  ChatAttachmentItem,
-  ChatInterrupt,
-} from "@/app/lib/chat/types";
+  ChatFileListItem,
+  PendingInput,
+  QueryChoice,
+} from "@/app/lib/api/types";
+import type { ChatAttachmentItem } from "@/app/lib/chat/types";
 
 interface LocalUploadItem {
   key: string;
@@ -33,25 +34,19 @@ export interface ChatComposerPayload {
 interface ChatInputProps {
   onSend: (payload: ChatComposerPayload, onAccepted: () => void) => void;
   onStop: () => void;
-  onRetry: () => void;
   isStreaming: boolean;
-  isInterrupted: boolean;
   disabled: boolean;
+  submitting?: boolean;
   noticeMessage?: string | null;
-  interrupt: ChatInterrupt | null;
-  onAnswerQuery: (choice: QueryChoice, note?: string | null) => void;
 }
 
 export default function ChatInput({
   onSend,
   onStop,
-  onRetry,
   isStreaming,
-  isInterrupted,
   disabled,
+  submitting = false,
   noticeMessage = null,
-  interrupt,
-  onAnswerQuery,
 }: ChatInputProps) {
   const { addToast } = useToast();
   const { t } = useTranslation();
@@ -61,7 +56,9 @@ export default function ChatInput({
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [pickerQuery, setPickerQuery] = useState("");
   const [libraryFiles, setLibraryFiles] = useState<ChatFileListItem[]>([]);
-  const [selectedLibraryFiles, setSelectedLibraryFiles] = useState<ChatFileListItem[]>([]);
+  const [selectedLibraryFiles, setSelectedLibraryFiles] = useState<
+    ChatFileListItem[]
+  >([]);
   const [localUploads, setLocalUploads] = useState<LocalUploadItem[]>([]);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -121,21 +118,14 @@ export default function ChatInput({
     })),
   ];
 
-  const resetDraft = () => {
-    setInput("");
-    setSelectedLibraryFiles([]);
-    setLocalUploads([]);
-    setAttachmentMenuOpen(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
   const handleSend = () => {
     const trimmed = input.trim();
     if (
-      (!trimmed && localUploads.length === 0 && selectedLibraryFiles.length === 0) ||
-      disabled
+      (!trimmed &&
+        localUploads.length === 0 &&
+        selectedLibraryFiles.length === 0) ||
+      disabled ||
+      submitting
     ) {
       return;
     }
@@ -146,7 +136,17 @@ export default function ChatInput({
         fileIds: selectedLibraryFiles.map((file) => file.id),
         draftAttachments: buildDraftAttachments(),
       },
-      resetDraft
+      () => {
+        setInput((current) => (current === input ? "" : current));
+        const sentIds = new Set(selectedLibraryFiles.map((file) => file.id));
+        const sentKeys = new Set(localUploads.map((item) => item.key));
+        setSelectedLibraryFiles((current) =>
+          current.filter((file) => !sentIds.has(file.id)),
+        );
+        setLocalUploads((current) =>
+          current.filter((item) => !sentKeys.has(item.key)),
+        );
+      },
     );
   };
 
@@ -164,7 +164,9 @@ export default function ChatInput({
       const data = await chatFilesApi.list();
       setLibraryFiles(data);
     } catch (error: unknown) {
-      setPickerError(error instanceof Error ? error.message : t("errors.loadLibraryFailed"));
+      setPickerError(
+        error instanceof Error ? error.message : t("errors.loadLibraryFailed"),
+      );
     } finally {
       setPickerLoading(false);
     }
@@ -187,7 +189,10 @@ export default function ChatInput({
 
     for (const file of pickedFiles) {
       if (!isSupportedChatAttachment(file)) {
-        addToast(t("errors.unsupportedAttachment", { name: file.name }), "warning");
+        addToast(
+          t("errors.unsupportedAttachment", { name: file.name }),
+          "warning",
+        );
         continue;
       }
       uploadIdRef.current += 1;
@@ -208,7 +213,9 @@ export default function ChatInput({
   };
 
   const removeLibraryFile = (fileId: string) => {
-    setSelectedLibraryFiles((prev) => prev.filter((item) => item.id !== fileId));
+    setSelectedLibraryFiles((prev) =>
+      prev.filter((item) => item.id !== fileId),
+    );
   };
 
   const removeLocalUpload = (uploadKey: string) => {
@@ -232,12 +239,13 @@ export default function ChatInput({
     );
   });
 
-  const selectedLibraryIds = new Set(selectedLibraryFiles.map((file) => file.id));
+  const selectedLibraryIds = new Set(
+    selectedLibraryFiles.map((file) => file.id),
+  );
   const hasDraftAttachments =
     selectedLibraryFiles.length > 0 || localUploads.length > 0;
-  const queryInterrupt = interrupt?.type === "query" ? interrupt : null;
   const canSend =
-    Boolean(input.trim() || hasDraftAttachments) && !disabled && !queryInterrupt;
+    Boolean(input.trim() || hasDraftAttachments) && !disabled && !submitting;
 
   return (
     <div className="shrink-0 bg-gradient-to-t from-white via-white to-white/75 px-4 pb-5 pt-3 sm:px-6">
@@ -285,107 +293,113 @@ export default function ChatInput({
           </div>
         )}
 
-        {queryInterrupt ? (
-          <QueryDecisionComposer
-            key={queryInterrupt.interruptId || "query-interrupt"}
-            interrupt={queryInterrupt}
-            onAnswer={onAnswerQuery}
-          />
-        ) : (
-          <div className="rounded-3xl bg-white p-2 shadow-[0_14px_40px_rgba(15,23,42,0.12)] transition-shadow focus-within:shadow-[0_0_0_2px_rgba(20,86,240,0.15),0_14px_40px_rgba(44,30,116,0.16)]">
-            <div className="flex items-end gap-3 rounded-[1.25rem] bg-surface-secondary/80 p-2 pl-4">
-              <div ref={attachmentMenuRef} className="relative shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setAttachmentMenuOpen((open) => !open)}
-                  disabled={disabled || isStreaming}
-                  className="rounded-full bg-white p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40"
-                  title={t("chat.addAttachment")}
-                  aria-label={t("chat.addAttachment")}
-                  aria-expanded={attachmentMenuOpen}
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
-                  </svg>
-                </button>
-
-                {attachmentMenuOpen && (
-                  <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-48 overflow-hidden rounded-2xl border border-border-light bg-white p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]">
-                    <button
-                      type="button"
-                      onClick={openLocalFileDialog}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
-                    >
-                      <svg className="h-4 w-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16V4m0 0l-4 4m4-4l4 4M4 16.5A2.5 2.5 0 006.5 19h11a2.5 2.5 0 002.5-2.5" />
-                      </svg>
-                      <span>{t("chat.uploadFile")}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openPicker}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
-                    >
-                      <svg className="h-4 w-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V7z" />
-                      </svg>
-                      <span>{t("chat.chooseFromLibrary")}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  disabled
-                    ? t("chat.configureModel")
-                    : t("chat.promptPlaceholder")
-                }
+        <div className="rounded-3xl bg-white p-2 shadow-[0_14px_40px_rgba(15,23,42,0.12)] transition-shadow focus-within:shadow-[0_0_0_2px_rgba(20,86,240,0.15),0_14px_40px_rgba(44,30,116,0.16)]">
+          <div className="flex items-end gap-3 rounded-[1.25rem] bg-surface-secondary/80 p-2 pl-4">
+            <div ref={attachmentMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setAttachmentMenuOpen((open) => !open)}
                 disabled={disabled}
-                rows={1}
-                className="flex-1 resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:text-text-muted/50"
-              />
-              <div className="flex items-center gap-1.5">
-                {isStreaming ? (
-                  <Button variant="danger" size="sm" onClick={onStop} pill>
-                    {t("chat.stop")}
-                  </Button>
-                ) : isInterrupted ? (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={onRetry}
-                    pill
+                className="rounded-full bg-white p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40"
+                title={t("chat.addAttachment")}
+                aria-label={t("chat.addAttachment")}
+                aria-expanded={attachmentMenuOpen}
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 5v14m7-7H5"
+                  />
+                </svg>
+              </button>
+
+              {attachmentMenuOpen && (
+                <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-48 overflow-hidden rounded-2xl border border-border-light bg-white p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]">
+                  <button
+                    type="button"
+                    onClick={openLocalFileDialog}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
                   >
-                    {t("chat.retry")}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleSend}
-                    disabled={!canSend}
-                    pill
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    <svg
+                      className="h-4 w-4 text-text-muted"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 16V4m0 0l-4 4m4-4l4 4M4 16.5A2.5 2.5 0 006.5 19h11a2.5 2.5 0 002.5-2.5"
+                      />
                     </svg>
-                  </Button>
-                )}
-              </div>
+                    <span>{t("chat.uploadFile")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openPicker}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
+                  >
+                    <svg
+                      className="h-4 w-4 text-text-muted"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"
+                      />
+                    </svg>
+                    <span>{t("chat.chooseFromLibrary")}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                disabled
+                  ? t("chat.configureModel")
+                  : t("chat.promptPlaceholder")
+              }
+              disabled={disabled}
+              rows={1}
+              className="flex-1 resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:text-text-muted/50"
+            />
+            <div className="flex items-center gap-1.5">
+              {isStreaming && (
+                <Button variant="danger" size="sm" onClick={onStop} pill>
+                  {t("chatRuns.stopCurrent")}
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSend}
+                disabled={!canSend}
+                pill
+              >
+                {t(isStreaming ? "chatRuns.enqueue" : "chatRuns.send")}
+              </Button>
             </div>
           </div>
-        )}
+        </div>
         <p className="mt-2 text-center text-[11px] text-text-muted">
-          {queryInterrupt
-            ? t("chat.enterSubmit")
-            : noticeMessage
-              ? noticeMessage
-              : t("chat.shiftEnterSubmit")}
+          {noticeMessage ?? t("chat.shiftEnterSubmit")}
         </p>
       </div>
 
@@ -410,8 +424,18 @@ export default function ChatInput({
                 onClick={() => setPickerOpen(false)}
                 className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
               >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -427,16 +451,24 @@ export default function ChatInput({
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               {pickerLoading ? (
-                <p className="py-8 text-center text-sm text-text-muted">{t("chat.loadingLibrary")}</p>
+                <p className="py-8 text-center text-sm text-text-muted">
+                  {t("chat.loadingLibrary")}
+                </p>
               ) : pickerError ? (
                 <div className="py-8 text-center">
                   <p className="mb-3 text-sm text-error-text">{pickerError}</p>
-                  <Button variant="secondary" size="sm" onClick={loadLibraryFiles}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={loadLibraryFiles}
+                  >
                     {t("chat.retry")}
                   </Button>
                 </div>
               ) : filteredLibraryFiles.length === 0 ? (
-                <p className="py-8 text-center text-sm text-text-muted">{t("chat.noAvailableFiles")}</p>
+                <p className="py-8 text-center text-sm text-text-muted">
+                  {t("chat.noAvailableFiles")}
+                </p>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {filteredLibraryFiles.map((file) => {
@@ -448,7 +480,7 @@ export default function ChatInput({
                           setSelectedLibraryFiles((prev) =>
                             selected
                               ? prev.filter((item) => item.id !== file.id)
-                              : [...prev, file]
+                              : [...prev, file],
                           )
                         }
                         selected={selected}
@@ -475,7 +507,11 @@ export default function ChatInput({
                   count: formatLocaleNumber(selectedLibraryFiles.length),
                 })}
               </span>
-              <Button variant="primary" size="sm" onClick={() => setPickerOpen(false)}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setPickerOpen(false)}
+              >
                 {t("common.done")}
               </Button>
             </div>
@@ -486,14 +522,16 @@ export default function ChatInput({
   );
 }
 
-function QueryDecisionComposer({
-  interrupt,
+export function QueryDecisionComposer({
+  input,
   onAnswer,
 }: {
-  interrupt: ChatInterrupt;
+  input: PendingInput;
   onAnswer: (choice: QueryChoice, note?: string | null) => void;
 }) {
-  const [selectedChoice, setSelectedChoice] = useState<QueryChoice | null>(null);
+  const [selectedChoice, setSelectedChoice] = useState<QueryChoice | null>(
+    null,
+  );
   const [note, setNote] = useState("");
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const { t } = useTranslation();
@@ -505,20 +543,22 @@ function QueryDecisionComposer({
   }[] = [
     {
       key: "firstChoice",
-      label: interrupt.firstChoice || t("chat.queryOptionOne"),
+      label: input.firstChoice || t("chat.queryOptionOne"),
       description:
-        interrupt.firstChoiceDescription || t("chat.queryDefaultDescription"),
+        input.firstChoiceDescription || t("chat.queryDefaultDescription"),
       recommended: true,
     },
     {
       key: "secondChoice",
-      label: interrupt.secondChoice || t("chat.queryOptionTwo"),
-      description: interrupt.secondChoiceDescription || t("chat.querySecondDescription"),
+      label: input.secondChoice || t("chat.queryOptionTwo"),
+      description:
+        input.secondChoiceDescription || t("chat.querySecondDescription"),
     },
     {
       key: "thirdChoice",
-      label: interrupt.thirdChoice || t("chat.queryOptionThree"),
-      description: interrupt.thirdChoiceDescription || t("chat.queryThirdDescription"),
+      label: input.thirdChoice || t("chat.queryOptionThree"),
+      description:
+        input.thirdChoiceDescription || t("chat.queryThirdDescription"),
     },
     {
       key: "other",
@@ -538,7 +578,9 @@ function QueryDecisionComposer({
     onAnswer(resolvedChoice, trimmedNote || null);
   };
 
-  const handleNoteKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleNoteKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       submit();
@@ -552,7 +594,7 @@ function QueryDecisionComposer({
   return (
     <div className="rounded-[1.45rem] border border-border-light bg-white px-4 py-3.5 text-text-primary shadow-[0_0_22px_rgba(44,30,116,0.16)] sm:px-5">
       <p className="mb-3 text-sm font-semibold leading-snug sm:text-base">
-        {interrupt.question || t("chat.queryQuestion")}
+        {input.question || t("chat.queryQuestion")}
       </p>
       <div className="space-y-1.5">
         {choices.map((choice, index) => {
@@ -588,7 +630,10 @@ function QueryDecisionComposer({
                   {displayLabel}
                 </span>
               </button>
-              <InfoTooltip description={choice.description} label={choice.label} />
+              <InfoTooltip
+                description={choice.description}
+                label={choice.label}
+              />
             </div>
           );
         })}
@@ -596,8 +641,18 @@ function QueryDecisionComposer({
       <div className="mt-3 flex flex-col gap-2.5 sm:flex-row sm:items-end">
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <span className="mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-muted">
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 4.487l1.688-1.688a1.875 1.875 0 112.652 2.652L9.38 17.273 4 18.5l1.227-5.38L16.862 4.487z" />
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M16.862 4.487l1.688-1.688a1.875 1.875 0 112.652 2.652L9.38 17.273 4 18.5l1.227-5.38L16.862 4.487z"
+              />
             </svg>
           </span>
           <textarea
@@ -617,8 +672,18 @@ function QueryDecisionComposer({
           className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full bg-[#181e25] px-5 text-sm font-semibold text-white transition hover:bg-[#222b35] disabled:cursor-not-allowed disabled:bg-surface-secondary disabled:text-text-muted"
         >
           {t("chat.submit")}
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 5l7 7-7 7"
+            />
           </svg>
         </button>
       </div>
@@ -650,8 +715,18 @@ function InfoTooltip({
           viewBox="0 0 24 24"
           aria-hidden="true"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-4m0-4h.01" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 16v-4m0-4h.01"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 21a9 9 0 100-18 9 9 0 000 18z"
+          />
         </svg>
       </button>
       <span

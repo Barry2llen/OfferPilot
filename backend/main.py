@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from agent.agents.supervisor import SupervisorAgent, get_supervisor_tools
 from agent.checkpointers import DatabaseCheckpointer
 from agent.compaction import DatabaseCompactionModelResolver
+from agent.interactions import InteractionError
 from api import ai_router, job_description_router, model_config_router, resume_router
 from db.engine import (
     configure_async_database_manager,
@@ -18,6 +19,7 @@ from db.engine import (
     dispose_database_manager,
 )
 from schemas.config import Config, load_config
+from services.chat_runs import ChatRunManager
 from services.jd_analysis_jobs import JdAnalysisJobManager
 from services.resume_extraction_jobs import ResumeExtractionJobManager
 from utils.asyncio_windows import install_windows_connection_reset_filter
@@ -72,7 +74,13 @@ def create_app(
                 app.state.database
             ),
         ).get_agent()
+        app.state.chat_runs = ChatRunManager(
+            config=target_config,
+            database=app.state.database,
+            agent=app.state.supervisor_agent,
+        )
         yield
+        await app.state.chat_runs.shutdown()
         await app.state.resume_extraction_jobs.shutdown()
         await app.state.jd_analysis_jobs.shutdown()
         await dispose_async_database_manager()
@@ -124,6 +132,13 @@ def create_app(
             status_code=error.status_code,
             content={"detail": detail},
             headers=error.headers,
+        )
+
+    @app.exception_handler(InteractionError)
+    async def interaction_error(request: Request, error: InteractionError):
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"detail": localize_error(str(error), request_locale(request))},
         )
 
     @app.exception_handler(RequestValidationError)

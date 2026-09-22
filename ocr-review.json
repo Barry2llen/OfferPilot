@@ -1,0 +1,770 @@
+[
+  {
+    "path": "backend/schemas/config/base.py",
+    "content": "Invalid syntax: `frozen=True` cannot be passed as a class parameter in Python. This will raise a TypeError at import time. Use `model_config = ConfigDict(frozen=True)` inside the class body instead, consistent with the other model classes in this file (ChatRunsConfig, CorsConfig, etc.).",
+    "suggestion_code": "class Config(BaseModel):\n    \"\"\"Configuration for the application.\"\"\"\n\n    model_config = ConfigDict(frozen=True)",
+    "existing_code": "class Config(BaseModel, frozen=True):\n    \"\"\"Configuration for the application.\"\"\"",
+    "start_line": 93,
+    "end_line": 94,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/db/models/chat_run.py",
+    "content": "Timestamp handling inconsistency: This uses a Python-side default (`datetime.now(UTC)`), while all other models (GraphCheckpointORM, ChatFileORM, etc.) use `server_default=func.current_timestamp()`. The `conversation_page` query unions timestamps from both ChatRunORM and GraphCheckpointORM for sorting. If the database timezone differs from UTC (common in PostgreSQL), the unstarted threads and checkpoint threads will have timestamps in different timezones, causing incorrect ordering in pagination results. Additionally, the SQL schema declares `created_at TIMESTAMP NOT NULL`, but the ORM doesn't explicitly set `nullable=False`.",
+    "suggestion_code": "    created_at: Mapped[datetime] = mapped_column(\n        DateTime,\n        server_default=func.current_timestamp(),\n        nullable=False,\n    )",
+    "existing_code": "    created_at: Mapped[datetime] = mapped_column(\n        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None)\n    )",
+    "start_line": 23,
+    "end_line": 25,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/db/repositories/chat_run_repository.py",
+    "content": "Dead code: The `unstarted_threads` method is never called. The service layer uses `unstarted_rows` instead (services/chat_runs.py:287). This method should be removed to avoid confusion and reduce maintenance burden.",
+    "existing_code": "    def unstarted_threads(self):\n        with self.sessions() as session:\n            checkpoint_exists = (\n                select(GraphCheckpointORM.thread_id)\n                .where(\n                    GraphCheckpointORM.thread_id == ChatRunORM.thread_id,\n                    GraphCheckpointORM.checkpoint_ns == \"\",\n                )\n                .exists()\n            )\n            return list(\n                session.scalars(\n                    select(ChatRunORM.thread_id).distinct().where(~checkpoint_exists)\n                )\n            )",
+    "start_line": 96,
+    "end_line": 110,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-input.tsx",
+    "content": "Stale closure bug: sentIds and sentKeys are built from props captured at handleSend time, not from current state when the callback executes. If the user adds or removes attachments between clicking Send and the server acknowledging the submission, the filter will operate on stale IDs/keys. This can leave orphaned attachments in the UI or incorrectly remove newly added ones. Use the updater function's current parameter to build the Sets: `setSelectedLibraryFiles(current =\u003e { const sentIds = new Set(selectedLibraryFiles.map(...)); return current.filter(...); })`.",
+    "existing_code": "      () =\u003e {\n        setInput((current) =\u003e (current === input ? \"\" : current));\n        const sentIds = new Set(selectedLibraryFiles.map((file) =\u003e file.id));\n        const sentKeys = new Set(localUploads.map((item) =\u003e item.key));\n        setSelectedLibraryFiles((current) =\u003e\n          current.filter((file) =\u003e !sentIds.has(file.id)),\n        );\n        setLocalUploads((current) =\u003e\n          current.filter((item) =\u003e !sentKeys.has(item.key)),\n        );\n      },",
+    "start_line": 139,
+    "end_line": 149,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-input.tsx",
+    "content": "Incomplete submitting gate: The attachment menu button only checks disabled, not submitting. Users can open the menu and queue file selections while a submission is in flight, potentially causing state conflicts or confusing UX when the onAccepted callback clears attachments mid-interaction. Add submitting to the disabled condition: `disabled={disabled || submitting}`.",
+    "existing_code": "              \u003cbutton\n                type=\"button\"\n                onClick={() =\u003e setAttachmentMenuOpen((open) =\u003e !open)}\n                disabled={disabled}\n                className=\"rounded-full bg-white p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40\"",
+    "start_line": 299,
+    "end_line": 303,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-input.tsx",
+    "content": "Closure captures input at send time for comparison check: The callback compares `current === input` to decide whether to clear the input field. If the input ref changes between send and callback (user types and deletes, returning to same text), the comparison will pass but the strings are different instances, causing the clear to skip. Consider using a flag or comparing trimmed values, or always clear since the submission was accepted: `setInput(\"\")`.",
+    "existing_code": "  const handleSend = () =\u003e {\n    const trimmed = input.trim();\n    if (\n      (!trimmed \u0026\u0026\n        localUploads.length === 0 \u0026\u0026\n        selectedLibraryFiles.length === 0) ||\n      disabled ||\n      submitting\n    ) {\n      return;\n    }\n    onSend(\n      {\n        prompt: trimmed,\n        localFiles: localUploads.map((item) =\u003e item.file),\n        fileIds: selectedLibraryFiles.map((file) =\u003e file.id),\n        draftAttachments: buildDraftAttachments(),\n      },\n      () =\u003e {\n        setInput((current) =\u003e (current === input ? \"\" : current));\n        const sentIds = new Set(selectedLibraryFiles.map((file) =\u003e file.id));\n        const sentKeys = new Set(localUploads.map((item) =\u003e item.key));\n        setSelectedLibraryFiles((current) =\u003e\n          current.filter((file) =\u003e !sentIds.has(file.id)),\n        );\n        setLocalUploads((current) =\u003e\n          current.filter((item) =\u003e !sentKeys.has(item.key)),\n        );\n      },\n    );\n  };",
+    "start_line": 121,
+    "end_line": 151,
+    "category": "bug",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-input.tsx",
+    "content": "Confusing UX: The Send button label changes to 'Enqueue' when streaming, but the button appears alongside a separate Stop button. Users may not understand that clicking 'Enqueue' queues a new message rather than affecting the current stream. Consider adding a visual separator or tooltip explaining that 'Enqueue' submits a new request that will run after the current one completes.",
+    "existing_code": "            \u003cdiv className=\"flex items-center gap-1.5\"\u003e\n              {isStreaming \u0026\u0026 (\n                \u003cButton variant=\"danger\" size=\"sm\" onClick={onStop} pill\u003e\n                  {t(\"chatRuns.stopCurrent\")}\n                \u003c/Button\u003e\n              )}\n              \u003cButton\n                variant=\"primary\"\n                size=\"sm\"\n                onClick={handleSend}\n                disabled={!canSend}\n                pill\n              \u003e\n                {t(isStreaming ? \"chatRuns.enqueue\" : \"chatRuns.send\")}\n              \u003c/Button\u003e\n            \u003c/div\u003e",
+    "start_line": 383,
+    "end_line": 398,
+    "category": "bug",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-input.tsx",
+    "content": "Component exported from wrong file: QueryDecisionComposer is exported from chat-input.tsx but represents a distinct concern (answering pending inputs) and is consumed by chat-run-panel.tsx. This creates a circular dependency risk and violates single-responsibility. Extract QueryDecisionComposer to its own file (e.g., query-decision-composer.tsx) so both chat-input and chat-run-panel can import it without coupling.",
+    "existing_code": "export function QueryDecisionComposer({\n  input,\n  onAnswer,\n}: {\n  input: PendingInput;\n  onAnswer: (choice: QueryChoice, note?: string | null) =\u003e void;\n}) {",
+    "start_line": 525,
+    "end_line": 531,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-run-panel.tsx",
+    "content": "Silent error swallowing: The catch block resets busy state but provides no user feedback when onAnswer rejects. Network failures, validation errors, or server rejections will leave the user unaware their response was not recorded. Import useToast and display the error: `catch (error) { setBusy(false); addToast(error instanceof Error ? error.message : String(error), \"error\"); }`.",
+    "existing_code": "  const submit = async (answer: InputAnswer) =\u003e {\n    if (busy) return;\n    setBusy(true);\n    try {\n      await onAnswer(input, answer);\n    } catch {\n      setBusy(false);\n    }\n  };",
+    "start_line": 24,
+    "end_line": 32,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-run-panel.tsx",
+    "content": "Magic number without justification: The limit of 3 notices has no explanatory comment. If many runs fail rapidly, older failures will be hidden without the user understanding why. Add a comment explaining the UX rationale: `// Limit to 3 most recent failures to prevent panel overflow while still surfacing immediate issues`.",
+    "existing_code": "const MAX_RUN_NOTICES = 3;",
+    "start_line": 13,
+    "end_line": 13,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-run-panel.tsx",
+    "content": "Silent error swallowing: onCancel is async but errors are voided without user feedback. If the cancel request fails (network error, server rejection), the queued run will remain visible but the user won't know the cancellation failed. Either await and handle errors with a toast, or wrap in try/catch: `onClick={async () =\u003e { try { await onCancel(run.run_id); } catch (error) { addToast(error message, 'error'); } }}`",
+    "existing_code": "      {queued.map((run) =\u003e (\n            \u003cdiv\n              key={run.run_id}\n              className=\"flex items-center justify-between gap-2 py-1\"\n            \u003e\n              \u003cspan className=\"truncate\"\u003e\n                {run.prompt || t(\"chatRuns.attachments\")}\n              \u003c/span\u003e\n              \u003cButton\n                size=\"sm\"\n                variant=\"ghost\"\n                onClick={() =\u003e {\n                  void onCancel(run.run_id);\n                }}\n              \u003e\n                {t(\"chatRuns.remove\")}\n              \u003c/Button\u003e\n            \u003c/div\u003e\n          ))}",
+    "start_line": 101,
+    "end_line": 119,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/components/chat/chat-run-panel.tsx",
+    "content": "Silent error swallowing: onCancelQueued is async but errors are voided without user feedback. If the bulk cancellation fails, all queued runs remain visible with no indication that the operation failed. Add error handling: `onClick={async () =\u003e { try { await onCancelQueued(); } catch (error) { addToast(t('errors.cancelFailed'), 'error'); } }}`",
+    "existing_code": "            \u003cButton\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={() =\u003e {\n                void onCancelQueued();\n              }}\n            \u003e\n              {t(\"chatRuns.cancelQueued\")}\n            \u003c/Button\u003e",
+    "start_line": 91,
+    "end_line": 99,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/lib/context/app-context.tsx",
+    "content": "Syntax error: invalid destructuring assignment with no right-hand side. This line will cause a runtime error and the variable '瀵嗛挜' is never used. This appears to be leftover debug code or an accidental paste that should be removed entirely.",
+    "existing_code": "const [瀵嗛挜];",
+    "start_line": 0,
+    "end_line": 0,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "frontend/app/lib/context/app-context.tsx",
+    "content": "SELECTION_STORAGE_KEY is referenced but never defined or imported in this file. This will cause a ReferenceError at runtime. Based on the pattern in frontend/app/lib/i18n.ts (which uses LOCALE_STORAGE_KEY), you need to define this constant at the top of the file.",
+    "suggestion_code": "const SELECTION_STORAGE_KEY = \"app:selection\";\n\nconst initialState: AppState = {\n  currentModelSelection: null,\n  currentThreadId: null,\n  currentThreadRequiresImageInput: false,\n  agentStatus: \"idle\",\n  chatHistoryVersion: 0,\n};",
+    "existing_code": "      const parsed: unknown = JSON.parse(\n        localStorage.getItem(SELECTION_STORAGE_KEY) || \"{}\",\n      );",
+    "start_line": 64,
+    "end_line": 66,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "frontend/app/lib/context/app-context.tsx",
+    "content": "The useReducer lazy initializer accesses localStorage during component initialization, which is undefined in Next.js SSR/SSG contexts. This file lacks a 'use client' directive, meaning it may be executed on the server where localStorage does not exist. While the try-catch prevents crashes, this will cause hydration mismatches between server and client renders. Add 'use client' at the top of the file to ensure this component only runs in the browser.",
+    "suggestion_code": "\"use client\";\nimport {\n  createContext,\n  useContext,\n  useReducer,\n  useCallback,\n  useEffect,\n  type ReactNode,\n} from \"react\";",
+    "existing_code": "export function AppProvider({ children }: { children: ReactNode }) {\n  const [state, dispatch] = useReducer(appReducer, initialState, (defaults) =\u003e {\n    try {\n      const parsed: unknown = JSON.parse(\n        localStorage.getItem(SELECTION_STORAGE_KEY) || \"{}\",\n      );",
+    "start_line": 61,
+    "end_line": 66,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/lib/context/app-context.tsx",
+    "content": "The empty catch block silently swallows all localStorage.setItem errors, including quota exceeded errors. While the comment indicates persistence is optional, users may not realize their selections aren't being saved. Consider logging the error to the console in development mode so developers can diagnose issues.",
+    "suggestion_code": "    } catch (error) {\n      /* Persistence is optional; keep the in-memory selection. */\n      if (process.env.NODE_ENV === \"development\") {\n        console.warn(\"Failed to persist app selection:\", error);\n      }\n    }",
+    "existing_code": "    } catch {\n      /* Persistence is optional; keep the in-memory selection. */\n    }",
+    "start_line": 94,
+    "end_line": 96,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/lib/context/app-context.tsx",
+    "content": "The validation accepts empty strings as valid thread IDs. If `saved.thread` is an empty string, it will be restored as the current thread ID, which could cause issues downstream where an empty string is semantically different from null (no thread selected). Consider adding a non-empty check: `typeof saved.thread === \"string\" \u0026\u0026 saved.thread.length \u003e 0`",
+    "existing_code": "        currentThreadId: typeof saved.thread === \"string\" ? saved.thread : null,",
+    "start_line": 73,
+    "end_line": 73,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/utils/i18n.py",
+    "content": "Syntax error: This dictionary entry is malformed. The string literal is not closed, there is no corresponding value, and it contains mixed Chinese characters. This will cause a SyntaxError on module import. Based on the search results, the intended entry should be:\n    \"Invalid idempotency key.\": \"invalidIdempotencyKey\",\n\nThis matches the translation key \"invalidIdempotencyKey\" defined at line 389 and the error message raised in backend/api/routes/ai.py:548.",
+    "suggestion_code": "    \"Invalid idempotency key.\": \"invalidIdempotencyKey\",",
+    "existing_code": "    \"Invalid idempotency [瀵嗛挜],",
+    "start_line": 0,
+    "end_line": 0,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/utils/i18n.py",
+    "content": "The startswith check is correct, but note that the actual error message raised in backend/api/routes/ai.py:544 is longer: \"Legacy query/retry commands are no longer supported. Submit an answer to /ai/chat/runs/{run_id}/inputs/{request_id}.\" The prefix match will work, but the translation at line 417 uses slightly different wording for the endpoint path. This is acceptable as a user-facing simplification, but documenting this intentional divergence would prevent future confusion.",
+    "existing_code": "    if raw.startswith(\"Legacy query/retry commands\"):\n        return translate(\"legacyChatCommand\", locale)",
+    "start_line": 428,
+    "end_line": 429,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/utils/i18n.py",
+    "content": "The identity check `localized != raw` fails when the error message is already in the target language. For English locale, if an error string happens to match an English translation exactly (e.g., \"The model call failed.\"), `localize_error` returns the same string, causing `localized == raw`, which incorrectly treats the recognized error as unrecognized and returns the generic fallback message instead of the specific error. This hides legitimate domain errors when locale is \"en-US\".",
+    "suggestion_code": "    localized = localize_error(error, locale)\n    # If it was recognized and translated (or is already in target language),\n    # the localized version differs from fallback. Otherwise, hide it.\n    fallback = translate(\"runExecutionFailed\", locale)\n    if localized != fallback:\n        return localized\n    return fallback",
+    "existing_code": "    localized = localize_error(error, locale)\n    if localized != raw:\n        return localized\n    return localize_error(\"Chat execution failed. See server logs for details.\", locale)",
+    "start_line": 635,
+    "end_line": 638,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/utils/i18n.py",
+    "content": "The function `public_run_error` is defined below (line 616) and used in other modules (backend/agent/interactions.py, backend/services/chat_runs.py), but it's missing from __all__. This creates an inconsistency where the function is exported and used but not declared in the public API.",
+    "suggestion_code": "__all__ = [\n    \"DEFAULT_LOCALE\",\n    \"Locale\",\n    \"MESSAGES\",\n    \"SUPPORTED_LOCALES\",\n    \"localize_error\",\n    \"localize_model_retry_detail\",\n    \"localize_progress_message\",\n    \"localize_validation_message\",\n    \"public_run_error\",\n    \"request_locale\",\n    \"resolve_locale\",\n    \"translate\",\n]",
+    "existing_code": "__all__ = [\n    \"DEFAULT_LOCALE\",\n    \"Locale\",\n    \"MESSAGES\",\n    \"SUPPORTED_LOCALES\",\n    \"localize_error\",\n    \"localize_model_retry_detail\",\n    \"localize_progress_message\",\n    \"localize_validation_message\",\n    \"request_locale\",\n    \"resolve_locale\",\n    \"translate\",\n]",
+    "start_line": 601,
+    "end_line": 613,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/agent/agents/jd_analyzer/agent.py",
+    "content": "Return value from ask_user is ignored. The loop will retry indefinitely even if the user chooses to abort. The old code raised ModelCallExecutionError when response type was not 'retry'.",
+    "suggestion_code": "            response = await ask_user(\n                InputRequest(\n                    type=\"error\",\n                    message=f\"Model call failed after {max_retries} retries for extracting JD structure.\",\n                )\n            )\n            if response.get(\"type\") != \"retry\":\n                raise ModelCallExecutionError(\n                    f\"Model call failed after {max_retries} retries for extracting JD structure.\"\n                )",
+    "existing_code": "            await ask_user(\n                InputRequest(\n                    type=\"error\",\n                    message=f\"Model call failed after {max_retries} retries for extracting JD structure.\",\n                )\n            )\n            continue",
+    "start_line": 329,
+    "end_line": 335,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/agent/agents/jd_analyzer/agent.py",
+    "content": "Return value from ask_user is ignored, creating infinite retry loop. Should check response type before continuing.",
+    "suggestion_code": "            response = await ask_user(\n                InputRequest(\n                    type=\"error\",\n                    message=(\n                        f\"Model call failed after {max_retries} retries for extracting \"\n                        f\"facts from some JD blocks.\"\n                    ),\n                )\n            )\n            if response.get(\"type\") != \"retry\":\n                raise ModelCallExecutionError(\n                    f\"Model call failed after {max_retries} retries for extracting facts from JD blocks.\"\n                )",
+    "existing_code": "            await ask_user(\n                InputRequest(\n                    type=\"error\",\n                    message=(\n                        f\"Model call failed after {max_retries} retries for extracting \"\n                        f\"facts from some JD blocks.\"\n                    ),\n                )\n            )\n            continue",
+    "start_line": 536,
+    "end_line": 545,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/agent/agents/resume_extractor/agent.py",
+    "content": "Return value from ask_user is ignored, creating infinite retry loop. This pattern appears in three locations in this file (lines 148-155, 257-264, 453-460).",
+    "suggestion_code": "            response = await ask_user(\n                InputRequest(\n                    type=\"error\",\n                    message=f\"Model call failed after {max_retries} retries for extracting sections from the resume text.\",\n                )\n            )\n            if response.get(\"type\") != \"retry\":\n                raise ModelCallExecutionError(\n                    f\"Model call failed after {max_retries} retries for extracting sections from the resume text.\"\n                )",
+    "existing_code": "            await ask_user(\n                InputRequest(\n                    type=\"error\",\n                    message=f\"Model call failed after {max_retries} retries for extracting sections from the resume text.\",\n                )\n            )\n\n            continue",
+    "start_line": 148,
+    "end_line": 155,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/agent/graphs/model_call.py",
+    "content": "Return value from ask_user is ignored, creating an infinite retry loop. The old code matched response type and raised ModelCallExecutionError for non-retry responses. Now the loop unconditionally continues regardless of user intent. All retry loops in the codebase (this location, _context_compaction_error_node:265, _model_call_node:455, and agent files) have the same issue.",
+    "suggestion_code": "            response = await ask_user(InputRequest(type=\"error\", message=str(error)))\n            if response.get(\"type\") != \"retry\":\n                raise ModelCallExecutionError(\n                    f\"Failed to read model configuration: {error}\"\n                )",
+    "existing_code": "            await ask_user(InputRequest(type=\"error\", message=str(error)))",
+    "start_line": 176,
+    "end_line": 176,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/agent/graphs/model_call.py",
+    "content": "Unusual cancellation pattern: awaiting tasks again after cancelling non-done ones. The second gather appears intended for cleanup but is redundant鈥攖he first gather already waited for all tasks. If early exit is needed (e.g., on exception), consider using asyncio.TaskGroup or document why this pattern is necessary.",
+    "existing_code": "        tasks = [asyncio.create_task(_call_tool(call)) for call in tool_calls]\n        try:\n            results = await asyncio.gather(*tasks)\n        finally:\n            for task in tasks:\n                if not task.done():\n                    task.cancel()\n            await asyncio.gather(*tasks, return_exceptions=True)",
+    "start_line": 418,
+    "end_line": 425,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/agent/graphs/model_call.py",
+    "content": "Infinite retry loop: return value from ask_user is ignored. If resolve_model() fails repeatedly (e.g., database connection lost), this loop never terminates. The user cannot abort the run. Consider checking the response type or limiting retries.",
+    "existing_code": "    async def _refresh_model_selection(self, state: State) -\u003e State:\n        context = interaction_context.get()\n        if (\n            context is None\n            or context.resolve_model is None\n            or context.source != \"supervisor\"\n        ):\n            return state\n        while True:\n            try:\n                selection = await context.resolve_model()\n                updated = copy(state)\n                updated[\"model\"] = selection\n                return updated\n            except Exception as error:\n                logger.exception(\"Failed to read model configuration\")\n                await ask_user(InputRequest(type=\"error\", message=str(error)))",
+    "start_line": 160,
+    "end_line": 176,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "backend/agent/graphs/model_call.py",
+    "content": "Redundant context retrieval and duplication: interaction_context.get() is called twice (lines 343 and 367), and replace() is called twice with identical arguments (lines 349-353 and 370). The second get/replace pair is unnecessary since context hasn't changed. Consider removing lines 367-374 and reusing the injected_tool_call's context.",
+    "existing_code": "            context = interaction_context.get()\n            injected_tool_call = self._inject_runtime_if_requested(\n                tool_call,\n                tool,\n                ToolRuntime[InteractionContext | None, State](\n                    state=state,\n                    context=replace(\n                        context,\n                        tool_call_id=tool_call_id,\n                        source=name,\n                    )\n                    if context is not None\n                    else None,\n                    tool_call_id=tool_call_id,\n                    config=config,\n                    stream_writer=runtime.stream_writer,\n                    store=runtime.store,\n                    execution_info=runtime.execution_info,\n                    server_info=runtime.server_info,\n                ),\n            )\n\n            message_id = str(uuid4())\n            try:\n                context = interaction_context.get()\n                token = (\n                    interaction_context.set(\n                        replace(context, tool_call_id=tool_call_id, source=name)\n                    )\n                    if context\n                    else None\n                )",
+    "start_line": 343,
+    "end_line": 374,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/agent/interactions.py",
+    "content": "Race condition: multiple state checks before mutation are not atomic even on the same event loop. Concurrent submit() calls or cancel_run() can interleave between these checks. Consider using asyncio.Lock or restructuring to make the check-then-set operation atomic.",
+    "existing_code": "        # No awaits between the state check and transition: atomic on our event loop.\n        if item.answer is not None:\n            if item.answer == answer:\n                return\n            raise InteractionError(\"A different answer was already submitted.\")\n        if run_id in self.closed:\n            raise InteractionError(\"This input request is no longer available.\", 410)\n        if item.future.done():\n            raise InteractionError(\"This input request has expired.\", 410)\n        item.answer = answer\n        item.future.set_result(answer)",
+    "start_line": 104,
+    "end_line": 114,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "backend/agent/interactions.py",
+    "content": "Memory leak: items dict grows unbounded. ask() adds entries, submit() updates but never removes them, and forget() is only called when threads are deleted (not when individual runs complete). Every completed run leaks its PendingInput until thread deletion. Consider removing items in submit() after setting the result, or calling forget() in cancel_run().",
+    "existing_code": "    def __init__(\n        self,\n        publish: Callable[..., Awaitable[None]],\n        *,\n        limit: int = 32,\n        timeout: float | None = None,\n    ) -\u003e None:\n        self.publish = publish\n        self.limit = limit\n        self.timeout = timeout\n        self.items: dict[tuple[str, str], PendingInput] = {}\n        self.closed: set[str] = set()",
+    "start_line": 32,
+    "end_line": 43,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "backend/agent/interactions.py",
+    "content": "Returns direct references to item.data dicts, allowing external mutation of internal state. Consider returning copies: [item.data.copy() for ...]",
+    "existing_code": "    def list_pending(self, run_id: str) -\u003e list[dict[str, Any]]:\n        return [\n            item.data\n            for (rid, _), item in self.items.items()\n            if rid == run_id and not item.future.done()\n        ]",
+    "start_line": 45,
+    "end_line": 50,
+    "category": "bug",
+    "severity": "low"
+  },
+  {
+    "path": "backend/agent/interactions.py",
+    "content": "Resource leak on timeout: when asyncio.timeout expires, item remains in self.items forever (unless forget() is eventually called). The TimeoutError propagates but the PendingInput is never removed. Consider adding self.items.pop((context.run_id, request_id), None) in the except block after marking cancelled.",
+    "existing_code": "    async def ask(\n        self, context: \"InteractionContext\", request: Mapping[str, Any]\n    ) -\u003e dict[str, Any]:\n        if context.run_id in self.closed:\n            raise InteractionError(\"This run is no longer active.\", 410)\n        if not context.interactive:\n            raise ModelCallExecutionError(\n                \"User input is required. Use the interactive chat endpoint.\"\n            )\n        if len(self.list_pending(context.run_id)) \u003e= self.limit:\n            raise ModelCallExecutionError(\"Too many pending input requests.\")\n        request_id = uuid4().hex\n        data = {\n            **request,\n            \"type\": request.get(\"type\") or \"error\",\n            \"request_id\": request_id,\n            \"run_id\": context.run_id,\n            \"thread_id\": context.thread_id,\n            \"tool_call_id\": context.tool_call_id,\n            \"source\": context.source,\n        }\n        item = PendingInput(data, asyncio.get_running_loop().create_future())\n        self.items[context.run_id, request_id] = item\n        try:\n            await self.publish(context.run_id, \"input_required\", data)\n            async with asyncio.timeout(self.timeout):\n                return await item.future\n        except BaseException:\n            item.cancelled = True\n            item.future.cancel()\n            raise",
+    "start_line": 52,
+    "end_line": 82,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/agent/tools/query.py",
+    "content": "QueryAnswer.model_validate will raise ValidationError if the response structure is unexpected. The old code used dict access with .get() fallbacks. If the broker's answer structure changes or contains unexpected fields, this will crash rather than handling gracefully.",
+    "existing_code": "    ask = runtime.context.ask if runtime.context else ask_user\n    resp = QueryAnswer.model_validate(\n        await ask(\n            QueryRequest(",
+    "start_line": 63,
+    "end_line": 66,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/page.tsx",
+    "content": "handleNewChat no longer stops active streams before clearing state. If a run is actively streaming when the user clicks \"New Chat\", the stream will continue until the monitor loop in useChatStream detects the threadId change. This could cause brief confusion or race conditions. Consider calling stopStream() before clearing state, or verify that the immediate state reset in clearMessages() prevents any visual issues.",
+    "existing_code": "  const handleNewChat = useCallback(() =\u003e {\n    setModelContextWindowWarning(false);\n    clearMessages();\n    setThreadId(null);\n    setThreadRequiresImageInput(false);\n    setAgentStatus(\"idle\");\n  }, [clearMessages, setAgentStatus, setThreadId, setThreadRequiresImageInput]);",
+    "start_line": 134,
+    "end_line": 140,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/page.tsx",
+    "content": "handleSelectThread doesn't stop active streams when switching threads. Similar to handleNewChat, if a run is actively streaming in the current thread, it continues until the monitor loop processes the thread change. This could show stale messages from the previous thread briefly during the transition. Consider adding stopStream() call before changing threads.",
+    "existing_code": "  const handleSelectThread = useCallback(\n    (threadId: string) =\u003e {\n      if (threadId === state.currentThreadId) return;\n      setModelContextWindowWarning(false);\n      setThreadId(threadId || null);\n      setThreadRequiresImageInput(false);\n    },\n    [setThreadId, setThreadRequiresImageInput, state.currentThreadId],\n  );",
+    "start_line": 124,
+    "end_line": 132,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/page.tsx",
+    "content": "Early return prevents reloading the current thread if needed (e.g., after an error or to refresh state). While this optimization avoids unnecessary work in normal cases, it could prevent legitimate reload scenarios. Consider whether there are cases where re-selecting the current thread should trigger a refresh.",
+    "existing_code": "  const handleSelectThread = useCallback(\n    (threadId: string) =\u003e {\n      if (threadId === state.currentThreadId) return;",
+    "start_line": 124,
+    "end_line": 126,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/page.tsx",
+    "content": "This effect runs on every models array change. If the models array is recreated with the same content (reference inequality but value equality), this could unnecessarily reset model selection. While models should be stable after initial load, consider using a more stable dependency (e.g., models.length or a computed stable value) or adding a ref-based equality check to prevent spurious resets.",
+    "existing_code": "  useEffect(() =\u003e {\n    if (\n      modelsLoaded \u0026\u0026\n      state.currentModelSelection !== null \u0026\u0026\n      !models.some((model) =\u003e model.id === state.currentModelSelection)\n    )\n      setModelSelection(null);\n  }, [modelsLoaded, models, state.currentModelSelection, setModelSelection]);",
+    "start_line": 88,
+    "end_line": 95,
+    "category": "performance",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/page.tsx",
+    "content": "Redundant setModelsLoading(false) call in catch block. The finally block always executes after catch, so calling setModelsLoading(false) in both places is unnecessary. Remove the call from the catch block and keep only the one in finally.",
+    "suggestion_code": "    .catch(() =\u003e {\n      if (!mounted) return;\n    })\n    .finally(() =\u003e {\n      setModelsLoading(false);\n    });",
+    "existing_code": "if (!mounted) return;\nsetModelsLoading(false);",
+    "start_line": 79,
+    "end_line": 80,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/page.tsx",
+    "content": "Two state variables (modelsLoading and modelsLoaded) appear to track related loading state. modelsLoading tracks the loading process while modelsLoaded tracks successful completion. If modelsLoading is not used elsewhere in the component (e.g., passed to ChatSidebar), consider whether both are needed or if the logic can be simplified to a single state variable.",
+    "existing_code": "  const [modelsLoading, setModelsLoading] = useState(true);\n  const [modelsLoaded, setModelsLoaded] = useState(false);",
+    "start_line": 47,
+    "end_line": 48,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "The validation `if not 1 \u003c= len(key) \u003c= 128` is unreachable when the header is an empty string. `request.headers.get(\"Idempotency-Key\")` returns `\"\"` for an empty header, which is falsy, so the `or uuid4().hex` branch generates a valid UUID. Move the length check before the default fallback, or explicitly check for empty strings: `key = request.headers.get(\"Idempotency-Key\"); if key == \"\": raise HTTPException(...); key = key or uuid4().hex`.",
+    "existing_code": "    key = request.headers.get(\"Idempotency-Key\") or uuid4().hex\n    if not 1 \u003c= len(key) \u003c= 128:\n        raise HTTPException(422, \"Invalid idempotency key.\")",
+    "start_line": 546,
+    "end_line": 548,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "Computing `sha256(f.content).hexdigest()` for each uploaded file during the HTTP request blocks the event loop. The `UploadedChatFile.content` field is raw bytes already loaded into memory by `await file.read()` in `_read_upload_file`, so hashing large files (e.g., PDFs, images) synchronously can stall other requests. Consider moving the hash computation to a thread executor: `await asyncio.to_thread(lambda: sha256(f.content).hexdigest())` or precompute hashes asynchronously before building the fingerprint.",
+    "existing_code": "                \"uploads\": [\n                    (f.filename, f.content_type, sha256(f.content).hexdigest())\n                    for f in payload.uploaded_files\n                ],",
+    "start_line": 559,
+    "end_line": 562,
+    "category": "performance",
+    "severity": "high"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "The `cleanup()` callable creates its own session and commits independently, but if `delete_thread` raises an exception after `cleanup()` succeeds, the checkpoint and attachments are deleted while the chat_run rows remain. This breaks atomicity. Verify that `ChatRunsManager.delete_thread` either (1) invokes `cleanup` inside a larger transaction that also covers the run repository delete, or (2) handles partial-cleanup failures by marking the thread as blocked. The current structure suggests no shared transaction wraps both operations.",
+    "existing_code": "    def cleanup() -\u003e bool:\n        with request.app.state.database.get_session_factory()() as session:\n            history_service = ChatHistoryService(\n                CheckpointRepository(session),\n                request.app.state.checkpointer,\n            )\n            deleted = history_service.delete_history(thread_id)\n            _build_chat_file_service(request, session).delete_thread_attachments(\n                thread_id\n            )\n            session.commit()\n            return deleted\n\n    deleted = await request.app.state.chat_runs.delete_thread(thread_id, cleanup)",
+    "start_line": 401,
+    "end_line": 414,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "Including `locale` in the fingerprint means that retrying the same submission with a different `Accept-Language` header creates a new run instead of returning the cached result. If locale only affects error message localization and not the core execution (prompt, model, attachments), this causes duplicate work. If the locale genuinely changes the prepared submission (e.g., translated prompts embedded in the message), document this behavior or move locale out of the fingerprint and into result presentation only.",
+    "existing_code": "                \"locale\": request_locale(request),",
+    "start_line": 558,
+    "end_line": 558,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "The `/chat` endpoint is documented as non-interactive and should fail with 502 when the run requires human input, but the behavior of `manager.result()` when the run is blocked on `waiting_input` is not clear from this code. Confirm that `ChatRunsManager.result` raises an `InteractionError` with status 502 for runs stuck awaiting input, otherwise the endpoint will hang or return incomplete results, violating the interactive=False contract.",
+    "existing_code": "    result = await manager.result(run[\"run_id\"])\n    return AIChatResponse(thread_id=run[\"thread_id\"], content=result)",
+    "start_line": 535,
+    "end_line": 536,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "The `/chat` endpoint waits for `manager.result()` which blocks until `run.done` is set. If the run is queued behind other runs in the same thread, this endpoint will wait for all preceding runs to complete before returning. For a heavily used conversation thread, this could cause HTTP request timeouts. Consider documenting the queueing behavior or adding a timeout with a 504 response when the wait exceeds a reasonable duration.",
+    "suggestion_code": "async def chat(request: Request) -\u003e AIChatResponse:\n    run = await _submit_chat_run(request, interactive=False)\n    manager = request.app.state.chat_runs\n    try:\n        async with asyncio.timeout(300):  # 5 minutes\n            result = await manager.result(run[\"run_id\"])\n    except TimeoutError:\n        raise HTTPException(504, \"The request is still queued behind other conversations.\") from None\n    return AIChatResponse(thread_id=run[\"thread_id\"], content=result)",
+    "existing_code": "async def chat(request: Request) -\u003e AIChatResponse:\n    run = await _submit_chat_run(request, interactive=False)\n    manager = request.app.state.chat_runs\n    result = await manager.result(run[\"run_id\"])\n    return AIChatResponse(thread_id=run[\"thread_id\"], content=result)",
+    "start_line": 532,
+    "end_line": 536,
+    "category": "performance",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "The `thread_id` parameter is required (no default value), but if the caller omits it, FastAPI will return a 422 validation error. The endpoint signature suggests `thread_id` is always mandatory. Consider whether listing runs across all threads (when `thread_id` is omitted) would be useful for admin/debugging purposes, or explicitly document that `thread_id` is required.",
+    "existing_code": "async def list_chat_runs(\n    request: Request, thread_id: str = Query(description=\"Conversation ID.\")\n):\n    return await request.app.state.chat_runs.list(thread_id)",
+    "start_line": 709,
+    "end_line": 712,
+    "category": "documentation",
+    "severity": "low"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "When `lookup_key` returns a previous run, the function immediately returns it without validating that the previous run's `thread_id` matches `payload.thread_id` (which could be `None` for a new conversation). If a client reuses an idempotency key with a different `thread_id`, the fingerprint check will reject it, but if `payload.thread_id` is `None` in both requests, the fingerprint would still differ because `_make_thread_id` generates a new UUID. This behavior is probably correct, but the interaction between key reuse and thread_id generation is subtle鈥攃onsider a comment explaining that `thread_id=None` requests always get distinct fingerprints.",
+    "existing_code": "    previous = await manager.lookup_key(key, fingerprint)\n    if previous:\n        return previous\n    thread_id = _make_thread_id(payload.thread_id)",
+    "start_line": 568,
+    "end_line": 571,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "The `cleanup()` function calls `session.commit()` after deleting attachments, but if `delete_thread_attachments` raises an exception, the session is never rolled back explicitly. The context manager will close the session, but uncommitted changes may be rolled back or left in an undefined state depending on the database driver. Add an explicit `try/except` around the attachment deletion to ensure the session is rolled back on failure, or rely on the context manager's implicit rollback and document that behavior.",
+    "suggestion_code": "    def cleanup() -\u003e bool:\n        with request.app.state.database.get_session_factory()() as session:\n            try:\n                history_service = ChatHistoryService(\n                    CheckpointRepository(session),\n                    request.app.state.checkpointer,\n                )\n                deleted = history_service.delete_history(thread_id)\n                _build_chat_file_service(request, session).delete_thread_attachments(\n                    thread_id\n                )\n                session.commit()\n                return deleted\n            except Exception:\n                session.rollback()\n                raise",
+    "existing_code": "deleted = history_service.delete_history(thread_id)\n_build_chat_file_service(request, session).delete_thread_attachments(\n    thread_id\n)\nsession.commit()",
+    "start_line": 407,
+    "end_line": 411,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "The endpoint calls `manager.unstarted_history()` in a loop, which is async, but `history_service.get_history()` is synchronous and performs database I/O. For a page of 100 conversations, this mixes blocking and async calls inefficiently. Each `get_history()` call blocks the event loop. Consider wrapping `get_history()` in `asyncio.to_thread()` to avoid blocking, or refactor `history_service.get_history()` to batch-load checkpoint metadata for all thread_ids in the page.",
+    "suggestion_code": "    for row in page:\n        if row[\"has_checkpoint\"]:\n            history = await asyncio.to_thread(history_service.get_history, row[\"thread_id\"])\n            if history is not None:\n                items.append(history)\n        else:\n            pending = await manager.unstarted_history(row[\"thread_id\"])\n            if pending is not None:\n                items.append(AIChatHistoryDetailResponse(**pending))",
+    "existing_code": "for row in page:\n    if row[\"has_checkpoint\"]:\n        history = history_service.get_history(row[\"thread_id\"])\n        if history is not None:\n            items.append(history)\n    else:\n        pending = await manager.unstarted_history(row[\"thread_id\"])\n        if pending is not None:\n            items.append(AIChatHistoryDetailResponse(**pending))",
+    "start_line": 324,
+    "end_line": 332,
+    "category": "performance",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/api/routes/ai.py",
+    "content": "Similar to `list_chat_histories`, this endpoint calls `history_service.get_history()` synchronously, blocking the event loop. Wrap it in `asyncio.to_thread()` to avoid blocking other requests.",
+    "suggestion_code": "    history = await asyncio.to_thread(history_service.get_history, thread_id)",
+    "existing_code": "history = history_service.get_history(thread_id)",
+    "start_line": 363,
+    "end_line": 363,
+    "category": "performance",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Race condition: state updates (setPendingInputs, setConnectionState, setAgentStatus) occur without checking current() after the delay. If the component unmounts during the 1500ms delay, these state updates will execute on an unmounted component, causing React warnings and potential memory leaks. Add current() guard after the delay and before state updates.",
+    "existing_code": "          if (!run) {\n            if (!idleHistoryLoaded) {\n              const history = await load();\n              if (!current()) return;\n              if (history === null) {\n                await delay(1500);\n                continue;\n              }\n              if (runsRef.current.some((item) =\u003e !terminal(item))) continue;\n              publish(\n                mapChatHistory(\n                  history,\n                  createChatState(),\n                  chatFilesApi.rawUrl,\n                  historyCompacted,\n                ).state,\n              );\n              idleHistoryLoaded = true;\n            }\n            setPendingInputs([]);\n            activeRef.current = null;\n            setConnectionState(\"idle\");\n            setAgentStatus(\"idle\");\n            if (previousRun) {\n              bumpChatHistoryVersion();\n              previousRun = \"\";\n            }\n            await delay(1500);\n            continue;\n          }",
+    "start_line": 181,
+    "end_line": 210,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Missing current() check after delay: if the component unmounts during the delay, setConnectionState will execute on an unmounted component. Add current() guard after delay and before state update.",
+    "existing_code": "              if (!ended) {\n                setConnectionState(\"reconnecting\");\n                await delay(1000);\n              }",
+    "start_line": 405,
+    "end_line": 408,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Missing current() check after the final delay: state updates (setConnectionState, setActionError) occur before the delay but if the component unmounts during the delay, the loop will continue without checking. Add current() check after delay and consider guarding state updates.",
+    "existing_code": "            } catch (error) {\n              if (!current()) return;\n              if (error instanceof ApiError \u0026\u0026 error.status === 404) {\n                await load();\n                if (!current()) return;\n                runsRef.current = runsRef.current.filter(\n                  (item) =\u003e item.run_id !== run.run_id,\n                );\n                setRuns(runsRef.current);\n                ended = true;\n                continue;\n              }\n              setConnectionState(\"reconnecting\");\n              if (error instanceof Error) setActionError(error.message);\n              await delay(1500);\n            }",
+    "start_line": 409,
+    "end_line": 424,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Missing current() check after delay: if the component unmounts during the 1500ms delay, the loop will continue and potentially execute more state updates. Add current() check after the delay before continuing the loop.",
+    "existing_code": "        } catch (error) {\n          if (!current()) return;\n          setHistoryLoading(false);\n          setConnectionState(\"reconnecting\");\n          setActionError(\n            error instanceof Error ? error.message : String(error),\n          );\n          await delay(1500);\n        }",
+    "start_line": 427,
+    "end_line": 435,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Race condition with RAF cleanup: if publish is called with token=true after the useEffect cleanup has run, a new RAF will be scheduled but never cleaned up, causing a memory leak. The cleanup in useEffect may also cancel a RAF that was just scheduled. Consider adding an aborted/mounted check before scheduling RAF, or move RAF management into the useEffect lifecycle.",
+    "existing_code": "  const publish = useCallback((next: ChatStreamState, token = false) =\u003e {\n    stateRef.current = next;\n    if (rafRef.current !== null) {\n      if (token) return;\n      cancelAnimationFrame(rafRef.current);\n      rafRef.current = null;\n    }\n    if (token) {\n      rafRef.current = requestAnimationFrame(() =\u003e {\n        rafRef.current = null;\n        setState(stateRef.current);\n      });\n    } else setState(next);\n  }, []);",
+    "start_line": 77,
+    "end_line": 90,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Silent validation failure with limited debugging: when snapshot validation fails, only a generic streamError is set with no details about what failed (events malformed, pending_inputs invalid, etc.). Add console.warn or console.error with specific failure reason to aid debugging in production, especially since this affects UI state reconstruction.",
+    "existing_code": "                if (\n                  event.event === \"snapshot\" \u0026\u0026\n                  (!Array.isArray(event.data.events) ||\n                    !event.data.events.every(\n                      (item) =\u003e\n                        isProjectedEvent(item, run.run_id, tid) \u0026\u0026\n                        Number(item.data.event_id) \u003c= id,\n                    ) ||\n                    !Array.isArray(event.data.pending_inputs) ||\n                    !event.data.pending_inputs.every((item) =\u003e\n                      pendingInput(item, run.run_id, tid),\n                    ))\n                ) {\n                  setActionError(tRef.current(\"errors.streamError\"));\n                  continue;\n                }",
+    "start_line": 268,
+    "end_line": 283,
+    "category": "maintainability",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Magic number: hardcoded delay of 1500ms appears multiple times (lines 186, 208, 217, 423, 434). Consider extracting to named constants like IDLE_POLL_INTERVAL_MS, ERROR_RETRY_DELAY_MS, etc. for better maintainability and easier tuning of reconnection behavior.",
+    "existing_code": "                await delay(1500);",
+    "start_line": 186,
+    "end_line": 186,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Type assertion with minimal validation: casting event.data.events to ChatStreamEvent[] with only shallow runtime checks. If events contain unexpected structure, apply(item) may receive malformed events. Consider using the isProjectedEvent validator here (already validated earlier) or add a comment explaining why minimal validation is acceptable at this point.",
+    "existing_code": "                  for (const item of (event.data.events ??\n                    []) as ChatStreamEvent[]) {\n                    if (\n                      item \u0026\u0026\n                      typeof item.event === \"string\" \u0026\u0026\n                      item.data \u0026\u0026\n                      typeof item.data === \"object\"\n                    )\n                      apply(item);\n                  }",
+    "start_line": 342,
+    "end_line": 351,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Missing dependency in useCallback: the updateRuns callback uses mergeRuns but doesn't list it in dependencies. While mergeRuns is imported and stable, if it's later refactored to use context or becomes dynamic, this will cause stale closure bugs. Add mergeRuns to the dependency array or document why it's omitted.",
+    "existing_code": "  const updateRuns = useCallback((incoming: ChatRun[]) =\u003e {\n    runsRef.current = mergeRuns(runsRef.current, incoming);\n    setRuns(runsRef.current);\n    return runsRef.current;\n  }, []);",
+    "start_line": 57,
+    "end_line": 61,
+    "category": "bug",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Inconsistent state source: when token=false, setState receives 'next' directly. When token=true, RAF callback reads stateRef.current which may have changed between the publish call and RAF execution, causing the UI to render a different state than intended. Either always use stateRef.current or capture 'next' in the RAF closure for consistency.",
+    "existing_code": "  const publish = useCallback((next: ChatStreamState, token = false) =\u003e {\n    stateRef.current = next;\n    if (rafRef.current !== null) {\n      if (token) return;\n      cancelAnimationFrame(rafRef.current);\n      rafRef.current = null;\n    }\n    if (token) {\n      rafRef.current = requestAnimationFrame(() =\u003e {\n        rafRef.current = null;\n        setState(stateRef.current);\n      });\n    } else setState(next);",
+    "start_line": 77,
+    "end_line": 89,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "State update without current() guard: setHistoryLoading(true) executes before any async operation. If the component unmounts synchronously after calling load() but before the first await, this state update happens on an unmounted component. While React 18+ handles this gracefully, consider adding !current() check or moving the flag inside the try block.",
+    "existing_code": "    const load = async () =\u003e {\n      setHistoryLoading(true);",
+    "start_line": 129,
+    "end_line": 130,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Potential race condition: refreshRuns() may call updateRuns() which updates runsRef.current, but the returned 'list' is a stale snapshot. If multiple refreshRuns() calls overlap (from monitor loop and polling interval), 'run' may be based on outdated data while runsRef.current has newer state. Consider using runsRef.current directly after the refresh or add locking to prevent overlapping refreshes.",
+    "existing_code": "          const list = await refreshRuns();\n          if (!current()) return;\n          const run = list.find((item) =\u003e !terminal(item));",
+    "start_line": 178,
+    "end_line": 180,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Silent error swallowing: refreshRuns() errors are caught and ignored. While polling should be resilient, completely silent failures make debugging difficult in production. Consider logging the error to console.warn or incrementing an error counter that triggers a notification after repeated failures.",
+    "existing_code": "    const poll = setInterval(() =\u003e {\n      if (tid \u0026\u0026 subscribed \u0026\u0026 current()) void refreshRuns().catch(() =\u003e {});\n    }, 2000);",
+    "start_line": 440,
+    "end_line": 442,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Incomplete retry signature: the signature omits 'command' parameter which is passed to buildStreamBody. If the same prompt is retried with a different command (e.g., retry vs. query), the signature won't change and the same idempotency key will be reused, potentially causing the server to return the wrong cached run. Include command in the signature calculation.",
+    "existing_code": "        const signature = JSON.stringify([\n          selectionId,\n          prompt,\n          threadId,\n          options?.fileIds,\n          options?.localFiles?.map((file) =\u003e [\n            file.name,\n            file.size,\n            file.lastModified,\n          ]),\n        ]);",
+    "start_line": 472,
+    "end_line": 482,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "frontend/app/hooks/use-chat-stream.ts",
+    "content": "Missing error handling: cancelRun is async and can fail, but stopStream ignores the returned promise. If the cancel request fails (network error, 404, etc.), the user won't receive feedback and may believe the run was stopped. Consider awaiting the call or adding a .catch() to handle errors and notify the user.",
+    "existing_code": "  const stopStream = useCallback(() =\u003e {\n    if (activeRef.current) void cancelRun(activeRef.current.run_id);\n  }, [cancelRun]);",
+    "start_line": 549,
+    "end_line": 551,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/lib/chat/adapter.ts",
+    "content": "Inconsistent tool_call_id validation pattern: tool_start, tool_end, and tool_error all duplicate the same validation logic (checking undefined separately, then checking string type, then finding existing entries). This code duplication makes maintenance error-prone. Consider extracting a shared helper function like validateAndParseToolCallId(data) that returns null or the validated ID.",
+    "existing_code": "    case \"tool_start\": {\n      if (\n        data.tool_call_id !== undefined \u0026\u0026\n        (typeof data.tool_call_id !== \"string\" || !data.tool_call_id)\n      )\n        break;\n      const existing =\n        typeof data.tool_call_id === \"string\"\n          ? next.toolCalls.find(\n              (entry) =\u003e entry.toolCallId === data.tool_call_id,\n            )\n          : undefined;\n      if (existing) break;",
+    "start_line": 559,
+    "end_line": 571,
+    "category": "maintainability",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/lib/chat/adapter.ts",
+    "content": "Duplicate tool_start event silently ignored: if a tool_start event arrives with a tool_call_id that already exists in toolCalls, the event is dropped with no warning. This could hide backend bugs or replay issues. Consider logging a console.warn for unexpected duplicate tool_start events to aid debugging.",
+    "existing_code": "    case \"tool_start\": {\n      if (\n        data.tool_call_id !== undefined \u0026\u0026\n        (typeof data.tool_call_id !== \"string\" || !data.tool_call_id)\n      )\n        break;\n      const existing =\n        typeof data.tool_call_id === \"string\"\n          ? next.toolCalls.find(\n              (entry) =\u003e entry.toolCallId === data.tool_call_id,\n            )\n          : undefined;\n      if (existing) break;",
+    "start_line": 559,
+    "end_line": 571,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/lib/chat/adapter.ts",
+    "content": "Incomplete validation: tool_end checks if existing.status !== 'running' and silently ignores the event, but doesn't validate whether 'existing' is defined when tool_call_id is provided. If tool_end arrives before tool_start (out-of-order), it proceeds to findLastRunningToolCallIndex which may match the wrong tool by name. Add explicit check: if tool_call_id is provided but no matching entry exists, either warn or skip the event.",
+    "existing_code": "    case \"tool_end\": {\n      if (\n        data.tool_call_id !== undefined \u0026\u0026\n        (typeof data.tool_call_id !== \"string\" || !data.tool_call_id)\n      )\n        break;\n      const existing =\n        typeof data.tool_call_id === \"string\"\n          ? next.toolCalls.find(\n              (entry) =\u003e entry.toolCallId === data.tool_call_id,\n            )\n          : undefined;\n      if (existing \u0026\u0026 existing.status !== \"running\") break;",
+    "start_line": 599,
+    "end_line": 611,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/lib/chat/adapter.ts",
+    "content": "Missing input preservation on fallback: when tool_end arrives without a matching running entry (index \u003c 0), a new entry is created with output and status but no input field. This is inconsistent with tool_start which sets input. If events arrive out-of-order, the tool call will lack context about what was invoked. Consider preserving input from event data if available or marking the entry as incomplete.",
+    "existing_code": "      const index = findLastRunningToolCallIndex(\n        next.toolCalls,\n        name,\n        typeof data.tool_call_id === \"string\" ? data.tool_call_id : undefined,\n      );\n      const toolCalls = [...next.toolCalls];\n      if (index \u003e= 0) {\n        toolCalls[index] = { ...toolCalls[index], output, status: \"success\" };\n      } else {\n        toolCalls.push({\n          name,\n          output,\n          status: \"success\",\n          toolCallId:\n            typeof data.tool_call_id === \"string\"\n              ? data.tool_call_id\n              : undefined,\n        });\n      }",
+    "start_line": 616,
+    "end_line": 634,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/lib/chat/run-state.ts",
+    "content": "Missing fallback for environments without crypto.getRandomValues (e.g., non-secure contexts, older browsers). If randomUUID is unavailable but getRandomValues is also missing, this will throw a runtime error. Add a check for getRandomValues availability or provide a third fallback, or throw a clear error message.",
+    "existing_code": "export function createIdempotencyKey(): string {\n  if (typeof globalThis.crypto?.randomUUID === \"function\")\n    return globalThis.crypto.randomUUID();\n  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));\n  return Array.from(bytes, (byte) =\u003e byte.toString(16).padStart(2, \"0\")).join(\n    \"\",\n  );\n}",
+    "start_line": 86,
+    "end_line": 93,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/lib/chat/run-state.ts",
+    "content": "Edge case handling issue: the logic prevents terminal鈫抧on-terminal transitions (correct) and prefers higher event_id (correct), but if an incoming run has lower event_id AND is terminal while old is non-terminal, it will still replace the old run. This could happen with out-of-order updates. Consider adding a condition to preserve non-terminal runs when incoming terminal runs have stale event_ids.",
+    "existing_code": "export function mergeRuns(current: ChatRun[], incoming: ChatRun[]): ChatRun[] {\n  const rows = new Map(current.map((run) =\u003e [run.run_id, run]));\n  for (const run of incoming) {\n    const old = rows.get(run.run_id);\n    if (\n      old \u0026\u0026\n      ((isTerminal(old.status) \u0026\u0026 !isTerminal(run.status)) ||\n        (old.last_event_id \u003e run.last_event_id \u0026\u0026 !isTerminal(run.status)))\n    )\n      continue;\n    rows.set(run.run_id, run);\n  }\n  return [...rows.values()].sort((a, b) =\u003e a.sequence - b.sequence);\n}",
+    "start_line": 8,
+    "end_line": 21,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "frontend/app/lib/chat/run-state.ts",
+    "content": "Type assertion bypasses type safety: while runtime validation exists above this line, the 'as unknown as' pattern is fragile. If the PendingInput type definition changes but pendingInput validation logic is not updated, runtime errors could occur. Consider using a type guard return signature (value is PendingInput) or add a comment explaining why this assertion is safe given the validation above.",
+    "existing_code": "  return input as unknown as PendingInput;",
+    "start_line": 83,
+    "end_line": 83,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "frontend/app/lib/chat/run-state.ts",
+    "content": "Logic issue: the condition prevents terminal鈫抧on-terminal transitions (correct) and prefers higher event_id for non-terminal runs (correct), but has a gap: if old is non-terminal, incoming is terminal, and incoming.last_event_id \u003c old.last_event_id, the incoming terminal run is accepted. This could cause a terminal status with stale event_id to overwrite a fresher non-terminal state. Add condition: if incoming is terminal and old is non-terminal, only accept if incoming.last_event_id \u003e= old.last_event_id.",
+    "existing_code": "export function mergeRuns(current: ChatRun[], incoming: ChatRun[]): ChatRun[] {\n  const rows = new Map(current.map((run) =\u003e [run.run_id, run]));\n  for (const run of incoming) {\n    const old = rows.get(run.run_id);\n    if (\n      old \u0026\u0026\n      ((isTerminal(old.status) \u0026\u0026 !isTerminal(run.status)) ||\n        (old.last_event_id \u003e run.last_event_id \u0026\u0026 !isTerminal(run.status)))\n    )\n      continue;\n    rows.set(run.run_id, run);\n  }",
+    "start_line": 8,
+    "end_line": 19,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/services/chat_events.py",
+    "content": "The function `_is_tool_error_output` is defined but never used anywhere in the codebase. This is dead code and should be removed unless it's intended for a future feature.",
+    "existing_code": "def _is_tool_error_output(output: Any) -\u003e bool:\n    if getattr(output, \"status\", None) == \"error\":\n        return True\n    if isinstance(output, dict) and output.get(\"status\") == \"error\":\n        return True\n    return False",
+    "start_line": 87,
+    "end_line": 92,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/services/chat_events.py",
+    "content": "The function `_extract_reasoning_duration_ms` is defined but never used anywhere in the codebase. This is dead code and should be removed unless it's intended for a future feature.",
+    "existing_code": "def _extract_reasoning_duration_ms(value: Any) -\u003e int | None:\n    if isinstance(value, bool):\n        return None\n    if isinstance(value, int) and value \u003e= 0:\n        return value\n    if isinstance(value, float) and value \u003e= 0:\n        return round(value)\n    return None",
+    "start_line": 69,
+    "end_line": 76,
+    "category": "maintainability",
+    "severity": "low"
+  },
+  {
+    "path": "backend/services/chat_events.py",
+    "content": "Dead code: `_extract_reasoning_duration_ms` function is defined but never used in this file or imported elsewhere. The similar function `_message_reasoning_duration_ms` exists in `chat_history_service.py` and is actually used. Consider removing this unused function.",
+    "existing_code": "def _extract_reasoning_duration_ms(value: Any) -\u003e int | None:\n    if isinstance(value, bool):\n        return None\n    if isinstance(value, int) and value \u003e= 0:\n        return value\n    if isinstance(value, float) and value \u003e= 0:\n        return round(value)\n    return None",
+    "start_line": 69,
+    "end_line": 76,
+    "category": "bug",
+    "severity": "low"
+  },
+  {
+    "path": "backend/services/chat_events.py",
+    "content": "Dead code: `_is_tool_error_output` function is defined but never used in this file or anywhere in the codebase. Consider removing this unused function.",
+    "existing_code": "def _is_tool_error_output(output: Any) -\u003e bool:\n    if getattr(output, \"status\", None) == \"error\":\n        return True\n    if isinstance(output, dict) and output.get(\"status\") == \"error\":\n        return True\n    return False",
+    "start_line": 87,
+    "end_line": 92,
+    "category": "bug",
+    "severity": "low"
+  },
+  {
+    "path": "backend/services/chat_runs.py",
+    "content": "The context variable token is created but never set. This line appears to be a placeholder or template error. The `interaction_context.set(context)` call is missing, which means the context created on line 478-485 is never actually installed into the ContextVar. Without this, any code that calls `interaction_context.get()` (such as `ask_user()`) will get `None` instead of the expected context, causing runtime failures.",
+    "suggestion_code": "        token = interaction_context.set(context)",
+    "existing_code": "        token = [瀵嗛挜]",
+    "start_line": 0,
+    "end_line": 0,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/services/chat_runs.py",
+    "content": "This reset call will fail if the token assignment bug on line 486 is not fixed. If `token` remains as the placeholder `[瀵嗛挜]` instead of a proper ContextVar token, calling `reset()` with it will raise a TypeError. This is a consequence of the missing `interaction_context.set(context)` call.",
+    "existing_code": "            interaction_context.reset(token)",
+    "start_line": 645,
+    "end_line": 645,
+    "category": "bug",
+    "severity": "high"
+  },
+  {
+    "path": "backend/services/chat_runs.py",
+    "content": "Unsafe dictionary access without checking if the key exists. If `run.projection[-1]['data']` does not have a 'content' key, this will raise a KeyError. Since this modifies a token/reasoning event in place, the 'content' key should already exist, but defensive programming would use `.get('content', '')` or verify the key exists before the += operation.",
+    "suggestion_code": "            run.projection[-1][\"data\"][\"content\"] = run.projection[-1][\"data\"].get(\"content\", \"\") + data.get(\"content\", \"\")",
+    "existing_code": "            run.projection[-1][\"data\"][\"content\"] += data.get(\"content\", \"\")",
+    "start_line": 359,
+    "end_line": 359,
+    "category": "bug",
+    "severity": "medium"
+  },
+  {
+    "path": "backend/services/chat_runs.py",
+    "content": "The context variable token is set but never used to actually set the context. The line `token = [瀵嗛挜]` appears to be a placeholder or mistaken value. The code should call `interaction_context.set(context)` and store the token, then use that token in the finally block with `interaction_context.reset(token)`. Currently, the context is never set, so any code trying to access it via `interaction_context.get()` will get None.",
+    "suggestion_code": "        token = interaction_context.set(context)",
+    "existing_code": "        token = [瀵嗛挜]",
+    "start_line": 0,
+    "end_line": 0,
+    "category": "bug",
+    "severity": "critical"
+  },
+  {
+    "path": "backend/services/chat_runs.py",
+    "content": "Potential IndexError when accessing `rows[-1]`. The function `_unstarted_summary` is only called after checking `if not rows`, but if the list is somehow empty when it reaches this static method, accessing `rows[-1]` or `rows[0]` will raise an IndexError. Consider adding a defensive check at the method level or using a more explicit access pattern.",
+    "existing_code": "    @staticmethod\n    def _unstarted_summary(tid: str, rows: list[dict[str, Any]]) -\u003e dict[str, Any]:\n        latest = rows[-1]\n        return {\n            \"thread_id\": tid,\n            \"title\": rows[0][\"submission\"][\"prompt\"][:40] or tid,\n            \"last_message_preview\": latest[\"submission\"][\"prompt\"][:80],",
+    "start_line": 270,
+    "end_line": 276,
+    "category": "bug",
+    "severity": "low"
+  },
+  {
+    "path": "backend/services/chat_runs.py",
+    "content": "Hardcoded Chinese characters '瀵嗛挜' appear in the code where a context token assignment is expected. This looks like a placeholder that was accidentally left in. The line `token = [瀵嗛挜]` should be replaced with proper code, likely `token = interaction_context.set(context)` based on the pattern where `interaction_context.reset(token)` is called in the finally block.",
+    "suggestion_code": "        token = interaction_context.set(context)",
+    "existing_code": "        token = [瀵嗛挜]",
+    "start_line": 0,
+    "end_line": 0,
+    "category": "bug",
+    "severity": "critical"
+  }
+]

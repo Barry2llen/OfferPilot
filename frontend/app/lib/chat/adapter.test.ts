@@ -22,6 +22,52 @@ function event(event: string, data: Record<string, unknown> = {}) {
 }
 
 describe("chat stream adapter", () => {
+  it("ignores invalid IDs and duplicate or conflicting terminal tool events", () => {
+    let state = beginChat(createChatState(), "hello", undefined);
+    const invalid = reduceChatEvent(
+      state,
+      event("tool_start", { tool_name: "work", tool_call_id: 12 }),
+      labels,
+    ).state;
+    expect(invalid.toolCalls).toEqual([]);
+    state = reduceChatEvent(
+      state,
+      event("tool_start", { tool_name: "work", tool_call_id: "one" }),
+      labels,
+    ).state;
+    state = reduceChatEvent(
+      state,
+      event("tool_end", {
+        tool_name: "work",
+        tool_call_id: "one",
+        output: "done",
+      }),
+      labels,
+    ).state;
+    state = reduceChatEvent(
+      state,
+      event("tool_end", {
+        tool_name: "work",
+        tool_call_id: "one",
+        output: "done",
+      }),
+      labels,
+    ).state;
+    state = reduceChatEvent(
+      state,
+      event("tool_error", {
+        tool_name: "work",
+        tool_call_id: "one",
+        detail: "late",
+      }),
+      labels,
+    ).state;
+    expect(state.toolCalls).toHaveLength(1);
+    expect(state.toolCalls[0].status).toBe("success");
+    expect(
+      state.liveMessages.filter((message) => message.role === "tool"),
+    ).toHaveLength(1);
+  });
   it("reduces tokens, tool lifecycle, and final into committed messages", () => {
     let state = beginChat(createChatState(), "请搜索", undefined);
     const result = reduceChatEvent(
@@ -35,7 +81,11 @@ describe("chat stream adapter", () => {
       { type: "thread_updated", threadId: "thread-1" },
     ]);
 
-    state = reduceChatEvent(state, event("token", { content: "答案" }), labels).state;
+    state = reduceChatEvent(
+      state,
+      event("token", { content: "答案" }),
+      labels,
+    ).state;
     state = reduceChatEvent(
       state,
       event("tool_start", { tool_name: "search", input: { q: "OfferPilot" } }),
@@ -43,14 +93,23 @@ describe("chat stream adapter", () => {
     ).state;
     state = reduceChatEvent(
       state,
-      event("tool_end", { tool_name: "search", output: { url: "https://example.com" } }),
+      event("tool_end", {
+        tool_name: "search",
+        output: { url: "https://example.com" },
+      }),
       labels,
     ).state;
-    state = reduceChatEvent(state, event("final", { content: "" }), labels).state;
+    state = reduceChatEvent(
+      state,
+      event("final", { content: "" }),
+      labels,
+    ).state;
 
     expect(state.terminal).toBe(true);
     expect(state.isStreaming).toBe(false);
-    expect(state.messages.map((message) => [message.role, message.toolName])).toEqual([
+    expect(
+      state.messages.map((message) => [message.role, message.toolName]),
+    ).toEqual([
       ["user", undefined],
       ["assistant", undefined],
       ["tool", "search"],
@@ -59,47 +118,34 @@ describe("chat stream adapter", () => {
     expect(state.messages[2].toolStatus).toBe("success");
   });
 
-  it("merges query interrupts into the running query tool and supports retry", () => {
-    let state = beginChat(createChatState(), "问题", undefined);
+  it("pairs concurrent same-name tools by ID without restarting on input events", () => {
+    let state = beginChat(createChatState(), "hello", undefined);
+    for (const id of ["a", "b"])
+      state = reduceChatEvent(
+        state,
+        event("tool_start", { tool_name: "query", tool_call_id: id }),
+        labels,
+      ).state;
     state = reduceChatEvent(
       state,
-      event("tool_start", { tool_name: "query", input: { question: "旧问题" } }),
+      event("input_required", { request_id: "request-b", tool_call_id: "b" }),
       labels,
     ).state;
-    state = reduceChatEvent(
-      state,
-      event("interrupt", {
-        id: "interrupt-1",
-        type: "query",
-        message: "请选择",
-        question: "新问题",
-        firstChoice: "A",
-      }),
-      labels,
-    ).state;
-
-    expect(state.interrupt).toMatchObject({
-      interruptId: "interrupt-1",
-      type: "query",
-      question: "新问题",
-    });
-    expect(state.messages.at(-1)).toMatchObject({
-      role: "tool",
-      toolName: "query",
-      toolStatus: "running",
-      toolInput: { question: "新问题", firstChoice: "A" },
-    });
-
-    const retryState = beginChat(state, "", { type: "retry" });
-    expect(retryState.userMessageId).toBeNull();
-    expect(retryState.messages).toHaveLength(state.messages.length);
-    const errorState = reduceChatEvent(
-      retryState,
-      event("error", { detail: "重试失败" }),
-      labels,
-    ).state;
-    expect(errorState.streamError).toBe("重试失败");
-    expect(errorState.terminal).toBe(true);
+    expect(state.terminal).toBe(false);
+    for (const id of ["b", "a"])
+      state = reduceChatEvent(
+        state,
+        event("tool_end", { tool_name: "query", tool_call_id: id, output: id }),
+        labels,
+      ).state;
+    expect(
+      state.liveMessages
+        .filter((item) => item.role === "tool")
+        .map((item) => [item.toolCallId, item.toolOutput]),
+    ).toEqual([
+      ["a", "a"],
+      ["b", "b"],
+    ]);
   });
 
   it("turns an incomplete EOF or transport error into an error and removes an unaccepted draft", () => {
@@ -175,6 +221,9 @@ describe("chat stream adapter", () => {
 
     expect(failed.state.contextCompactionStatus).toBe("failed");
     expect(failed.state.agentStatus).toBe("error");
-    expect(failed.effects).toContainEqual({ type: "agent_status", value: "error" });
+    expect(failed.effects).toContainEqual({
+      type: "agent_status",
+      value: "error",
+    });
   });
 });

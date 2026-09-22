@@ -8,6 +8,7 @@ import type {
 } from "@/app/lib/api/types";
 
 export interface ToolCallEntry {
+  toolCallId?: string;
   name: string;
   input?: Record<string, unknown>;
   output?: unknown;
@@ -48,19 +49,6 @@ export interface ChatMessage {
   toolError?: string;
 }
 
-export interface ChatInterrupt {
-  interruptId: string;
-  type: string;
-  message: string;
-  question?: string;
-  firstChoice?: string;
-  firstChoiceDescription?: string;
-  secondChoice?: string;
-  secondChoiceDescription?: string;
-  thirdChoice?: string;
-  thirdChoiceDescription?: string;
-}
-
 export interface ChatStreamEvent {
   event: string;
   data: Record<string, unknown>;
@@ -80,7 +68,6 @@ export interface ChatStreamState {
   streamingText: string;
   streamingReasoning: string;
   toolCalls: ToolCallEntry[];
-  interrupt: ChatInterrupt | null;
   streamError: string | null;
   isStreaming: boolean;
   agentStatus: AgentStatus;
@@ -93,16 +80,11 @@ export interface ChatStreamState {
   accumulatedText: string;
   accumulatedReasoning: string;
   visibleAssistantText: string;
-  resumedQueryToolEntry: ToolCallEntry | null;
-  pendingQueryResumeMerge: boolean;
   nextMessageId: number;
 }
 
 export type ContextCompactionStatus =
-  | "idle"
-  | "running"
-  | "completed"
-  | "failed";
+  "idle" | "running" | "completed" | "failed";
 
 export type ChatStreamEffect =
   | { type: "accepted" }

@@ -7,7 +7,6 @@ import type {
   ChatAttachmentItem,
   ChatCommand,
   ChatHistoryMessage,
-  ChatInterrupt,
   ChatMessage,
   ChatStartOptions,
   ChatStreamEffect,
@@ -89,7 +88,6 @@ export function createChatState(
     streamingText: "",
     streamingReasoning: "",
     toolCalls: [],
-    interrupt: null,
     streamError: null,
     isStreaming: false,
     agentStatus: "idle",
@@ -102,8 +100,6 @@ export function createChatState(
     accumulatedText: "",
     accumulatedReasoning: "",
     visibleAssistantText: "",
-    resumedQueryToolEntry: null,
-    pendingQueryResumeMerge: false,
     nextMessageId,
   };
 }
@@ -115,7 +111,6 @@ export function resetChatTransient(state: ChatStreamState): ChatStreamState {
     streamingText: "",
     streamingReasoning: "",
     toolCalls: [],
-    interrupt: null,
     streamError: null,
     isStreaming: false,
     agentStatus: "idle",
@@ -126,8 +121,6 @@ export function resetChatTransient(state: ChatStreamState): ChatStreamState {
     accumulatedText: "",
     accumulatedReasoning: "",
     visibleAssistantText: "",
-    resumedQueryToolEntry: null,
-    pendingQueryResumeMerge: false,
   };
 }
 
@@ -162,11 +155,12 @@ export function beginChat(
 
   return {
     ...next,
-    pendingQueryResumeMerge: command?.type === "query",
   };
 }
 
-export function clearCommittedMessages(state: ChatStreamState): ChatStreamState {
+export function clearCommittedMessages(
+  state: ChatStreamState,
+): ChatStreamState {
   return {
     ...resetChatTransient(state),
     messages: [],
@@ -178,9 +172,15 @@ export function clearCommittedMessages(state: ChatStreamState): ChatStreamState 
 function findLastRunningToolCallIndex(
   toolCalls: ToolCallEntry[],
   name: string,
+  toolCallId?: string,
 ): number {
   for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
-    if (toolCalls[index].name === name && toolCalls[index].status === "running") {
+    if (
+      toolCallId
+        ? toolCalls[index].toolCallId === toolCallId
+        : toolCalls[index].name === name &&
+          toolCalls[index].status === "running"
+    ) {
       return index;
     }
   }
@@ -190,13 +190,15 @@ function findLastRunningToolCallIndex(
 function findLastRunningToolMessageIndex(
   messages: ChatMessage[],
   name: string,
+  toolCallId?: string,
 ): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (
       message.role === "tool" &&
-      message.toolName === name &&
-      message.toolStatus === "running"
+      (toolCallId
+        ? message.toolCallId === toolCallId
+        : message.toolName === name && message.toolStatus === "running")
     ) {
       return index;
     }
@@ -211,65 +213,20 @@ function findLastAssistantMessageIndex(messages: ChatMessage[]): number {
   return -1;
 }
 
-function findLastRunningCommittedToolMessageIndex(
-  messages: ChatMessage[],
-  name: string,
-): number {
-  return findLastRunningToolMessageIndex(messages, name);
-}
-
 function toolCallToMessage(entry: ToolCallEntry, id: string): ChatMessage {
   return {
     id,
     role: "tool",
-    content: formatDisplayContent(entry.output ?? entry.error ?? entry.input ?? ""),
+    content: formatDisplayContent(
+      entry.output ?? entry.error ?? entry.input ?? "",
+    ),
     toolName: entry.name,
+    toolCallId: entry.toolCallId,
     toolStatus: entry.status,
     toolInput: entry.input,
     toolOutput: entry.output,
     toolError: entry.error,
   };
-}
-
-function mergeQueryInterruptInput(
-  input: Record<string, unknown> | undefined,
-  eventData: Record<string, unknown>,
-): Record<string, unknown> {
-  return {
-    ...(input ?? {}),
-    question:
-      typeof eventData.question === "string"
-        ? eventData.question
-        : input?.question,
-    firstChoice:
-      typeof eventData.firstChoice === "string"
-        ? eventData.firstChoice
-        : input?.firstChoice,
-    firstChoiceDescription:
-      typeof eventData.firstChoiceDescription === "string"
-        ? eventData.firstChoiceDescription
-        : input?.firstChoiceDescription,
-    secondChoice:
-      typeof eventData.secondChoice === "string"
-        ? eventData.secondChoice
-        : input?.secondChoice,
-    secondChoiceDescription:
-      typeof eventData.secondChoiceDescription === "string"
-        ? eventData.secondChoiceDescription
-        : input?.secondChoiceDescription,
-    thirdChoice:
-      typeof eventData.thirdChoice === "string"
-        ? eventData.thirdChoice
-        : input?.thirdChoice,
-    thirdChoiceDescription:
-      typeof eventData.thirdChoiceDescription === "string"
-        ? eventData.thirdChoiceDescription
-        : input?.thirdChoiceDescription,
-  };
-}
-
-function isQueryInterruptToolError(name: string, detail: string): boolean {
-  return name === "query" && detail.includes("Interrupt(") && detail.includes("query");
 }
 
 function normalizeAttachmentRef(
@@ -308,7 +265,9 @@ export function parseAttachments(
           file_id: attachment.file_id,
           original_filename: attachment.original_filename,
           media_type:
-            typeof attachment.media_type === "string" ? attachment.media_type : null,
+            typeof attachment.media_type === "string"
+              ? attachment.media_type
+              : null,
           injection_mode: attachment.injection_mode,
         },
         rawUrl,
@@ -328,7 +287,9 @@ export function mergeResolvedAttachments(
   for (const item of current) {
     let matchIndex = -1;
     if (item.fileId && !item.pending) {
-      matchIndex = remaining.findIndex((candidate) => candidate.fileId === item.fileId);
+      matchIndex = remaining.findIndex(
+        (candidate) => candidate.fileId === item.fileId,
+      );
     }
     if (matchIndex < 0) {
       matchIndex = remaining.findIndex(
@@ -373,9 +334,10 @@ export function buildStreamBody(
   return formData;
 }
 
-function ensureAssistantMessage(
-  state: ChatStreamState,
-): { state: ChatStreamState; index: number } {
+function ensureAssistantMessage(state: ChatStreamState): {
+  state: ChatStreamState;
+  index: number;
+} {
   if (
     state.currentAssistantIndex !== null &&
     state.liveMessages[state.currentAssistantIndex]?.role === "assistant"
@@ -414,7 +376,9 @@ function commitLiveMessages(state: ChatStreamState): ChatStreamState {
   const completed = cloneMessages(state.liveMessages);
   return {
     ...state,
-    messages: completed.length ? [...state.messages, ...completed] : state.messages,
+    messages: completed.length
+      ? [...state.messages, ...completed]
+      : state.messages,
     liveMessages: [],
     currentAssistantIndex: null,
     streamingText: "",
@@ -422,24 +386,16 @@ function commitLiveMessages(state: ChatStreamState): ChatStreamState {
   };
 }
 
-function updateLastCommittedRunningToolMessage(
-  state: ChatStreamState,
-  name: string,
-  entry: ToolCallEntry,
-): ChatStreamState {
-  const index = findLastRunningCommittedToolMessageIndex(state.messages, name);
-  if (index < 0) return state;
-  const messages = [...state.messages];
-  messages[index] = toolCallToMessage(entry, messages[index].id);
-  return { ...state, messages };
-}
-
 function updateRunningToolMessage(
   state: ChatStreamState,
   name: string,
   entry: ToolCallEntry,
 ): ChatStreamState {
-  const index = findLastRunningToolMessageIndex(state.liveMessages, name);
+  const index = findLastRunningToolMessageIndex(
+    state.liveMessages,
+    name,
+    entry.toolCallId,
+  );
   const liveMessages = [...state.liveMessages];
   if (index >= 0) {
     liveMessages[index] = toolCallToMessage(entry, liveMessages[index].id);
@@ -455,34 +411,6 @@ function updateRunningToolMessage(
   return { ...state, liveMessages };
 }
 
-function makeInterrupt(
-  data: Record<string, unknown>,
-  labels: ChatStreamLabels,
-): ChatInterrupt {
-  const interruptType = typeof data.type === "string" ? data.type : "other";
-  return {
-    interruptId: typeof data.id === "string" ? data.id : "",
-    type: interruptType,
-    message: extractTextContent(data.message) || labels.agentInterrupted,
-    question: typeof data.question === "string" ? data.question : undefined,
-    firstChoice: typeof data.firstChoice === "string" ? data.firstChoice : undefined,
-    firstChoiceDescription:
-      typeof data.firstChoiceDescription === "string"
-        ? data.firstChoiceDescription
-        : undefined,
-    secondChoice: typeof data.secondChoice === "string" ? data.secondChoice : undefined,
-    secondChoiceDescription:
-      typeof data.secondChoiceDescription === "string"
-        ? data.secondChoiceDescription
-        : undefined,
-    thirdChoice: typeof data.thirdChoice === "string" ? data.thirdChoice : undefined,
-    thirdChoiceDescription:
-      typeof data.thirdChoiceDescription === "string"
-        ? data.thirdChoiceDescription
-        : undefined,
-  };
-}
-
 function addAgentStatusEffect(
   effects: ChatStreamEffect[],
   value: ChatStreamState["agentStatus"],
@@ -495,7 +423,9 @@ export function reduceChatEvent(
   event: ChatStreamEvent,
   labels: ChatStreamLabels,
 ): ChatReducerResult {
-  const effects: ChatStreamEffect[] = state.accepted ? [] : [{ type: "accepted" }];
+  const effects: ChatStreamEffect[] = state.accepted
+    ? []
+    : [{ type: "accepted" }];
   let next: ChatStreamState = { ...state, accepted: true };
   const data = event.data;
 
@@ -580,7 +510,6 @@ export function reduceChatEvent(
         streamingText: liveMessages[ensured.index].content,
         accumulatedText: ensured.state.accumulatedText + token,
         visibleAssistantText: ensured.state.visibleAssistantText + token,
-        pendingQueryResumeMerge: false,
       };
       break;
     }
@@ -601,7 +530,6 @@ export function reduceChatEvent(
         liveMessages,
         streamingReasoning: nextReasoning,
         accumulatedReasoning: ensured.state.accumulatedReasoning + reasoning,
-        pendingQueryResumeMerge: false,
       };
       break;
     }
@@ -610,42 +538,50 @@ export function reduceChatEvent(
       const durationMs = parseDurationMs(data.duration_ms);
       if (durationMs === undefined) break;
       const assistantIndex =
-        next.currentAssistantIndex ?? findLastAssistantMessageIndex(next.liveMessages);
+        next.currentAssistantIndex ??
+        findLastAssistantMessageIndex(next.liveMessages);
       const assistantMessage = next.liveMessages[assistantIndex];
-      if (assistantIndex >= 0 && assistantMessage?.role === "assistant" && assistantMessage.reasoning?.trim()) {
+      if (
+        assistantIndex >= 0 &&
+        assistantMessage?.role === "assistant" &&
+        assistantMessage.reasoning?.trim()
+      ) {
         const liveMessages = [...next.liveMessages];
-        liveMessages[assistantIndex] = { ...assistantMessage, reasoningDurationMs: durationMs };
+        liveMessages[assistantIndex] = {
+          ...assistantMessage,
+          reasoningDurationMs: durationMs,
+        };
         next = { ...next, liveMessages };
       }
       break;
     }
 
     case "tool_start": {
+      if (
+        data.tool_call_id !== undefined &&
+        (typeof data.tool_call_id !== "string" || !data.tool_call_id)
+      )
+        break;
+      const existing =
+        typeof data.tool_call_id === "string"
+          ? next.toolCalls.find(
+              (entry) => entry.toolCallId === data.tool_call_id,
+            )
+          : undefined;
+      if (existing) break;
+
       addAgentStatusEffect(effects, "tool_calling");
       next = endAssistantSegment(next);
-      const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
+      const name =
+        typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
       const input = data.input as Record<string, unknown> | undefined;
-      const entry: ToolCallEntry = { name, input, status: "running" };
-
-      if (next.pendingQueryResumeMerge && name === "query") {
-        const committedToolIndex = findLastRunningCommittedToolMessageIndex(
-          next.messages,
-          name,
-        );
-        if (committedToolIndex >= 0) {
-          const updated = updateLastCommittedRunningToolMessage(next, name, entry);
-          next = {
-            ...updated,
-            resumedQueryToolEntry: entry,
-            pendingQueryResumeMerge: false,
-            toolCalls: [entry],
-          };
-          break;
-        }
-        next = { ...next, pendingQueryResumeMerge: false };
-      } else if (name !== "query") {
-        next = { ...next, pendingQueryResumeMerge: false };
-      }
+      const entry: ToolCallEntry = {
+        name,
+        input,
+        status: "running",
+        toolCallId:
+          typeof data.tool_call_id === "string" ? data.tool_call_id : undefined,
+      };
 
       const messageId = nextMessageId(next, "tool");
       next = {
@@ -661,32 +597,43 @@ export function reduceChatEvent(
     }
 
     case "tool_end": {
-      const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
-      const output = data.output;
-      if (next.resumedQueryToolEntry && name === "query") {
-        const entry: ToolCallEntry = {
-          ...next.resumedQueryToolEntry,
-          output,
-          status: "success",
-        };
-        next = updateLastCommittedRunningToolMessage(next, name, entry);
-        next = {
-          ...endAssistantSegment(next),
-          toolCalls: [entry],
-          resumedQueryToolEntry: null,
-        };
-        addAgentStatusEffect(effects, "generating");
+      if (
+        data.tool_call_id !== undefined &&
+        (typeof data.tool_call_id !== "string" || !data.tool_call_id)
+      )
         break;
-      }
+      const existing =
+        typeof data.tool_call_id === "string"
+          ? next.toolCalls.find(
+              (entry) => entry.toolCallId === data.tool_call_id,
+            )
+          : undefined;
+      if (existing && existing.status !== "running") break;
 
-      const index = findLastRunningToolCallIndex(next.toolCalls, name);
+      const name =
+        typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
+      const output = data.output;
+      const index = findLastRunningToolCallIndex(
+        next.toolCalls,
+        name,
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined,
+      );
       const toolCalls = [...next.toolCalls];
       if (index >= 0) {
         toolCalls[index] = { ...toolCalls[index], output, status: "success" };
       } else {
-        toolCalls.push({ name, output, status: "success" });
+        toolCalls.push({
+          name,
+          output,
+          status: "success",
+          toolCallId:
+            typeof data.tool_call_id === "string"
+              ? data.tool_call_id
+              : undefined,
+        });
       }
-      const entry = index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
+      const entry =
+        index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
       next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
       next = endAssistantSegment(next);
       addAgentStatusEffect(effects, "generating");
@@ -694,96 +641,73 @@ export function reduceChatEvent(
     }
 
     case "tool_error": {
-      const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
+      if (
+        data.tool_call_id !== undefined &&
+        (typeof data.tool_call_id !== "string" || !data.tool_call_id)
+      )
+        break;
+      const existing =
+        typeof data.tool_call_id === "string"
+          ? next.toolCalls.find(
+              (entry) => entry.toolCallId === data.tool_call_id,
+            )
+          : undefined;
+      if (existing && existing.status !== "running") break;
+
+      const name =
+        typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
       const detail =
         extractTextContent(data.detail ?? data.error) || labels.toolError;
-      if (isQueryInterruptToolError(name, detail)) break;
 
-      if (next.resumedQueryToolEntry && name === "query") {
-        const entry: ToolCallEntry = {
-          ...next.resumedQueryToolEntry,
+      const index = findLastRunningToolCallIndex(
+        next.toolCalls,
+        name,
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined,
+      );
+      const toolCalls = [...next.toolCalls];
+      if (index >= 0) {
+        toolCalls[index] = {
+          ...toolCalls[index],
           error: detail,
           status: "error",
         };
-        next = updateLastCommittedRunningToolMessage(next, name, entry);
-        next = {
-          ...endAssistantSegment(next),
-          toolCalls: [entry],
-          resumedQueryToolEntry: null,
-        };
-        addAgentStatusEffect(effects, "generating");
-        break;
-      }
-
-      const index = findLastRunningToolCallIndex(next.toolCalls, name);
-      const toolCalls = [...next.toolCalls];
-      if (index >= 0) {
-        toolCalls[index] = { ...toolCalls[index], error: detail, status: "error" };
       } else {
-        toolCalls.push({ name, error: detail, status: "error" });
+        toolCalls.push({
+          name,
+          error: detail,
+          status: "error",
+          toolCallId:
+            typeof data.tool_call_id === "string"
+              ? data.tool_call_id
+              : undefined,
+        });
       }
-      const entry = index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
+      const entry =
+        index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
       next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
       next = endAssistantSegment(next);
       addAgentStatusEffect(effects, "generating");
       break;
     }
 
-    case "interrupt": {
-      const interrupt = makeInterrupt(data, labels);
-      addAgentStatusEffect(
-        effects,
-        next.contextCompactionStatus === "failed" ? "error" : "interrupted",
-      );
-      if (interrupt.type === "query") {
-        const queryCallIndex = findLastRunningToolCallIndex(next.toolCalls, "query");
-        if (queryCallIndex >= 0) {
-          const toolCalls = [...next.toolCalls];
-          toolCalls[queryCallIndex] = {
-            ...toolCalls[queryCallIndex],
-            input: mergeQueryInterruptInput(toolCalls[queryCallIndex].input, data),
-          };
-          next = { ...next, toolCalls };
-        }
-
-        const queryMessageIndex = findLastRunningToolMessageIndex(next.liveMessages, "query");
-        if (queryMessageIndex >= 0) {
-          const liveMessages = [...next.liveMessages];
-          const message = liveMessages[queryMessageIndex];
-          const input = mergeQueryInterruptInput(message.toolInput, data);
-          liveMessages[queryMessageIndex] = {
-            ...message,
-            content: formatDisplayContent(input),
-            toolInput: input,
-          };
-          next = { ...next, liveMessages };
-        }
-        next = commitLiveMessages(next);
-      }
-      next = {
-        ...next,
-        interrupt,
-        isStreaming: false,
-        terminal: true,
-      };
-      effects.push({ type: "history_changed" });
-      break;
-    }
-
     case "final": {
       const explicitFinalContent = formatDisplayContent(data.content);
       const hasVisibleAssistantContent = next.liveMessages.some(
-        (message) => message.role === "assistant" && Boolean(message.content.trim()),
+        (message) =>
+          message.role === "assistant" && Boolean(message.content.trim()),
       );
       const finalContent =
-        explicitFinalContent || (hasVisibleAssistantContent ? "" : next.visibleAssistantText) || "";
+        explicitFinalContent ||
+        (hasVisibleAssistantContent ? "" : next.visibleAssistantText) ||
+        "";
       const reasoningContent =
         explicitFinalContent || next.accumulatedText
           ? next.accumulatedReasoning || undefined
           : undefined;
       const lastLiveMessage = next.liveMessages[next.liveMessages.length - 1];
       const lastMessageHasVisibleAssistantContent =
-        lastLiveMessage?.role === "assistant" && Boolean(lastLiveMessage.content.trim());
+        lastLiveMessage?.role === "assistant" &&
+        Boolean(lastLiveMessage.content.trim());
 
       if (finalContent && !lastMessageHasVisibleAssistantContent) {
         if (lastLiveMessage?.role === "assistant") {
@@ -848,7 +772,9 @@ function removeUnacceptedUserMessage(state: ChatStreamState): ChatStreamState {
   if (!state.userMessageId || state.accepted) return state;
   return {
     ...state,
-    messages: state.messages.filter((message) => message.id !== state.userMessageId),
+    messages: state.messages.filter(
+      (message) => message.id !== state.userMessageId,
+    ),
     userMessageId: null,
   };
 }
@@ -874,7 +800,8 @@ export function reduceChatEof(
   state: ChatStreamState,
   labels: ChatStreamLabels,
 ): ChatReducerResult {
-  if (state.terminal) return { state: { ...state, isStreaming: false }, effects: [] };
+  if (state.terminal)
+    return { state: { ...state, isStreaming: false }, effects: [] };
   return reduceChatTransportError(state, labels.incompleteStream);
 }
 
@@ -910,16 +837,22 @@ export function mapChatHistory(
   let next = resetChatTransient(state);
   const messages: ChatMessage[] = [];
   for (const message of historyMessages) {
-    const messageId = nextMessageId(next, (message.role as ChatMessage["role"]) || "assistant");
+    const messageId = nextMessageId(
+      next,
+      (message.role as ChatMessage["role"]) || "assistant",
+    );
     next = { ...next, nextMessageId: messageId.nextMessageId };
     const mapped: ChatMessage = {
       id: messageId.id,
       role: message.role as ChatMessage["role"],
       content: formatDisplayContent(message.content),
       attachments: Array.isArray(message.attachments)
-        ? message.attachments.map((attachment) => normalizeAttachmentRef(attachment, rawUrl))
+        ? message.attachments.map((attachment) =>
+            normalizeAttachmentRef(attachment, rawUrl),
+          )
         : undefined,
-      reasoning: typeof message.reasoning === "string" ? message.reasoning : undefined,
+      reasoning:
+        typeof message.reasoning === "string" ? message.reasoning : undefined,
       reasoningDurationMs: parseDurationMs(message.reasoning_duration_ms),
       toolCallId: message.tool_call_id ?? undefined,
       toolName: message.name ?? undefined,
