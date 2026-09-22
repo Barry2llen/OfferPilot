@@ -1,22 +1,27 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ChatRun, PendingInput } from "@/app/lib/api/types";
+import type {
+  ChatRun,
+  PendingInput,
+  ConnectionState,
+  InputAnswer,
+} from "@/app/lib/api/types";
 import Button from "@/app/components/ui/button";
 import { QueryDecisionComposer } from "./chat-input";
+import { needsRunNotice } from "@/app/lib/chat/run-state";
+
+const MAX_RUN_NOTICES = 3;
 
 function InputCard({
   input,
   onAnswer,
 }: {
   input: PendingInput;
-  onAnswer: (
-    input: PendingInput,
-    answer: Record<string, unknown>,
-  ) => Promise<void>;
+  onAnswer: (input: PendingInput, answer: InputAnswer) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
-  const submit = async (answer: Record<string, unknown>) => {
+  const submit = async (answer: InputAnswer) => {
     if (busy) return;
     setBusy(true);
     try {
@@ -61,19 +66,14 @@ export default function ChatRunPanel({
 }: {
   runs: ChatRun[];
   inputs: PendingInput[];
-  connectionState: string;
-  onAnswer: (
-    input: PendingInput,
-    answer: Record<string, unknown>,
-  ) => Promise<void>;
+  connectionState: ConnectionState;
+  onAnswer: (input: PendingInput, answer: InputAnswer) => Promise<void>;
   onCancel: (runId: string) => Promise<void>;
   onCancelQueued: () => Promise<void>;
 }) {
   const { t } = useTranslation();
   const queued = runs.filter((run) => run.status === "queued");
-  const interrupted = runs.filter((run) =>
-    ["interrupted", "failed", "cancelled"].includes(run.status),
-  );
+  const interrupted = runs.filter(needsRunNotice);
   return (
     <div
       className="max-h-[45vh] overflow-y-auto space-y-3 px-4 sm:px-6"
@@ -123,10 +123,16 @@ export default function ChatRunPanel({
       {inputs.map((input) => (
         <InputCard key={input.request_id} input={input} onAnswer={onAnswer} />
       ))}
-      {interrupted.slice(-3).map((run) => (
+      {interrupted.slice(-MAX_RUN_NOTICES).map((run) => (
         <p key={run.run_id} className="text-xs text-warning-text">
-          {t(`chatRuns.${run.status}`)} {run.prompt}
-          {run.detail && <span className="block break-words">{run.detail}</span>}
+          {run.status === "failed"
+            ? t("chatRuns.failed", { prompt: run.prompt })
+            : run.status === "cancelled"
+              ? t("chatRuns.cancelled", { prompt: run.prompt })
+              : t("chatRuns.interrupted", { prompt: run.prompt })}
+          {run.detail && (
+            <span className="block break-words">{run.detail}</span>
+          )}
         </p>
       ))}
     </div>

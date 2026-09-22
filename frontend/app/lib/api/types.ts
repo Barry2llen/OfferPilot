@@ -324,3 +324,8 @@ export interface ChatRun {
   requires_image_input: boolean;
   resolved_attachments: ChatAttachmentRef[];
 }
+
+export type ConnectionState = "connected" | "reconnecting" | "idle";
+export type InputAnswer =
+  | { choice: QueryChoice; note?: string | null }
+  | { type: "retry" };

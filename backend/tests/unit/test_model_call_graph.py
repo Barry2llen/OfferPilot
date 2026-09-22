@@ -18,13 +18,77 @@ from agent.compaction import (
     MessageRef,
 )
 from agent.graphs.model_call import ModelCallGraph
-from agent.interactions import InteractionContext
+from agent.interactions import (
+    InteractionBroker,
+    InteractionContext,
+    interaction_context,
+)
 from agent.prompts import PromptComposer, PromptFragment
 from agent.tools.query import query as query_tool
 from exceptions import AgentStateError, ModelCallExecutionError
 from schemas.config.base import Config
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
+
+
+async def test_failed_return_direct_tool_returns_to_model():
+    @tool(return_direct=True)
+    async def failing_direct() -> str:
+        """Fail instead of returning directly."""
+        raise ValueError("failure")
+
+    graph = ModelCallGraph(config=Config(), tools=[failing_direct])
+    state: BaseAgentState = {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "failing_direct", "args": {}, "id": "failed"}],
+            )
+        ]
+    }
+    result = await graph._tool_node(state, make_runtime(), make_tool_config())
+    message = result.get("messages", [])[-1]
+    assert isinstance(message, ToolMessage)
+    assert message.status == "error"
+    assert not message.additional_kwargs.get("return_direct")
+    assert graph._dicide_after_tool(result) != "end"
+
+
+async def test_model_configuration_retry_does_not_enter_compaction(monkeypatch):
+    graph = ModelCallGraph(config=Config())
+    requested = []
+    attempts = 0
+    selection = ModelSelection(
+        model_name="test",
+        provider=ModelProvider(name="test", provider="openai", api_key="test"),
+    )
+
+    async def resolve():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ValueError("Model selection not found: 1")
+        return selection
+
+    async def answer(request):
+        requested.append(request)
+        return {"type": "retry"}
+
+    async def publish(*args):
+        pass
+
+    monkeypatch.setattr("agent.graphs.model_call.ask_user", answer)
+    token = interaction_context.set(
+        InteractionContext(InteractionBroker(publish), "r", "t", resolve_model=resolve)
+    )
+    try:
+        state: BaseAgentState = {"messages": []}
+        result = await graph._refresh_model_selection(state)
+    finally:
+        interaction_context.reset(token)
+    assert attempts == 2
+    assert requested[0]["message"] == "Model selection not found: 1"
+    assert result.get("model") == selection
 
 
 @tool

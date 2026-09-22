@@ -2,6 +2,7 @@ import { apiRequest, apiUrl } from "./client";
 import { openSse, type SseEvent, type SseRequestOptions } from "./sse";
 import type {
   ChatRun,
+  InputAnswer,
   AIChatHistoryListResponse,
   AIChatHistoryDetailResponse,
   AIChatResponse,
@@ -19,11 +20,7 @@ export const aiChatApi = {
     apiRequest<ChatRun[]>(
       `/ai/chat/runs?thread_id=${encodeURIComponent(threadId)}`,
     ),
-  answerInput: (
-    runId: string,
-    requestId: string,
-    answer: Record<string, unknown>,
-  ) =>
+  answerInput: (runId: string, requestId: string, answer: InputAnswer) =>
     apiRequest<ChatRun>(`/ai/chat/runs/${runId}/inputs/${requestId}`, {
       method: "POST",
       body: JSON.stringify({ answer }),
@@ -72,6 +69,7 @@ export const aiChatApi = {
       method: "POST",
       body,
       signal: options.signal,
+      onOpen: options.onOpen,
     });
   },
 };

@@ -85,7 +85,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 name=tool_call["name"],
             )
 
-        if tool and tool.return_direct:
+        if tool and tool.return_direct and msg.status != "error":
             msg.additional_kwargs.update({"return_direct": True})
 
         return msg
@@ -157,6 +157,24 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             return model_selection(state=state)
         return model_selection
 
+    async def _refresh_model_selection(self, state: State) -> State:
+        context = interaction_context.get()
+        if (
+            context is None
+            or context.resolve_model is None
+            or context.source != "supervisor"
+        ):
+            return state
+        while True:
+            try:
+                selection = await context.resolve_model()
+                updated = copy(state)
+                updated["model"] = selection
+                return updated
+            except Exception as error:
+                logger.exception("Failed to read model configuration")
+                await ask_user(InputRequest(type="error", message=str(error)))
+
     async def _prepare_context_node(self, state: State) -> State:
         """Prepare and checkpoint the Supervisor model view before inference."""
 
@@ -166,11 +184,8 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 "context_compaction_event_pending": False,
             }  # type: ignore[return-value]
 
+        state = await self._refresh_model_selection(state)
         try:
-            context = interaction_context.get()
-            if context and context.resolve_model and context.source == "supervisor":
-                state = copy(state)
-                state["model"] = await context.resolve_model()
             model_selection = self._resolve_model_selection(state)
             tools = await resolve_tools(self.tools, self.get_runtime(state))
             system_prompts = self.system_prompts(self.get_runtime(state))
@@ -417,10 +432,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         """
 
         while True:
-            context = interaction_context.get()
-            if context and context.resolve_model and context.source == "supervisor":
-                state = copy(state)
-                state["model"] = await context.resolve_model()
+            state = await self._refresh_model_selection(state)
             model_selection = self._resolve_model_selection(state)
             try:
                 tools = await resolve_tools(self.tools, self.get_runtime(state))

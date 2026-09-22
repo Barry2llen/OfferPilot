@@ -36,6 +36,7 @@ interface ChatInputProps {
   onStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
+  submitting?: boolean;
   noticeMessage?: string | null;
 }
 
@@ -44,6 +45,7 @@ export default function ChatInput({
   onStop,
   isStreaming,
   disabled,
+  submitting = false,
   noticeMessage = null,
 }: ChatInputProps) {
   const { addToast } = useToast();
@@ -116,23 +118,14 @@ export default function ChatInput({
     })),
   ];
 
-  const resetDraft = () => {
-    setInput("");
-    setSelectedLibraryFiles([]);
-    setLocalUploads([]);
-    setAttachmentMenuOpen(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
   const handleSend = () => {
     const trimmed = input.trim();
     if (
       (!trimmed &&
         localUploads.length === 0 &&
         selectedLibraryFiles.length === 0) ||
-      disabled
+      disabled ||
+      submitting
     ) {
       return;
     }
@@ -143,7 +136,17 @@ export default function ChatInput({
         fileIds: selectedLibraryFiles.map((file) => file.id),
         draftAttachments: buildDraftAttachments(),
       },
-      resetDraft,
+      () => {
+        setInput((current) => (current === input ? "" : current));
+        const sentIds = new Set(selectedLibraryFiles.map((file) => file.id));
+        const sentKeys = new Set(localUploads.map((item) => item.key));
+        setSelectedLibraryFiles((current) =>
+          current.filter((file) => !sentIds.has(file.id)),
+        );
+        setLocalUploads((current) =>
+          current.filter((item) => !sentKeys.has(item.key)),
+        );
+      },
     );
   };
 
@@ -241,7 +244,8 @@ export default function ChatInput({
   );
   const hasDraftAttachments =
     selectedLibraryFiles.length > 0 || localUploads.length > 0;
-  const canSend = Boolean(input.trim() || hasDraftAttachments) && !disabled;
+  const canSend =
+    Boolean(input.trim() || hasDraftAttachments) && !disabled && !submitting;
 
   return (
     <div className="shrink-0 bg-gradient-to-t from-white via-white to-white/75 px-4 pb-5 pt-3 sm:px-6">

@@ -79,3 +79,33 @@ including existing modules and tests outside this change.
 restart marking, disconnect/slow subscriber behavior, actual nested LangGraph
 cancellation and real HTTP answer submission. Database tests cover SQLite and
 PostgreSQL DDL compilation; a live PostgreSQL server requires separate testing.
+
+## Reliability and compatibility details
+
+Admission preparation is serialized per conversation. Concurrent submissions with
+one idempotency key share the same preparation; other conversations can prepare
+attachments independently. Deletion closes admission, drains existing preparation
+and execution, and only reopens the identifier after history, attachment links and
+run records have been removed. Failed deletion can be retried. Checkpoint
+finalization failures keep the conversation blocked until successful deletion.
+
+Completed results (including structured multimodal content) are stored inside the
+existing run submission JSON together with the completed status. `/ai/chat` waits
+on the run manager rather than parsing SSE. Idempotent retries remain valid after
+memory eviction and process restart. For older rows, history is restricted to the
+turn identified by the submitted human message ID; unavailable results return 409.
+Cancellation returns a cancellation reason, not an input-required explanation.
+
+An empty replay buffer with a newer watermark is a replay gap. The compatibility
+stream endpoint also starts with a snapshot when necessary. Tool terminals are
+idempotent by call ID, including explicit unknown outcomes during cancellation.
+Unknown runtime errors are logged server-side; clients receive a localized safe
+message instead of raw provider or storage exceptions.
+
+Conversation pagination merges checkpoint and unstarted conversation references
+in SQL before materializing the selected page. Both SQLite and PostgreSQL use the
+same SQLAlchemy statement. The frontend keeps a single subscription across locale
+changes and repeated selection of the current conversation, rejects invalid event
+IDs and stale polling states, and restores attachment references on reconnect.
+History failures preserve the displayed conversation and retry; confirmed 404s
+clear a stale selection. Optional browser storage failures never stop chat.

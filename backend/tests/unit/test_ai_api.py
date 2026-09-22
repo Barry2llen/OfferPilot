@@ -20,6 +20,39 @@ from schemas.command import BaseCommand
 from schemas.config import Config
 
 
+def test_history_pagination_only_materializes_requested_page(
+    temporary_app_config, monkeypatch
+):
+    from services.chat_history_service import ChatHistoryService
+
+    app = create_app(temporary_app_config)
+    loaded = []
+    original = ChatHistoryService._get_checkpoint_state
+
+    def capture(self, thread_id):
+        loaded.append(thread_id)
+        return original(self, thread_id)
+
+    with TestClient(app) as client:
+        checkpointer = cast(FastAPI, client.app).state.checkpointer
+        for index in range(8):
+            checkpoint = _message_checkpoint(
+                f"{index:032d}.0000000000000001",
+                [HumanMessage(content=str(index)), AIMessage(content="done")],
+            )
+            checkpointer.put(
+                {"configurable": {"thread_id": f"page-{index}"}},
+                checkpoint,
+                {"source": "loop", "step": 0, "parents": {}},
+                checkpoint["channel_versions"],
+            )
+        monkeypatch.setattr(ChatHistoryService, "_get_checkpoint_state", capture)
+        response = client.get("/ai/chats?limit=2&offset=5")
+        assert response.status_code == 200
+        assert len(response.json()["items"]) == 2
+        assert len(loaded) == 2
+
+
 def _payload_text(response):
     """Compare established event payloads separately from new transport metadata."""
     output = []
@@ -2389,7 +2422,7 @@ def test_ai_chat_stream_endpoint_returns_tool_error_event(
 
     assert response.status_code == 200
     assert (
-        'event: tool_error\ndata: {"thread_id": "thread-tool-error", "tool_name": "web_search_exa", "detail": "tool failed"}'
+        'event: tool_error\ndata: {"thread_id": "thread-tool-error", "tool_name": "web_search_exa", "detail": "聊天执行失败，请查看服务端日志。"}'
         in _payload_text(response)
     )
     assert (

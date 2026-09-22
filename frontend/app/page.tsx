@@ -35,18 +35,17 @@ export default function Home() {
     pendingInputs,
     connectionState,
     submitting,
+    historyLoading,
     answerInput,
     cancelRun,
     cancelQueued,
-    disconnect,
     clearMessages,
-    resetStreamingState,
   } = useChatStream();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [models, setModels] = useState<ModelSelectionResponse[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
-  const historyLoading = false;
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [modelContextWindowWarning, setModelContextWindowWarning] =
     useState(false);
 
@@ -70,6 +69,7 @@ export default function Home() {
       .then((data) => {
         if (!mounted) return;
         setModels(data);
+        setModelsLoaded(true);
       })
       .catch(() => {
         if (!mounted) return;
@@ -84,6 +84,15 @@ export default function Home() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      modelsLoaded &&
+      state.currentModelSelection !== null &&
+      !models.some((model) => model.id === state.currentModelSelection)
+    )
+      setModelSelection(null);
+  }, [modelsLoaded, models, state.currentModelSelection, setModelSelection]);
 
   const handleSend = useCallback(
     (payload: ChatComposerPayload, onAccepted: () => void) => {
@@ -113,31 +122,22 @@ export default function Home() {
   );
 
   const handleSelectThread = useCallback(
-    async (threadId: string) => {
-      disconnect();
+    (threadId: string) => {
+      if (threadId === state.currentThreadId) return;
       setModelContextWindowWarning(false);
       setThreadId(threadId || null);
       setThreadRequiresImageInput(false);
     },
-    [setThreadId, setThreadRequiresImageInput, disconnect],
+    [setThreadId, setThreadRequiresImageInput, state.currentThreadId],
   );
 
   const handleNewChat = useCallback(() => {
-    disconnect();
     setModelContextWindowWarning(false);
-    resetStreamingState();
     clearMessages();
     setThreadId(null);
     setThreadRequiresImageInput(false);
     setAgentStatus("idle");
-  }, [
-    clearMessages,
-    resetStreamingState,
-    setAgentStatus,
-    setThreadId,
-    setThreadRequiresImageInput,
-    disconnect,
-  ]);
+  }, [clearMessages, setAgentStatus, setThreadId, setThreadRequiresImageInput]);
 
   const handleCloseSidebar = useCallback(() => {
     setSidebarOpen(false);
@@ -238,7 +238,8 @@ export default function Home() {
           onSend={handleSend}
           onStop={stopStream}
           isStreaming={isStreaming}
-          disabled={hasNoModel || submitting}
+          disabled={hasNoModel}
+          submitting={submitting}
           noticeMessage={
             threadModelMismatchMessage ?? modelContextWindowWarningMessage
           }

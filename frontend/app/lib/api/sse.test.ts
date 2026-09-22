@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { aiChatApi } from "./ai";
 import { ApiError } from "./client";
 import { openSse, type SseFetch } from "./sse";
 
@@ -26,6 +27,21 @@ async function collect(events: AsyncIterable<unknown>): Promise<unknown[]> {
 }
 
 describe("openSse", () => {
+  it("forwards onOpen through the compatibility stream API", async () => {
+    const opened = vi.fn();
+    vi.stubGlobal("fetch", async () => responseFromChunks([]));
+    try {
+      await collect(
+        aiChatApi.streamChat(
+          { selection_id: 1, prompt: "hello" },
+          { onOpen: opened },
+        ),
+      );
+      expect(opened).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("announces a GET subscription even when the waiting run has no new events", async () => {
     let opened = false;
     await collect(

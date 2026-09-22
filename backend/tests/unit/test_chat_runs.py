@@ -1,4 +1,7 @@
 import asyncio
+import json
+import threading
+from time import monotonic
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -26,6 +29,255 @@ from agent.interactions import (
 )
 from schemas.config import Config
 from services.chat_runs import ChatRunManager
+
+
+async def test_missing_input_type_normalizes_and_accepts_retry():
+    async def publish(*args):
+        pass
+
+    broker = InteractionBroker(publish)
+    task = asyncio.create_task(
+        broker.ask(InteractionContext(broker, "r", "t"), {"message": "retry"})
+    )
+    await until(lambda: broker.list_pending("r"))
+    pending = broker.list_pending("r")[0]
+    assert pending["type"] == "error"
+    await broker.submit("r", pending["request_id"], {"type": "retry"})
+    assert await task == {"type": "retry"}
+
+
+async def test_empty_replay_buffer_always_sends_snapshot(manager):
+    run = await submit(manager)
+    rid = run["run_id"]
+    await until(lambda: manager.broker.list_pending(rid))
+    manager.limits = manager.limits.model_copy(update={"replay_bytes": 1})
+    cursor = manager.runs[rid].sequence
+    await manager.publish(rid, "token", {"content": "missing"})
+    assert not manager.runs[rid].events
+    for after in (cursor, -1, 0):
+        stream = manager.stream(rid, after)
+        event = await anext(stream)
+        assert "event: snapshot" in event and "missing" in event
+        await stream.aclose()
+    await manager.shutdown()
+
+
+async def test_result_survives_eviction_restart_and_does_not_use_latest_turn(manager):
+    first = await submit(manager, "first")
+    assert await manager.result(first["run_id"]) == "first"
+    second = await submit(manager, "second")
+    assert await manager.result(second["run_id"]) == "second"
+    manager.runs[first["run_id"]].finished_at = monotonic() - 3600
+    manager._prune()
+    assert first["run_id"] not in manager.runs
+    restarted = ChatRunManager(
+        config=manager.config, database=manager.database, agent=manager.agent
+    )
+    assert await restarted.result(first["run_id"]) == "first"
+    await restarted.shutdown()
+    await manager.shutdown()
+
+
+async def test_admission_parallel_threads_shared_key_fifo_and_delete_drain(manager):
+    entered, release = threading.Event(), threading.Event()
+    prepared = []
+
+    def prepare():
+        entered.set()
+        assert release.wait(5)
+        prepared.append("one")
+        return {
+            "prompt": "done",
+            "selection_id": 1,
+            "locale": "en-US",
+            "file_ids": [],
+            "human_message": message_to_dict(HumanMessage(content="done", id="m")),
+        }
+
+    slow = asyncio.create_task(
+        manager.enqueue(
+            key="slow", fingerprint="same", thread_id="slow-thread", prepare=prepare
+        )
+    )
+    await until(entered.is_set)
+    duplicate = asyncio.create_task(
+        manager.enqueue(
+            key="slow", fingerprint="same", thread_id="slow-thread", prepare=prepare
+        )
+    )
+    following = asyncio.create_task(submit(manager, "following", tid="slow-thread"))
+    fast = await asyncio.wait_for(submit(manager, "fast", tid="other"), 2)
+    assert await manager.result(fast["run_id"]) == "fast"
+    deletion = asyncio.create_task(manager.delete_thread("slow-thread"))
+    await until(lambda: "slow-thread" in manager.deleting)
+    with pytest.raises(InteractionError):
+        await submit(manager, "rejected", tid="slow-thread")
+    assert not deletion.done()
+    release.set()
+    first, same = await asyncio.gather(slow, duplicate)
+    assert first["run_id"] == same["run_id"]
+    await asyncio.gather(following, return_exceptions=True)
+    assert await deletion
+    assert prepared == ["one"]
+    assert await manager.list("slow-thread") == []
+    assert "slow-thread" not in manager.queues
+    assert not await manager.delete_thread("unknown")
+    await submit(manager, "reused", tid="unknown")
+    await manager.shutdown()
+
+
+async def test_failed_delete_keeps_guard_until_retry(manager):
+    def fail():
+        raise RuntimeError("storage unavailable")
+
+    with pytest.raises(RuntimeError):
+        await manager.delete_thread("thread", fail)
+    with pytest.raises(InteractionError):
+        await submit(manager, "blocked")
+    assert not await manager.delete_thread("thread", lambda: False)
+    run = await submit(manager, "works")
+    assert await manager.result(run["run_id"]) == "works"
+    await manager.shutdown()
+
+
+async def test_cancel_finishes_open_tools_once_and_sync_error_is_status_aware(manager):
+    run = await submit(manager)
+    rid = run["run_id"]
+    await until(lambda: manager.broker.list_pending(rid))
+    await manager.publish(
+        rid, "tool_start", {"tool_call_id": "open", "tool_name": "work"}
+    )
+    await manager.publish(
+        rid, "tool_start", {"tool_call_id": "done", "tool_name": "work"}
+    )
+    await manager.publish(
+        rid, "tool_end", {"tool_call_id": "done", "tool_name": "work", "output": "ok"}
+    )
+    await manager.cancel(rid)
+    projection = manager.runs[rid].projection
+    terminals = [
+        event for event in projection if event["event"] in {"tool_end", "tool_error"}
+    ]
+    assert [(event["data"]["tool_call_id"], event["event"]) for event in terminals] == [
+        ("done", "tool_end"),
+        ("open", "tool_error"),
+    ]
+    with pytest.raises(InteractionError, match="cancelled"):
+        await manager.result(rid)
+
+
+async def test_unknown_errors_are_not_exposed_and_list_does_not_refetch(
+    manager, monkeypatch
+):
+    run = await submit(manager, "fail")
+    await manager.runs[run["run_id"]].done.wait()
+    assert "deliberate failure" not in json.dumps(await manager.get(run["run_id"]))
+    manager.runs.clear()
+    monkeypatch.setattr(
+        manager.repository, "get", lambda *args: pytest.fail("N+1 query")
+    )
+    assert len(await manager.list("thread")) == 1
+
+
+def test_run_errors_preserve_specific_reasons_in_both_locales():
+    from exceptions import ModelCallExecutionError
+    from utils.i18n import localize_error
+
+    error = ModelCallExecutionError("Too many pending input requests.")
+    assert localize_error(error, "en-US") == str(error)
+    assert "上限" in localize_error(error, "zh-CN")
+
+
+async def test_same_thread_preparation_preserves_fifo(manager):
+    entered, release = threading.Event(), threading.Event()
+    prepared = []
+
+    def prepare(value):
+        if value == "first":
+            entered.set()
+            assert release.wait(5)
+        prepared.append(value)
+        return {
+            "prompt": value,
+            "selection_id": 1,
+            "locale": "en-US",
+            "human_message": message_to_dict(HumanMessage(content=value, id=value)),
+        }
+
+    first = asyncio.create_task(
+        manager.enqueue(
+            key="a", fingerprint="a", thread_id="t", prepare=lambda: prepare("first")
+        )
+    )
+    await until(entered.is_set)
+    second = asyncio.create_task(
+        manager.enqueue(
+            key="b", fingerprint="b", thread_id="t", prepare=lambda: prepare("second")
+        )
+    )
+    await asyncio.sleep(0)
+    assert prepared == []
+    release.set()
+    one, two = await asyncio.gather(first, second)
+    assert prepared == ["first", "second"]
+    assert one["sequence"] < two["sequence"]
+    assert await manager.result(two["run_id"]) == "second"
+    await manager.shutdown()
+
+
+async def test_legacy_result_uses_only_requested_turn_or_returns_conflict(
+    manager, monkeypatch
+):
+    run = await submit(manager, "legacy", key="human-id")
+    await manager.result(run["run_id"])
+    manager.runs[run["run_id"]].row["submission"].pop("final_result")
+
+    async def snapshot(*args, **kwargs):
+        return SimpleNamespace(
+            values={
+                "messages": [
+                    HumanMessage(content="legacy", id="human-id"),
+                    AIMessage(content="original"),
+                    HumanMessage(content="later"),
+                    AIMessage(content="wrong answer"),
+                ]
+            }
+        )
+
+    monkeypatch.setattr(manager.agent, "aget_state", snapshot)
+    assert await manager.result(run["run_id"]) == "original"
+    manager.runs[run["run_id"]].row["submission"]["human_message"]["data"]["id"] = (
+        "absent"
+    )
+    with pytest.raises(InteractionError) as error:
+        await manager.result(run["run_id"])
+    assert error.value.status_code == 409
+
+
+async def test_conversation_page_query_compiles_for_both_databases(
+    manager, monkeypatch
+):
+    from sqlalchemy.dialects import postgresql, sqlite
+    from sqlalchemy.orm import Session
+
+    original = Session.execute
+    statements = []
+
+    def capture(self, statement, *args, **kwargs):
+        statements.append(statement)
+        return original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "execute", capture)
+    run = await submit(manager, "done")
+    await manager.result(run["run_id"])
+    statements.clear()
+    page = manager.repository.conversation_page(1, 0)
+    assert len(page) == 1
+    assert len(statements) == 1
+    for dialect in (sqlite.dialect(), postgresql.dialect()):
+        sql = str(statements[0].compile(dialect=dialect))
+        assert "UNION ALL" in sql and "LIMIT" in sql
+    await manager.shutdown()
 
 
 async def until(predicate):
@@ -395,8 +647,8 @@ async def test_limits_queue_removal_and_delete_before_checkpoint(manager):
     assert (await manager.unstarted_history("unstarted"))["message_count"] == 0
     assert await manager.delete_thread("unstarted")
     assert await manager.list("unstarted") == []
-    with pytest.raises(InteractionError):
-        await submit(manager, "deleted", tid="unstarted")
+    replacement = await submit(manager, "deleted", tid="unstarted")
+    assert replacement["run_id"] != other["run_id"]
     await manager.cancel(second["run_id"])
     await manager.shutdown()
     assert not manager.active and all(

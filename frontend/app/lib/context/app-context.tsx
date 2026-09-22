@@ -23,6 +23,8 @@ type AppAction =
   | { type: "SET_AGENT_STATUS"; payload: AgentStatus }
   | { type: "BUMP_CHAT_HISTORY_VERSION" };
 
+const SELECTION_STORAGE_KEY = "offerpilot.chat.selection";
+
 const initialState: AppState = {
   currentModelSelection: null,
   currentThreadId: null,
@@ -59,27 +61,39 @@ const AppContext = createContext<{
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState, (defaults) => {
     try {
-      const saved = JSON.parse(
-        localStorage.getItem("offerpilot.chat.selection") || "{}",
+      const parsed: unknown = JSON.parse(
+        localStorage.getItem(SELECTION_STORAGE_KEY) || "{}",
       );
+      const saved =
+        parsed && typeof parsed === "object"
+          ? (parsed as Record<string, unknown>)
+          : {};
       return {
         ...defaults,
         currentThreadId: typeof saved.thread === "string" ? saved.thread : null,
         currentModelSelection:
-          typeof saved.model === "number" ? saved.model : null,
+          typeof saved.model === "number" &&
+          Number.isSafeInteger(saved.model) &&
+          saved.model > 0
+            ? saved.model
+            : null,
       };
     } catch {
       return defaults;
     }
   });
   useEffect(() => {
-    localStorage.setItem(
-      "offerpilot.chat.selection",
-      JSON.stringify({
-        thread: state.currentThreadId,
-        model: state.currentModelSelection,
-      }),
-    );
+    try {
+      localStorage.setItem(
+        SELECTION_STORAGE_KEY,
+        JSON.stringify({
+          thread: state.currentThreadId,
+          model: state.currentModelSelection,
+        }),
+      );
+    } catch {
+      /* Persistence is optional; keep the in-memory selection. */
+    }
   }, [state.currentThreadId, state.currentModelSelection]);
   return (
     <AppContext.Provider value={{ state, dispatch }}>

@@ -22,6 +22,52 @@ function event(event: string, data: Record<string, unknown> = {}) {
 }
 
 describe("chat stream adapter", () => {
+  it("ignores invalid IDs and duplicate or conflicting terminal tool events", () => {
+    let state = beginChat(createChatState(), "hello", undefined);
+    const invalid = reduceChatEvent(
+      state,
+      event("tool_start", { tool_name: "work", tool_call_id: 12 }),
+      labels,
+    ).state;
+    expect(invalid.toolCalls).toEqual([]);
+    state = reduceChatEvent(
+      state,
+      event("tool_start", { tool_name: "work", tool_call_id: "one" }),
+      labels,
+    ).state;
+    state = reduceChatEvent(
+      state,
+      event("tool_end", {
+        tool_name: "work",
+        tool_call_id: "one",
+        output: "done",
+      }),
+      labels,
+    ).state;
+    state = reduceChatEvent(
+      state,
+      event("tool_end", {
+        tool_name: "work",
+        tool_call_id: "one",
+        output: "done",
+      }),
+      labels,
+    ).state;
+    state = reduceChatEvent(
+      state,
+      event("tool_error", {
+        tool_name: "work",
+        tool_call_id: "one",
+        detail: "late",
+      }),
+      labels,
+    ).state;
+    expect(state.toolCalls).toHaveLength(1);
+    expect(state.toolCalls[0].status).toBe("success");
+    expect(
+      state.liveMessages.filter((message) => message.role === "tool"),
+    ).toHaveLength(1);
+  });
   it("reduces tokens, tool lifecycle, and final into committed messages", () => {
     let state = beginChat(createChatState(), "请搜索", undefined);
     const result = reduceChatEvent(

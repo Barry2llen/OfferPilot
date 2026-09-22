@@ -36,7 +36,8 @@ from services.chat_events import (
 )
 from services.chat_file_service import ChatFileService
 from services.model_selection_service import ModelSelectionService
-from utils.i18n import localize_error
+from utils.i18n import localize_error, public_run_error
+from utils.logger import logger
 from utils.stream import render_sse_event, to_jsonable
 from utils.tool_outputs import summarize_tool_output
 
@@ -55,6 +56,8 @@ class ChatRun:
     finished_at: float | None = None
     status_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     cancel_requested: bool = False
+    open_tools: dict[str, str] = field(default_factory=dict)
+    ended_tools: set[str] = field(default_factory=set)
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -76,6 +79,10 @@ class ChatRunManager:
         self.closing = False
         self.admission_lock = asyncio.Lock()
         self.admissions: set[asyncio.Task] = set()
+        self.admission_keys: dict[str, tuple[str, asyncio.Task]] = {}
+        self.thread_admissions: dict[str, set[asyncio.Task]] = {}
+        self.thread_locks: dict[str, asyncio.Lock] = {}
+        self.deletions: dict[str, asyncio.Task[bool]] = {}
         self.broker = InteractionBroker(
             self.publish,
             limit=self.limits.max_pending_inputs,
@@ -99,23 +106,48 @@ class ChatRunManager:
         prepare: Callable[[], dict[str, Any]],
         interactive: bool = True,
     ) -> dict[str, Any]:
-        task = asyncio.create_task(
-            self._enqueue(
-                key=key,
-                fingerprint=fingerprint,
-                thread_id=thread_id,
-                prepare=prepare,
-                interactive=interactive,
-            )
-        )
-        self.admissions.add(task)
+        async with self.admission_lock:
+            existing = self.admission_keys.get(key)
+            if existing:
+                if existing[0] != fingerprint:
+                    raise InteractionError(
+                        "The idempotency key was used for a different request."
+                    )
+                task = existing[1]
+            else:
+                if (
+                    self.closing
+                    or thread_id in self.deleting
+                    or thread_id in self.blocked
+                ):
+                    raise InteractionError("This conversation cannot accept a new run.")
+                lock = self.thread_locks.setdefault(thread_id, asyncio.Lock())
+                task = asyncio.create_task(
+                    self._enqueue(
+                        key=key,
+                        fingerprint=fingerprint,
+                        thread_id=thread_id,
+                        prepare=prepare,
+                        interactive=interactive,
+                        lock=lock,
+                    )
+                )
+                self.admissions.add(task)
+                self.admission_keys[key] = (fingerprint, task)
+                self.thread_admissions.setdefault(thread_id, set()).add(task)
 
-        def finished(task):
-            self.admissions.discard(task)
-            if not task.cancelled():
-                task.exception()
+                def finished(done: asyncio.Task) -> None:
+                    self.admissions.discard(done)
+                    self.admission_keys.pop(key, None)
+                    pending = self.thread_admissions[thread_id]
+                    pending.discard(done)
+                    if not pending:
+                        self.thread_admissions.pop(thread_id, None)
+                        self.thread_locks.pop(thread_id, None)
+                    if not done.cancelled():
+                        done.exception()
 
-        task.add_done_callback(finished)
+                task.add_done_callback(finished)
         return await asyncio.shield(task)
 
     async def _enqueue(
@@ -126,17 +158,17 @@ class ChatRunManager:
         thread_id: str,
         prepare: Callable[[], dict[str, Any]],
         interactive: bool,
+        lock: asyncio.Lock,
     ) -> dict[str, Any]:
-        async with self.admission_lock:
+        async with lock:
             previous = await self.lookup_key(key, fingerprint)
             if previous:
                 return previous
             if self.closing or thread_id in self.deleting or thread_id in self.blocked:
                 raise InteractionError("This conversation cannot accept a new run.")
-            queue = self.queues.setdefault(thread_id, deque())
-            if len(queue) >= self.limits.max_queued_per_thread:
+            if len(self.queues.get(thread_id, ())) >= self.limits.max_queued_per_thread:
                 raise InteractionError("The conversation queue is full.", 429)
-            # Serialize admission only; answers never wait for this lock.
+            # Only this conversation waits for attachment preparation.
             submission = await asyncio.to_thread(prepare)
             submission["interactive"] = interactive
             row = await asyncio.to_thread(
@@ -150,7 +182,7 @@ class ChatRunManager:
             )
             run = ChatRun(row)
             self.runs[row["run_id"]] = run
-            queue.append(row["run_id"])
+            self.queues.setdefault(thread_id, deque()).append(row["run_id"])
             self._schedule()
             return self.describe(row)
 
@@ -169,7 +201,10 @@ class ChatRunManager:
         self._prune()
         if self.closing:
             return
-        for tid, queue in self.queues.items():
+        for tid, queue in list(self.queues.items()):
+            if not queue:
+                self.queues.pop(tid, None)
+                continue
             if len(self.active) >= self.limits.max_active:
                 break
             if (
@@ -218,12 +253,22 @@ class ChatRunManager:
 
     async def list(self, tid: str) -> list[dict[str, Any]]:
         rows = await asyncio.to_thread(self.repository.list, tid)
-        return [await self.get(row["run_id"]) for row in rows]
+        self._prune()
+        return [
+            self.describe(
+                self.runs[row["run_id"]].row if row["run_id"] in self.runs else row
+            )
+            for row in rows
+        ]
 
     async def unstarted_history(self, tid: str) -> dict[str, Any] | None:
         rows = await asyncio.to_thread(self.repository.list, tid)
         if not rows:
             return None
+        return self._unstarted_summary(tid, rows)
+
+    @staticmethod
+    def _unstarted_summary(tid: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
         latest = rows[-1]
         return {
             "thread_id": tid,
@@ -239,12 +284,11 @@ class ChatRunManager:
         }
 
     async def unstarted_histories(self) -> list[dict[str, Any]]:
-        threads = await asyncio.to_thread(self.repository.unstarted_threads)
-        return [
-            history
-            for tid in threads
-            if (history := await self.unstarted_history(tid)) is not None
-        ]
+        rows = await asyncio.to_thread(self.repository.unstarted_rows)
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            grouped.setdefault(row["thread_id"], []).append(row)
+        return [self._unstarted_summary(tid, items) for tid, items in grouped.items()]
 
     async def _status(
         self, run: ChatRun, status: str, detail: str | None = None
@@ -259,7 +303,11 @@ class ChatRunManager:
             run.row.update(status=status, detail=detail)
             write = asyncio.create_task(
                 asyncio.to_thread(
-                    self.repository.status, run.row["run_id"], status, detail
+                    self.repository.status,
+                    run.row["run_id"],
+                    status,
+                    detail,
+                    run.row["submission"] if status == "completed" else None,
                 )
             )
             try:
@@ -273,6 +321,17 @@ class ChatRunManager:
 
     async def publish(self, rid: str, event: str, data: dict[str, Any]) -> None:
         run = self.runs[rid]
+        tool_id = data.get("tool_call_id")
+        if isinstance(tool_id, str):
+            if event == "tool_start":
+                if tool_id in run.ended_tools or tool_id in run.open_tools:
+                    return
+                run.open_tools[tool_id] = data["tool_name"]
+            elif event in {"tool_end", "tool_error"}:
+                if tool_id in run.ended_tools:
+                    return
+                run.ended_tools.add(tool_id)
+                run.open_tools.pop(tool_id, None)
         data = to_jsonable(data)
         run.sequence += 1
         data = {
@@ -321,7 +380,10 @@ class ChatRunManager:
         # No await between capturing the watermark/history and subscribing.
         if (
             after == 0
-            or (after >= 0 and run.events and after < run.events[0][0] - 1)
+            or (
+                after < run.sequence
+                and (not run.events or after < run.events[0][0] - 1)
+            )
             or after > run.sequence
         ):
             initial = [
@@ -474,7 +536,12 @@ class ChatRunManager:
                                 "tool_name": data["tool_name"],
                                 "tool_call_id": data["tool_call_id"],
                                 **(
-                                    {"detail": str(getattr(output, "content", output))}
+                                    {
+                                        "detail": public_run_error(
+                                            str(getattr(output, "content", output)),
+                                            sub["locale"],
+                                        )
+                                    }
                                     if failed
                                     else {
                                         "output": summarize_tool_output(
@@ -486,7 +553,15 @@ class ChatRunManager:
                         )
                     elif name == "on_tool_call_error":
                         await self.publish(
-                            rid, "tool_error", {**data, "detail": data.get("error")}
+                            rid,
+                            "tool_error",
+                            {
+                                "tool_call_id": data.get("tool_call_id"),
+                                "tool_name": data.get("tool_name"),
+                                "detail": public_run_error(
+                                    str(data.get("error", "")), sub["locale"]
+                                ),
+                            },
                         )
                     elif name in {"on_context_compaction", "on_reasoning_done"}:
                         await self.publish(rid, name.removeprefix("on_"), data)
@@ -503,6 +578,9 @@ class ChatRunManager:
                 output = _extract_event_output(event)
                 if output is not None:
                     final_state = output
+            sub["final_result"] = _extract_content(
+                final_state.get("messages", []) if final_state else []
+            )
             await self.publish(
                 rid,
                 "final",
@@ -515,27 +593,52 @@ class ChatRunManager:
         except asyncio.CancelledError:
             status = "cancelled"
         except Exception as error:
-            status, detail = (
-                "failed",
-                localize_error(
-                    "User input timed out."
-                    if isinstance(error, TimeoutError)
-                    else str(error),
-                    sub["locale"],
-                ),
-            )
+            logger.exception("Chat run {} failed in thread {}", rid, tid)
+            status, detail = "failed", public_run_error(error, sub["locale"])
             await self.publish(rid, "error", {"detail": detail})
         finally:
             self.broker.cancel_run(rid)
+            completed_tools = {
+                message.tool_call_id: message
+                for message in context.messages
+                if isinstance(message, ToolMessage)
+            }
+            for tool_id, tool_name in tuple(run.open_tools.items()):
+                completed = completed_tools.get(tool_id)
+                succeeded = completed is not None and completed.status != "error"
+                await self.publish(
+                    rid,
+                    "tool_end" if succeeded else "tool_error",
+                    {
+                        "tool_call_id": tool_id,
+                        "tool_name": tool_name,
+                        **(
+                            {"output": summarize_tool_output(tool_name, completed)}
+                            if succeeded
+                            else {
+                                "detail": localize_error(
+                                    "Execution ended; the tool result is unknown.",
+                                    sub["locale"],
+                                ),
+                            }
+                        ),
+                    },
+                )
             try:
                 if status != "completed":
                     await self._close_checkpoint(tid, context.messages)
-            except Exception as error:
-                status, detail = "failed", f"Checkpoint finalization failed: {error}"
+            except Exception:
+                logger.exception(
+                    "Checkpoint finalization failed for run {} in thread {}", rid, tid
+                )
+                status, detail = (
+                    "failed",
+                    localize_error("Checkpoint finalization failed.", sub["locale"]),
+                )
                 self.blocked.add(tid)
                 for queued in list(self.queues.get(tid, [])):
                     await self._finish_queued(queued, "failed", detail)
-                self.queues[tid].clear()
+                self.queues.pop(tid, None)
             await self._status(run, status, detail)
             run.finished_at = monotonic()
             run.done.set()
@@ -576,26 +679,101 @@ class ChatRunManager:
             await self._finish_queued(rid)
         return await self.get(rid)
 
-    async def delete_thread(self, tid: str) -> bool:
+    async def delete_thread(
+        self, tid: str, cleanup: Callable[[], bool] | None = None
+    ) -> bool:
         async with self.admission_lock:
-            self.deleting.add(tid)
+            task = self.deletions.get(tid)
+            if task is None:
+                self.deleting.add(tid)
+                pending = tuple(self.thread_admissions.get(tid, ()))
+                task = asyncio.create_task(self._delete_thread(tid, pending, cleanup))
+                self.deletions[tid] = task
+
+                def finished(done: asyncio.Task) -> None:
+                    self.deletions.pop(tid, None)
+                    if not done.cancelled():
+                        done.exception()
+
+                task.add_done_callback(finished)
+        return await asyncio.shield(task)
+
+    async def _delete_thread(
+        self,
+        tid: str,
+        pending: Sequence[asyncio.Task],
+        cleanup: Callable[[], bool] | None,
+    ) -> bool:
+        # Already admitted preparations may have persisted files; drain before deleting.
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         existed = bool(await asyncio.to_thread(self.repository.list, tid))
         for rid in list(self.queues.get(tid, [])):
             await self.cancel(rid)
         if tid in self.active:
             await self.cancel(self.active[tid])
+        if cleanup is not None:
+            existed = await asyncio.to_thread(cleanup) or existed
         await asyncio.to_thread(self.repository.delete_thread, tid)
         for rid, run in list(self.runs.items()):
             if run.row["thread_id"] == tid:
                 self.runs.pop(rid)
                 self.broker.forget(rid)
+        self.queues.pop(tid, None)
+        self.blocked.discard(tid)
+        self.deleting.discard(tid)
         return existed
+
+    async def result(self, rid: str) -> Any:
+        run = self.runs.get(rid)
+        if run is not None:
+            await run.done.wait()
+            row = run.row
+        else:
+            row = await asyncio.to_thread(self.repository.get, rid)
+        if row is None:
+            raise InteractionError("Chat run not found.", 404)
+        sub = row["submission"]
+        if row["status"] != "completed":
+            detail = row.get("detail") or (
+                "Run was cancelled."
+                if row["status"] == "cancelled"
+                else "Chat execution failed. See server logs for details."
+            )
+            raise InteractionError(localize_error(detail, sub["locale"]), 502)
+        if "final_result" in sub:
+            return sub["final_result"]
+        snapshot = await self.agent.aget_state(
+            {"configurable": {"thread_id": row["thread_id"]}}
+        )
+        message_id = sub["human_message"]["data"].get("id")
+        found = False
+        content: Any = None
+        for message in snapshot.values.get("messages", []):
+            if getattr(message, "id", None) == message_id and message_id:
+                found = True
+                continue
+            if not found:
+                continue
+            if getattr(message, "type", None) == "human":
+                break
+            if getattr(message, "type", None) in {"ai", "tool"}:
+                content = _extract_content([message])
+        if content is None:
+            raise InteractionError(
+                "The result of this run is no longer available.", 409
+            )
+        return content
 
     async def shutdown(self) -> None:
         async with self.admission_lock:
             self.closing = True
         if self.admissions:
             await asyncio.gather(*tuple(self.admissions), return_exceptions=True)
+        if self.deletions:
+            await asyncio.gather(
+                *tuple(self.deletions.values()), return_exceptions=True
+            )
         for rid, run in list(self.runs.items()):
             if not run.done.is_set():
                 await self.cancel(rid)

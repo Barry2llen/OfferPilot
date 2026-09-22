@@ -23,7 +23,7 @@ class QueryRequest(InputRequest):
 
 @tool(response_format="content_and_artifact")
 async def query(
-    runtime: ToolRuntime[InteractionContext],
+    runtime: ToolRuntime[InteractionContext | None],
     question: str = Field(
         ..., description="The specific question to ask the user before continuing."
     ),

@@ -11,7 +11,7 @@ from langchain_core.messages import BaseMessage
 
 from exceptions import ModelCallExecutionError
 from schemas.model_selection import ModelSelection
-from utils.i18n import Locale, localize_error
+from utils.i18n import Locale, public_run_error
 
 
 class InteractionError(ValueError):
@@ -63,6 +63,7 @@ class InteractionBroker:
         request_id = uuid4().hex
         data = {
             **request,
+            "type": request.get("type") or "error",
             "request_id": request_id,
             "run_id": context.run_id,
             "thread_id": context.thread_id,
@@ -86,7 +87,7 @@ class InteractionBroker:
         item = self.items.get((run_id, request_id))
         if item is None or item.cancelled:
             raise InteractionError("This input request is no longer available.", 410)
-        if item.data["type"] == "query":
+        if item.data.get("type") == "query":
             if set(answer) - {"choice", "note"} or answer.get("choice") not in {
                 "firstChoice",
                 "secondChoice",
@@ -143,7 +144,7 @@ class InteractionContext:
         if request.get("type") == "error" and request.get("message"):
             request = {
                 **request,
-                "message": localize_error(request["message"], self.locale),
+                "message": public_run_error(request["message"], self.locale),
             }
         return await self.broker.ask(self, request)
 

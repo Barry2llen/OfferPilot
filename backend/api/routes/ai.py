@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -317,21 +318,19 @@ async def list_chat_histories(
         request.app.state.checkpointer,
         ChatThreadFileRepository(session),
     )
-    histories = history_service.list_histories(limit=limit + offset, offset=0)
-    pending = await request.app.state.chat_runs.unstarted_histories()
-    known = {item.thread_id for item in histories.items}
-    items = [
-        *histories.items,
-        *(
-            AIChatHistoryDetailResponse(**item)
-            for item in pending
-            if item["thread_id"] not in known
-        ),
-    ]
-    items.sort(key=lambda item: item.updated_at, reverse=True)
-    return AIChatHistoryListResponse(
-        items=items[offset : offset + limit], limit=limit, offset=offset
-    )
+    manager = request.app.state.chat_runs
+    page = await asyncio.to_thread(manager.repository.conversation_page, limit, offset)
+    items = []
+    for row in page:
+        if row["has_checkpoint"]:
+            history = history_service.get_history(row["thread_id"])
+            if history is not None:
+                items.append(history)
+        else:
+            pending = await manager.unstarted_history(row["thread_id"])
+            if pending is not None:
+                items.append(AIChatHistoryDetailResponse(**pending))
+    return AIChatHistoryListResponse(items=items, limit=limit, offset=offset)
 
 
 @router.get(
@@ -380,7 +379,8 @@ async def get_chat_history(
     summary="Delete AI conversation history",
     description=(
         "Delete the LangGraph checkpoint, checkpoint blobs, and pending writes for a thread_id. "
-        "The conversation cannot be retried or continued after deletion."
+        "Deletion waits for admitted preparations and active execution before deleting history and attachment links. "
+        "Failed cleanup keeps the conversation closed to new runs until deletion succeeds."
     ),
     response_description="Deleted successfully with no response body.",
     responses={
@@ -397,21 +397,25 @@ async def delete_chat_history(
         description="Conversation thread ID to delete.",
         examples=["conversation-001"],
     ),
-    session: Session = Depends(_get_request_db_session),
 ) -> Response:
-    had_runs = await request.app.state.chat_runs.delete_thread(thread_id)
-    history_service = ChatHistoryService(
-        CheckpointRepository(session),
-        request.app.state.checkpointer,
-    )
-    deleted = history_service.delete_history(thread_id)
-    if not deleted and not had_runs:
+    def cleanup() -> bool:
+        with request.app.state.database.get_session_factory()() as session:
+            history_service = ChatHistoryService(
+                CheckpointRepository(session),
+                request.app.state.checkpointer,
+            )
+            deleted = history_service.delete_history(thread_id)
+            _build_chat_file_service(request, session).delete_thread_attachments(
+                thread_id
+            )
+            session.commit()
+            return deleted
+
+    deleted = await request.app.state.chat_runs.delete_thread(thread_id, cleanup)
+    if not deleted:
         raise HTTPException(
-            status_code=404,
-            detail=f"Chat history not found: {thread_id}",
+            status_code=404, detail=f"Chat history not found: {thread_id}"
         )
-    _build_chat_file_service(request, session).delete_thread_attachments(thread_id)
-    session.commit()
     return Response(status_code=204)
 
 
@@ -497,10 +501,16 @@ async def get_chat_file_raw(
     summary="Call the AI chat API",
     description=(
         "Call SupervisorAgent with the selected model and persist conversation state through "
-        "DatabaseCheckpointer. Supports JSON requests and multipart requests with files[] / file_ids[]."
+        "DatabaseCheckpointer. Supports JSON requests and multipart requests with files[] / file_ids[]. "
+        "Idempotency-Key retries return the persisted result even after the event cache expires. "
+        "Runs needing human input fail with 502; use the interactive endpoint instead."
     ),
     response_description="Returns the AI response and the conversation thread ID.",
     responses={
+        409: _error_response(
+            "Conflicting idempotency key or an old run whose result cannot be reliably recovered.",
+            example="The result of this run is no longer available.",
+        ),
         404: _error_response(
             "The requested model selection was not found.",
             example="Model selection not found: 1",
@@ -522,24 +532,7 @@ async def get_chat_file_raw(
 async def chat(request: Request) -> AIChatResponse:
     run = await _submit_chat_run(request, interactive=False)
     manager = request.app.state.chat_runs
-    result = ""
-    async for event in manager.stream(run["run_id"], -1):
-        for line in event.splitlines():
-            if line.startswith("data: "):
-                value = json.loads(line[6:])
-                if "events" in value:
-                    for item in value["events"]:
-                        if item["event"] == "final":
-                            result = item["data"].get("content", "")
-                elif "event: final" in event:
-                    result = value.get("content", "")
-    status = await manager.get(run["run_id"])
-    if status["status"] != "completed":
-        raise HTTPException(
-            502,
-            status["detail"]
-            or "User input is required. Use the interactive chat endpoint.",
-        )
+    result = await manager.result(run["run_id"])
     return AIChatResponse(thread_id=run["thread_id"], content=result)
 
 

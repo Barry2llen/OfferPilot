@@ -300,34 +300,133 @@ def _suffix(raw: str, marker: str) -> str:
     return raw.split(marker, 1)[1].strip()
 
 
+_RUN_ERROR_KEYS: Mapping[str, str] = {
+    "This run is no longer active.": "runInactive",
+    "User input is required. Use the interactive chat endpoint.": "interactiveEndpointRequired",
+    "Too many pending input requests.": "pendingInputLimit",
+    "This input request is no longer available.": "inputUnavailable",
+    "Invalid query answer.": "invalidQueryAnswer",
+    "Invalid query note.": "invalidQueryNote",
+    "Only retry is accepted for this request.": "retryOnly",
+    "A different answer was already submitted.": "answerConflict",
+    "This input request has expired.": "inputExpired",
+    "The idempotency key was used for a different request.": "idempotencyConflict",
+    "This conversation cannot accept a new run.": "conversationUnavailable",
+    "The conversation queue is full.": "conversationQueueFull",
+    "Chat run not found.": "runNotFound",
+    "Backend stopped; execution cannot be resumed.": "backendStoppedActive",
+    "Backend stopped before execution.": "backendStoppedQueued",
+    "Invalid idempotency key.": "invalidIdempotencyKey",
+    "User input timed out.": "inputTimedOut",
+    "Chat execution failed. See server logs for details.": "runExecutionFailed",
+    "Checkpoint finalization failed.": "checkpointFinalizationFailed",
+    "Run was cancelled.": "runCancelled",
+    "Execution ended; the tool result is unknown.": "toolResultUnknown",
+    "The result of this run is no longer available.": "runResultUnavailable",
+}
+
+MESSAGES.update(
+    {
+        "runInactive": {
+            "zh-CN": "此次运行已结束。",
+            "en-US": "This run is no longer active.",
+        },
+        "interactiveEndpointRequired": {
+            "zh-CN": "此操作需要用户输入，请使用交互式聊天入口。",
+            "en-US": "User input is required. Use the interactive chat endpoint.",
+        },
+        "pendingInputLimit": {
+            "zh-CN": "待回答问题已达到上限。",
+            "en-US": "Too many pending input requests.",
+        },
+        "inputUnavailable": {
+            "zh-CN": "此问题已失效，无法提交答案。",
+            "en-US": "This input request is no longer available.",
+        },
+        "invalidQueryAnswer": {
+            "zh-CN": "答案选项无效。",
+            "en-US": "Invalid query answer.",
+        },
+        "invalidQueryNote": {
+            "zh-CN": "补充说明格式无效。",
+            "en-US": "Invalid query note.",
+        },
+        "retryOnly": {
+            "zh-CN": "此请求仅接受重试操作。",
+            "en-US": "Only retry is accepted for this request.",
+        },
+        "answerConflict": {
+            "zh-CN": "此问题已提交其他答案。",
+            "en-US": "A different answer was already submitted.",
+        },
+        "inputExpired": {
+            "zh-CN": "此问题已过期。",
+            "en-US": "This input request has expired.",
+        },
+        "idempotencyConflict": {
+            "zh-CN": "此提交标识已用于不同的请求。",
+            "en-US": "The idempotency key was used for a different request.",
+        },
+        "conversationUnavailable": {
+            "zh-CN": "此会话当前无法接受新消息。",
+            "en-US": "This conversation cannot accept a new run.",
+        },
+        "conversationQueueFull": {
+            "zh-CN": "此会话的排队消息已达到上限。",
+            "en-US": "The conversation queue is full.",
+        },
+        "runNotFound": {"zh-CN": "未找到此次运行。", "en-US": "Chat run not found."},
+        "backendStoppedActive": {
+            "zh-CN": "后端已退出，无法恢复此次执行。",
+            "en-US": "Backend stopped; execution cannot be resumed.",
+        },
+        "backendStoppedQueued": {
+            "zh-CN": "后端在开始执行前已退出。",
+            "en-US": "Backend stopped before execution.",
+        },
+        "invalidIdempotencyKey": {
+            "zh-CN": "提交标识无效。",
+            "en-US": "Invalid idempotency key.",
+        },
+        "inputTimedOut": {
+            "zh-CN": "等待用户输入已超时。",
+            "en-US": "User input timed out.",
+        },
+        "runExecutionFailed": {
+            "zh-CN": "聊天执行失败，请查看服务端日志。",
+            "en-US": "Chat execution failed. See server logs for details.",
+        },
+        "checkpointFinalizationFailed": {
+            "zh-CN": "会话状态收尾失败，请删除会话后重试。",
+            "en-US": "Checkpoint finalization failed.",
+        },
+        "runCancelled": {"zh-CN": "此次运行已取消。", "en-US": "Run was cancelled."},
+        "toolResultUnknown": {
+            "zh-CN": "执行已结束，工具结果未知。",
+            "en-US": "Execution ended; the tool result is unknown.",
+        },
+        "runResultUnavailable": {
+            "zh-CN": "无法可靠读取此次运行的结果。",
+            "en-US": "The result of this run is no longer available.",
+        },
+    }
+)
+
+MESSAGES["legacyChatCommand"] = {
+    "zh-CN": "旧版回答接口已停用，请通过运行的问题回答接口提交。",
+    "en-US": "Legacy query/retry commands are no longer supported. Submit answers through the run input endpoint.",
+}
+
+
 def localize_error(error: BaseException | str, locale: Locale = DEFAULT_LOCALE) -> str:
     """Translate known application errors without rewriting unknown technical details."""
 
     raw = str(error)
-    if locale == "zh-CN":
-        run_errors = {
-            "This run is no longer active.": "此次运行已结束。",
-            "User input is required. Use the interactive chat endpoint.": "此操作需要用户输入，请使用交互式聊天入口。",
-            "Too many pending input requests.": "待回答问题已达到上限。",
-            "This input request is no longer available.": "此问题已失效，无法提交答案。",
-            "Invalid query answer.": "答案选项无效。",
-            "Invalid query note.": "补充说明格式无效。",
-            "Only retry is accepted for this request.": "此请求仅接受重试操作。",
-            "A different answer was already submitted.": "此问题已提交其他答案。",
-            "This input request has expired.": "此问题已过期。",
-            "The idempotency key was used for a different request.": "此提交标识已用于不同的请求。",
-            "This conversation cannot accept a new run.": "此会话当前无法接受新消息。",
-            "The conversation queue is full.": "此会话的排队消息已达到上限。",
-            "Chat run not found.": "未找到此次运行。",
-            "Backend stopped; execution cannot be resumed.": "后端已退出，无法恢复此次执行。",
-            "Backend stopped before execution.": "后端在开始执行前已退出。",
-            "Invalid idempotency key.": "提交标识无效。",
-            "User input timed out.": "等待用户输入已超时。",
-        }
-        if raw in run_errors:
-            return run_errors[raw]
-        if raw.startswith("Legacy query/retry commands"):
-            return "旧版回答接口已停用，请通过运行的问题回答接口提交。"
+    run_error_key = _RUN_ERROR_KEYS.get(raw)
+    if run_error_key is not None:
+        return translate(run_error_key, locale)
+    if raw.startswith("Legacy query/retry commands"):
+        return translate("legacyChatCommand", locale)
     name = error.__class__.__name__ if isinstance(error, BaseException) else ""
     lowered = raw.lower()
 
@@ -512,3 +611,28 @@ __all__ = [
     "resolve_locale",
     "translate",
 ]
+
+
+def public_run_error(
+    error: BaseException | str, locale: Locale = DEFAULT_LOCALE
+) -> str:
+    """Expose known domain errors; retain unknown diagnostics only in server logs."""
+    raw = str(error)
+    if raw in _RUN_ERROR_KEYS or raw.startswith(
+        ("Model selection not found:", "Chat file not found:")
+    ):
+        return localize_error(raw, locale)
+    if isinstance(error, TimeoutError):
+        return localize_error("User input timed out.", locale)
+    if raw.startswith("Context compaction failed:"):
+        return translate(
+            "contextCompactionFailed",
+            locale,
+            detail=localize_error(
+                "Chat execution failed. See server logs for details.", locale
+            ),
+        )
+    localized = localize_error(error, locale)
+    if localized != raw:
+        return localized
+    return localize_error("Chat execution failed. See server logs for details.", locale)

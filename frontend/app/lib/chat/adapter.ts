@@ -557,6 +557,19 @@ export function reduceChatEvent(
     }
 
     case "tool_start": {
+      if (
+        data.tool_call_id !== undefined &&
+        (typeof data.tool_call_id !== "string" || !data.tool_call_id)
+      )
+        break;
+      const existing =
+        typeof data.tool_call_id === "string"
+          ? next.toolCalls.find(
+              (entry) => entry.toolCallId === data.tool_call_id,
+            )
+          : undefined;
+      if (existing) break;
+
       addAgentStatusEffect(effects, "tool_calling");
       next = endAssistantSegment(next);
       const name =
@@ -584,13 +597,26 @@ export function reduceChatEvent(
     }
 
     case "tool_end": {
+      if (
+        data.tool_call_id !== undefined &&
+        (typeof data.tool_call_id !== "string" || !data.tool_call_id)
+      )
+        break;
+      const existing =
+        typeof data.tool_call_id === "string"
+          ? next.toolCalls.find(
+              (entry) => entry.toolCallId === data.tool_call_id,
+            )
+          : undefined;
+      if (existing && existing.status !== "running") break;
+
       const name =
         typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
       const output = data.output;
       const index = findLastRunningToolCallIndex(
         next.toolCalls,
         name,
-        data.tool_call_id as string | undefined,
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined,
       );
       const toolCalls = [...next.toolCalls];
       if (index >= 0) {
@@ -600,7 +626,10 @@ export function reduceChatEvent(
           name,
           output,
           status: "success",
-          toolCallId: data.tool_call_id as string | undefined,
+          toolCallId:
+            typeof data.tool_call_id === "string"
+              ? data.tool_call_id
+              : undefined,
         });
       }
       const entry =
@@ -612,6 +641,19 @@ export function reduceChatEvent(
     }
 
     case "tool_error": {
+      if (
+        data.tool_call_id !== undefined &&
+        (typeof data.tool_call_id !== "string" || !data.tool_call_id)
+      )
+        break;
+      const existing =
+        typeof data.tool_call_id === "string"
+          ? next.toolCalls.find(
+              (entry) => entry.toolCallId === data.tool_call_id,
+            )
+          : undefined;
+      if (existing && existing.status !== "running") break;
+
       const name =
         typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
       const detail =
@@ -620,7 +662,7 @@ export function reduceChatEvent(
       const index = findLastRunningToolCallIndex(
         next.toolCalls,
         name,
-        data.tool_call_id as string | undefined,
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined,
       );
       const toolCalls = [...next.toolCalls];
       if (index >= 0) {
@@ -634,7 +676,10 @@ export function reduceChatEvent(
           name,
           error: detail,
           status: "error",
-          toolCallId: data.tool_call_id as string | undefined,
+          toolCallId:
+            typeof data.tool_call_id === "string"
+              ? data.tool_call_id
+              : undefined,
         });
       }
       const entry =

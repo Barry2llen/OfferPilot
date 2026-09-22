@@ -18,9 +18,9 @@ const zhCN = {
     remove: "移除",
     attachments: "附件消息",
     stopNotice: "停止当前运行后，仍会自动执行下一条排队消息。",
-    interrupted: "后端已退出，此次运行无法恢复，请重新发送：",
-    failed: "运行失败：",
-    cancelled: "运行已取消：",
+    interrupted: "后端已退出，此次运行无法恢复，请重新发送：{{prompt}}",
+    failed: "运行失败：{{prompt}}",
+    cancelled: "运行已取消：{{prompt}}",
   },
   app: {
     documentTitle: "OfferPilot - AI 求职助手",
@@ -467,9 +467,10 @@ const enUS = {
     attachments: "Attachment message",
     stopNotice:
       "Stopping the current run still starts the next queued message.",
-    interrupted: "The backend stopped. This run cannot resume; resend:",
-    failed: "Run failed:",
-    cancelled: "Run cancelled:",
+    interrupted:
+      "The backend stopped. This run cannot resume; resend: {{prompt}}",
+    failed: "Run failed: {{prompt}}",
+    cancelled: "Run cancelled: {{prompt}}",
   },
   app: {
     documentTitle: "OfferPilot - AI Career Assistant",
