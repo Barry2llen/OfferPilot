@@ -52,3 +52,34 @@ it("keeps the new draft editable and preserves it after the previous submission 
   act(() => accept());
   expect((input as HTMLTextAreaElement).value).toBe("next draft");
 });
+
+it("removes only sent attachments when a new attachment is added before acceptance", async () => {
+  await i18n.changeLanguage("en-US");
+  let accept = () => {};
+  const onSend = vi.fn((_payload, accepted: () => void) => {
+    accept = accepted;
+  });
+  const { container } = render(
+    <ToastProvider>
+      <ChatInput
+        onSend={onSend}
+        onStop={() => {}}
+        isStreaming={false}
+        disabled={false}
+      />
+    </ToastProvider>,
+  );
+  const fileInput = container.querySelector('input[type="file"]')!;
+  fireEvent.change(fileInput, {
+    target: {
+      files: [new File(["first"], "first.txt", { type: "text/plain" })],
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  fireEvent.change(fileInput, {
+    target: { files: [new File(["next"], "next.txt", { type: "text/plain" })] },
+  });
+  act(() => accept());
+  expect(screen.queryByText("first.txt")).toBeNull();
+  expect(screen.getByText("next.txt")).toBeTruthy();
+});

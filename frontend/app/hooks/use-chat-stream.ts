@@ -103,6 +103,10 @@ export function useChatStream() {
     });
     const delay = (ms: number) =>
       new Promise<void>((resolve) => {
+        if (!current()) {
+          resolve();
+          return;
+        }
         const done = () => {
           if (wakeRef.current === done) wakeRef.current = null;
           clearTimeout(timer);
@@ -402,6 +406,7 @@ export function useChatStream() {
                 }
                 after = Math.max(after, id);
               }
+              if (!current()) return;
               if (!ended) {
                 setConnectionState("reconnecting");
                 await delay(1000);
@@ -473,6 +478,7 @@ export function useChatStream() {
           selectionId,
           prompt,
           threadId,
+          command,
           options?.fileIds,
           options?.localFiles?.map((file) => [
             file.name,

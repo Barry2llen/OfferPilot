@@ -856,3 +856,46 @@ def test_http_native_answers_queue_and_migration(temporary_app_config, monkeypat
                     and operation["description"]
                     and operation["responses"]
                 )
+
+
+async def test_terminal_eviction_forgets_answers_and_closed_marker(manager):
+    run = await submit(manager)
+    rid = run["run_id"]
+    while not manager.broker.list_pending(rid):
+        await asyncio.sleep(0)
+    request_id = manager.broker.list_pending(rid)[0]["request_id"]
+    answer = {"choice": "firstChoice"}
+    await manager.broker.submit(rid, request_id, answer)
+    await manager.result(rid)
+    await manager.broker.submit(rid, request_id, answer)
+    manager.runs[rid].finished_at = monotonic() - 3600
+    await manager.get(rid)
+    assert not any(key[0] == rid for key in manager.broker.items)
+    assert rid not in manager.broker.closed
+    with pytest.raises(InteractionError) as error:
+        await manager.broker.submit(rid, request_id, answer)
+    assert error.value.status_code == 410
+    await manager.shutdown()
+
+
+async def test_delete_failure_after_history_cleanup_keeps_admission_closed(
+    manager, monkeypatch
+):
+    run = await submit(manager, "done")
+    await manager.result(run["run_id"])
+    original = manager.repository.delete_thread
+    cleaned = []
+
+    def fail(tid):
+        raise RuntimeError("run deletion failed")
+
+    monkeypatch.setattr(manager.repository, "delete_thread", fail)
+    with pytest.raises(RuntimeError):
+        await manager.delete_thread("thread", lambda: cleaned.append(True) or True)
+    assert cleaned == [True]
+    with pytest.raises(InteractionError):
+        await submit(manager, "must not start")
+    monkeypatch.setattr(manager.repository, "delete_thread", original)
+    assert await manager.delete_thread("thread", lambda: False)
+    assert "thread" not in manager.deleting
+    await manager.shutdown()

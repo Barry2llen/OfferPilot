@@ -279,3 +279,33 @@ describe("run subscription lifecycle", () => {
     expect(result.current.app.currentModelSelection).toBe(3);
   });
 });
+
+it("does not reconnect or schedule a delay after the old subscription is aborted", async () => {
+  const { result } = mount();
+  await waitFor(() => expect(aiChatApi.runEvents).toHaveBeenCalledTimes(1));
+  const timers = vi.spyOn(globalThis, "setTimeout");
+  await act(async () => {
+    result.current.actions.setThreadId(null);
+  });
+  expect(result.current.chat.connectionState).toBe("idle");
+  expect(timers.mock.calls.some((call) => call[1] === 1000)).toBe(false);
+  expect(aiChatApi.runEvents).toHaveBeenCalledTimes(1);
+  expect(aiChatApi.cancelRun).not.toHaveBeenCalled();
+});
+
+it("reuses an unconfirmed command key only for the same command", async () => {
+  const { result } = mount();
+  await waitFor(() => expect(aiChatApi.runEvents).toHaveBeenCalledTimes(1));
+  vi.mocked(aiChatApi.createRun).mockRejectedValue(new Error("lost response"));
+  for (const prompt of ["first", "first", "second"]) {
+    await act(async () => {
+      await result.current.chat.startChat(1, "", "t", {
+        type: "prompt",
+        prompt,
+      });
+    });
+  }
+  const calls = vi.mocked(aiChatApi.createRun).mock.calls;
+  expect(calls[0][1]).toBe(calls[1][1]);
+  expect(calls[2][1]).not.toBe(calls[1][1]);
+});

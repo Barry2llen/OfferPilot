@@ -286,6 +286,18 @@ def _raise_chat_input_error(error: Exception) -> None:
     raise error
 
 
+def _read_chat_history(
+    request: Request, thread_id: str
+) -> AIChatHistoryDetailResponse | None:
+    # The worker owns the session through both database reads and message conversion.
+    with request.app.state.database.get_session_factory()() as session:
+        return ChatHistoryService(
+            CheckpointRepository(session),
+            request.app.state.checkpointer,
+            ChatThreadFileRepository(session),
+        ).get_history(thread_id)
+
+
 @router.get(
     "/chats",
     response_model=AIChatHistoryListResponse,
@@ -311,19 +323,15 @@ async def list_chat_histories(
         description="Number of items to skip.",
         examples=[0],
     ),
-    session: Session = Depends(_get_request_db_session),
 ) -> AIChatHistoryListResponse:
-    history_service = ChatHistoryService(
-        CheckpointRepository(session),
-        request.app.state.checkpointer,
-        ChatThreadFileRepository(session),
-    )
     manager = request.app.state.chat_runs
     page = await asyncio.to_thread(manager.repository.conversation_page, limit, offset)
     items = []
     for row in page:
         if row["has_checkpoint"]:
-            history = history_service.get_history(row["thread_id"])
+            history = await asyncio.to_thread(
+                _read_chat_history, request, row["thread_id"]
+            )
             if history is not None:
                 items.append(history)
         else:
@@ -353,14 +361,8 @@ async def list_chat_histories(
 async def get_chat_history(
     thread_id: str,
     request: Request,
-    session: Session = Depends(_get_request_db_session),
 ) -> AIChatHistoryDetailResponse:
-    history_service = ChatHistoryService(
-        CheckpointRepository(session),
-        request.app.state.checkpointer,
-        ChatThreadFileRepository(session),
-    )
-    history = history_service.get_history(thread_id)
+    history = await asyncio.to_thread(_read_chat_history, request, thread_id)
     if history is None:
         pending = await request.app.state.chat_runs.unstarted_history(thread_id)
         if pending is not None:
@@ -503,6 +505,9 @@ async def get_chat_file_raw(
         "Call SupervisorAgent with the selected model and persist conversation state through "
         "DatabaseCheckpointer. Supports JSON requests and multipart requests with files[] / file_ids[]. "
         "Idempotency-Key retries return the persisted result even after the event cache expires. "
+        "Requests wait in the conversation FIFO, including behind runs awaiting human input. "
+        "A missing key is generated; an empty key or one longer than 128 characters returns 422. "
+        "Reusing a key with a different submission locale returns 409. "
         "Runs needing human input fail with 502; use the interactive endpoint instead."
     ),
     response_description="Returns the AI response and the conversation thread ID.",
@@ -536,17 +541,10 @@ async def chat(request: Request) -> AIChatResponse:
     return AIChatResponse(thread_id=run["thread_id"], content=result)
 
 
-async def _submit_chat_run(request: Request, *, interactive=True):
-    payload = await _parse_ai_chat_payload(request, stream=True)
-    if payload.command and payload.command.type != "prompt":
-        raise HTTPException(
-            410,
-            "Legacy query/retry commands are no longer supported. Submit an answer to /ai/chat/runs/{run_id}/inputs/{request_id}.",
-        )
-    key = request.headers.get("Idempotency-Key") or uuid4().hex
-    if not 1 <= len(key) <= 128:
-        raise HTTPException(422, "Invalid idempotency key.")
-    fingerprint = sha256(
+def _chat_fingerprint(
+    payload: ParsedAIChatPayload, interactive: bool, locale: str
+) -> str:
+    return sha256(
         json.dumps(
             {
                 "thread_id": payload.thread_id,
@@ -555,7 +553,7 @@ async def _submit_chat_run(request: Request, *, interactive=True):
                 "command": payload.command.model_dump() if payload.command else None,
                 "file_ids": payload.file_ids,
                 "interactive": interactive,
-                "locale": request_locale(request),
+                "locale": locale,
                 "uploads": [
                     (f.filename, f.content_type, sha256(f.content).hexdigest())
                     for f in payload.uploaded_files
@@ -564,6 +562,23 @@ async def _submit_chat_run(request: Request, *, interactive=True):
             sort_keys=True,
         ).encode()
     ).hexdigest()
+
+
+async def _submit_chat_run(request: Request, *, interactive=True):
+    payload = await _parse_ai_chat_payload(request, stream=True)
+    if payload.command and payload.command.type != "prompt":
+        raise HTTPException(
+            410,
+            "Legacy query/retry commands are no longer supported. Submit an answer to /ai/chat/runs/{run_id}/inputs/{request_id}.",
+        )
+    key = request.headers.get("Idempotency-Key")
+    if key is None:
+        key = uuid4().hex
+    if not 1 <= len(key) <= 128:
+        raise HTTPException(422, "Invalid idempotency key.")
+    fingerprint = await asyncio.to_thread(
+        _chat_fingerprint, payload, interactive, request_locale(request)
+    )
     manager = request.app.state.chat_runs
     previous = await manager.lookup_key(key, fingerprint)
     if previous:
@@ -683,7 +698,7 @@ _RUN_BODY = {
     response_model=ChatRunResponse,
     status_code=202,
     summary="Create a chat run",
-    description="Accept JSON or multipart chat input and enqueue it in conversation order. Use Idempotency-Key to safely retry a submission.",
+    description="Accept JSON or multipart chat input and enqueue it in conversation order. Use Idempotency-Key to safely retry a submission. Missing keys are generated; empty keys or keys longer than 128 characters return 422. A changed submission locale with the same key returns 409.",
     response_description="The accepted run and its current queue status.",
     responses=_RUN_ERRORS,
 )

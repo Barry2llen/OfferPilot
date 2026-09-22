@@ -419,6 +419,14 @@ MESSAGES["legacyChatCommand"] = {
 
 
 def localize_error(error: BaseException | str, locale: Locale = DEFAULT_LOCALE) -> str:
+    """Translate known errors while preserving unknown technical diagnostics."""
+    message = _known_error_message(error, locale)
+    return message if message is not None else str(error)
+
+
+def _known_error_message(
+    error: BaseException | str, locale: Locale = DEFAULT_LOCALE
+) -> str | None:
     """Translate known application errors without rewriting unknown technical details."""
 
     raw = str(error)
@@ -513,7 +521,7 @@ def localize_error(error: BaseException | str, locale: Locale = DEFAULT_LOCALE) 
     if name.endswith("NotFoundError"):
         return translate("notFound", locale)
 
-    return raw
+    return None
 
 
 _PROGRESS_EXACT_KEYS: Mapping[str, str] = {
@@ -604,6 +612,7 @@ __all__ = [
     "MESSAGES",
     "SUPPORTED_LOCALES",
     "localize_error",
+    "public_run_error",
     "localize_model_retry_detail",
     "localize_progress_message",
     "localize_validation_message",
@@ -632,7 +641,7 @@ def public_run_error(
                 "Chat execution failed. See server logs for details.", locale
             ),
         )
-    localized = localize_error(error, locale)
-    if localized != raw:
+    localized = _known_error_message(error, locale)
+    if localized is not None:
         return localized
     return localize_error("Chat execution failed. See server logs for details.", locale)
