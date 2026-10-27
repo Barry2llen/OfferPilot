@@ -46,8 +46,40 @@
   },
   "linux": {
     "target": [
-      "AppImage"
+      { "target": "AppImage", "arch": ["x64"] },
+      { "target": "deb", "arch": ["x64"] }
     ],
-    "artifactName": "${productName}-Linux-${version}.${ext}"
+    "executableName": "offerpilot",
+    "syncDesktopName": true,
+    "category": "Office",
+    "synopsis": "Local AI job-search assistant",
+    "desktop": {
+      "entry": {
+        "Name": "OfferPilot",
+        "Comment": "Local AI job-search assistant"
+      }
+    },
+    "artifactName": "${productName}-Linux-x64-v${version}.${ext}"
+  },
+  "deb": {
+    "packageName": "offerpilot",
+    "depends": [
+      "libgtk-3-0 | libgtk-3-0t64",
+      "libnotify4",
+      "libnss3",
+      "libxss1",
+      "libxtst6",
+      "xdg-utils",
+      "libatspi2.0-0 | libatspi2.0-0t64",
+      "libuuid1",
+      "libsecret-1-0",
+      "libasound2 | libasound2t64",
+      "libgbm1",
+      "libgl1",
+      "libfontconfig1",
+      "libharfbuzz0b",
+      "fonts-dejavu-core",
+      "fonts-noto-cjk"
+    ]
   }
 }

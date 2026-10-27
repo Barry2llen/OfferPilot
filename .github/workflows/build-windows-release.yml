@@ -12,19 +12,18 @@ on:
           - bump-minor
           - bump-major
           - build-windows
+          - build-linux
+          - build-all
       version:
-        description: Existing X.Y.Z version to rebuild (only for build-windows)
+        description: Existing X.Y.Z tag to rebuild (required for build actions)
         required: false
         type: string
-
   pull_request:
-    types:
-      - closed
-    branches:
-      - main
+    types: [closed]
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: offerpilot-release-${{ github.event.pull_request.number || github.ref }}
@@ -34,129 +33,36 @@ jobs:
   create_release_pr:
     name: Create Release PR
     if: github.event_name == 'workflow_dispatch' && startsWith(inputs.action, 'bump-')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
       pull-requests: write
-
     steps:
       - name: Validate source branch
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
-            echo "::error::Version bump workflows must be dispatched from main (got $GITHUB_REF)."
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo '::error::Version bumps must be dispatched from main.'
             exit 1
           fi
-
-      - name: Checkout main
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Calculate and update version
+      - name: Update application version
         id: version
-        shell: bash
         env:
           RELEASE_ACTION: ${{ inputs.action }}
         run: |
           set -euo pipefail
-
-          current_version="$(node -p "require('./electron/package.json').version")"
-          if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Current application version must be X.Y.Z, got $current_version."
-            exit 1
-          fi
-
-          IFS='.' read -r major minor patch <<< "$current_version"
-          case "$RELEASE_ACTION" in
-            bump-major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-            bump-minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            bump-patch)
-              patch=$((patch + 1))
-              ;;
-            *)
-              echo "::error::Unsupported release action: $RELEASE_ACTION"
-              exit 1
-              ;;
-          esac
-
-          new_version="${major}.${minor}.${patch}"
-
-          for directory in . frontend electron; do
-            (
-              cd "$directory"
-              npm version "$new_version" --no-git-tag-version --ignore-scripts
-            )
-          done
-
-          RELEASE_VERSION="$new_version" node <<'NODE'
-          const fs = require('node:fs');
-
-          const file = 'frontend/app/lib/i18n.ts';
-          const version = process.env.RELEASE_VERSION;
-          const source = fs.readFileSync(file, 'utf8');
-          const pattern = /OfferPilot v\d+\.\d+\.\d+/g;
-          const matches = source.match(pattern) ?? [];
-
-          if (matches.length !== 2) {
-            throw new Error(`Expected two UI version strings in ${file}, found ${matches.length}.`);
-          }
-
-          fs.writeFileSync(file, source.replace(pattern, `OfferPilot v${version}`));
-          NODE
-
-          RELEASE_VERSION="$new_version" node <<'NODE'
-          const fs = require('node:fs');
-
-          const expected = process.env.RELEASE_VERSION;
-          const packageFiles = [
-            'package.json',
-            'frontend/package.json',
-            'electron/package.json',
-          ];
-          const lockFiles = [
-            'package-lock.json',
-            'frontend/package-lock.json',
-            'electron/package-lock.json',
-          ];
-
-          for (const file of packageFiles) {
-            const packageJson = JSON.parse(fs.readFileSync(file, 'utf8'));
-            if (packageJson.version !== expected) {
-              throw new Error(`${file} has version ${packageJson.version}, expected ${expected}.`);
-            }
-          }
-
-          for (const file of lockFiles) {
-            const lockfile = JSON.parse(fs.readFileSync(file, 'utf8'));
-            const rootVersion = lockfile.packages?.['']?.version;
-            if (lockfile.version !== expected || rootVersion !== expected) {
-              throw new Error(`${file} is not synchronized to ${expected}.`);
-            }
-          }
-          NODE
-
+          version="$(node electron/scripts/release-version.mjs bump "$RELEASE_ACTION")"
           git diff --check
-          printf 'version=%s\n' "$new_version" >> "$GITHUB_OUTPUT"
-          printf 'tag=v%s\n' "$new_version" >> "$GITHUB_OUTPUT"
-
-      - name: Create Release PR
-        uses: peter-evans/create-pull-request@v7
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - uses: peter-evans/create-pull-request@v7
         with:
           base: main
           branch: release/v${{ steps.version.outputs.version }}
@@ -165,246 +71,335 @@ jobs:
           body: |
             Prepares OfferPilot v${{ steps.version.outputs.version }}.
 
-            Updated application version metadata in the root project, frontend,
-            Electron shell, and sidebar translations. After this PR is merged
-            into `main`, the release workflow will create the immutable tag,
-            build the Windows x64 installer, and publish the GitHub Release.
+            Synchronizes application versions and both sidebar translations.
+            Merging into main creates the immutable tag, builds Windows x64
+            and Linux x64 installers, verifies Linux on Ubuntu 22.04 and 24.04,
+            and publishes the complete GitHub Release after all checks pass.
 
-  publish_tag:
-    name: Tag Merged Release
+  resolve_release:
+    name: Resolve immutable release source
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      startsWith(github.event.pull_request.head.ref, 'release/v')
-    runs-on: ubuntu-latest
+      (github.event_name == 'workflow_dispatch' && startsWith(inputs.action, 'build-')) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.event.pull_request.head.ref, 'release/v'))
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
-
+      platforms: ${{ steps.release.outputs.platforms }}
     steps:
-      - name: Validate merge commit
-        shell: bash
+      - name: Validate manual tag input
+        if: github.event_name == 'workflow_dispatch'
         env:
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          if [[ -z "$MERGE_SHA" ]]; then
-            echo "::error::The merged release PR has no merge commit SHA."
+          if [[ ! "$REQUESTED_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo '::error::A build action requires X.Y.Z without a leading v.'
             exit 1
           fi
-
-      - name: Checkout merge commit
-        uses: actions/checkout@v5
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$REQUESTED_VERSION" > /dev/null
+      - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || format('refs/tags/v{0}', inputs.version) }}
           fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Validate version and create tag
+      - name: Validate version and resolve tag
         id: release
-        shell: bash
         env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_ACTION: ${{ inputs.action || 'automatic' }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-
-          if [[ "$(git rev-parse HEAD)" != "$MERGE_SHA" ]]; then
-            echo "::error::The checkout does not match the PR merge commit."
+          if [[ ! -f electron/scripts/release-version.mjs ]]; then
+            echo '::error::This tag predates the pnpm release tooling. Prepare a new release; existing tags will not be changed.'
             exit 1
           fi
-
-          version="$(node -p "require('./electron/package.json').version")"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Release version must be X.Y.Z, got $version."
-            exit 1
-          fi
-
-          for file in package.json frontend/package.json electron/package.json; do
-            file_version="$(node -p "require('./$file').version")"
-            if [[ "$file_version" != "$version" ]]; then
-              echo "::error::$file has version $file_version, expected $version."
+          version="$(node electron/scripts/release-version.mjs check "$REQUESTED_VERSION")"
+          tag="v$version"
+          platforms="$(node electron/scripts/release-policy.mjs platforms "$RELEASE_ACTION")"
+          node electron/scripts/release-version.mjs support "$platforms"
+          if [[ "$RELEASE_ACTION" == automatic ]]; then
+            if [[ -z "$MERGE_SHA" || "$(git rev-parse HEAD)" != "$MERGE_SHA" || "$HEAD_REF" != "release/$tag" ]]; then
+              echo '::error::The release branch/version must match the checked-out merge commit.'
               exit 1
             fi
-          done
-
-          if [[ "$HEAD_REF" != "release/v$version" ]]; then
-            echo "::error::Release PR branch $HEAD_REF does not match release/v$version."
-            exit 1
+            if git show-ref --verify --quiet "refs/tags/$tag"; then
+              if [[ "$(git rev-parse "$tag^{commit}")" != "$MERGE_SHA" ]]; then
+                echo '::error::The existing tag points elsewhere; refusing to overwrite it.'
+                exit 1
+              fi
+            else
+              git config user.name 'github-actions[bot]'
+              git config user.email 'github-actions[bot]@users.noreply.github.com'
+              git tag --annotate "$tag" "$MERGE_SHA" --message "Release $tag"
+              git push origin "$tag"
+            fi
           fi
-
-          EXPECTED_VERSION="$version" node <<'NODE'
-          const fs = require('node:fs');
-
-          const expected = process.env.EXPECTED_VERSION;
-          for (const file of [
-            'package-lock.json',
-            'frontend/package-lock.json',
-            'electron/package-lock.json',
-          ]) {
-            const lockfile = JSON.parse(fs.readFileSync(file, 'utf8'));
-            if (lockfile.version !== expected || lockfile.packages?.['']?.version !== expected) {
-              throw new Error(`${file} is not synchronized to ${expected}.`);
-            }
-          }
-          NODE
-
-          tag="v$version"
-          if git show-ref --tags --verify --quiet "refs/tags/$tag" || \
-             git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "::error::Tag $tag already exists; refusing to move or overwrite it."
-            exit 1
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag --annotate "$tag" "$MERGE_SHA" --message "Release $tag"
-          git push origin "$tag"
-
-          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
-          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\ntag=%s\nplatforms=%s\n' "$version" "$tag" "$platforms" >> "$GITHUB_OUTPUT"
 
   build_windows:
-    name: Build Windows x64 installer
-    needs:
-      - publish_tag
-    if: >-
-      always() &&
-      (
-        needs.publish_tag.result == 'success' ||
-        (github.event_name == 'workflow_dispatch' && inputs.action == 'build-windows')
-      )
+    name: Build Windows x64
+    needs: resolve_release
+    if: contains(needs.resolve_release.outputs.platforms, 'windows')
     runs-on: windows-latest
-    permissions:
-      contents: write
     env:
-      RELEASE_VERSION: ${{ needs.publish_tag.outputs.version || inputs.version }}
-      RELEASE_TAG: ${{ needs.publish_tag.outputs.tag || format('v{0}', inputs.version) }}
-
+      RELEASE_VERSION: ${{ needs.resolve_release.outputs.version }}
     steps:
-      - name: Validate manual build input
-        if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
-        env:
-          ACTION: ${{ inputs.action }}
-          VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          if ($env:ACTION -ne 'build-windows') {
-            exit 0
-          }
-
-          if ([string]::IsNullOrWhiteSpace($env:VERSION)) {
-            throw "The version input is required for build-windows."
-          }
-
-          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+$') {
-            throw "The version must use X.Y.Z without a leading v."
-          }
-
-          $tag = "v$env:VERSION"
-          gh api "repos/$env:REPOSITORY/git/ref/tags/$tag" | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            throw "Tag $tag does not exist; refusing to build an untagged version."
-          }
-
-      - name: Checkout release tag
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
-          ref: ${{ env.RELEASE_TAG }}
-          fetch-depth: 1
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+          ref: ${{ needs.resolve_release.outputs.tag }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            backend/pyproject.toml
-            backend/uv.lock
-
-      - name: Install Python
-        working-directory: backend
-        run: uv python install 3.13
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+          version: 12.15.0
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
           cache-dependency-path: |
-            frontend/package-lock.json
-            electron/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Install Electron dependencies
-        working-directory: electron
-        run: npm ci
-
-      - name: Install backend dependencies
+            frontend/pnpm-lock.yaml
+            electron/pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv python install 3.13
         working-directory: backend
-        run: uv sync --frozen --all-groups
-
-      - name: Build Windows installer
+      - run: uv sync --frozen --all-groups --python 3.13
+        working-directory: backend
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: pnpm install --frozen-lockfile
         working-directory: electron
-        run: npm run build:win -- --publish never
+      - run: pnpm run test
+        working-directory: electron
+      - run: pnpm run lint
+        working-directory: electron
+      - run: pnpm run build:win
+        working-directory: electron
+      - run: node electron/scripts/collect-release.mjs windows "$env:RELEASE_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: electron/release/${{ env.RELEASE_VERSION }}/assets/windows/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-partial-build-assets
+          path: electron/release/${{ env.RELEASE_VERSION }}/*Setup.exe
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-build-logs
+          path: |
+            electron/resources/backend-build/build/**/warn-*.txt
+            electron/release/**/builder-debug.yml
+            electron/release/**/builder-effective-config.yaml
+          retention-days: 14
 
-      - name: Collect installer
-        id: artifact
-        shell: pwsh
+  build_linux:
+    name: Build Linux x64 on Ubuntu 22.04
+    needs: resolve_release
+    if: contains(needs.resolve_release.outputs.platforms, 'linux')
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_VERSION: ${{ needs.resolve_release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve_release.outputs.tag }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            electron/pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install build prerequisites
         run: |
-          $releaseDirectory = Join-Path $env:GITHUB_WORKSPACE "electron/release/$env:RELEASE_VERSION"
-          $installer = Get-ChildItem -LiteralPath $releaseDirectory -Recurse -Filter '*Setup.exe' |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils libgl1 libfontconfig1 libharfbuzz0b fonts-dejavu-core fonts-noto-cjk
+      - run: uv python install 3.13
+        working-directory: backend
+      - run: uv sync --frozen --all-groups --python 3.13
+        working-directory: backend
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: pnpm install --frozen-lockfile
+        working-directory: electron
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+      - run: pnpm run test
+        working-directory: electron
+      - run: pnpm run lint
+        working-directory: electron
+      - run: pnpm run build:linux
+        working-directory: electron
+      - run: node electron/scripts/collect-release.mjs linux "$RELEASE_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: electron/release/${{ env.RELEASE_VERSION }}/assets/linux/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: linux-partial-build-assets
+          path: |
+            electron/release/${{ env.RELEASE_VERSION }}/*.AppImage
+            electron/release/${{ env.RELEASE_VERSION }}/*.deb
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-build-logs
+          path: |
+            electron/resources/backend-build/build/**/warn-*.txt
+            electron/release/**/builder-debug.yml
+            electron/release/**/builder-effective-config.yaml
+          retention-days: 14
 
-          if (-not $installer) {
-            throw "No Windows setup installer was found under $releaseDirectory."
-          }
+  verify_linux:
+    name: Verify Linux / ${{ matrix.os }}
+    needs: [resolve_release, build_linux]
+    if: contains(needs.resolve_release.outputs.platforms, 'linux')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_VERSION: ${{ needs.resolve_release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve_release.outputs.tag }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: electron/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: electron
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-installers
+          path: release-assets
+      - name: Verify checksums
+        working-directory: release-assets
+        run: sha256sum --check "OfferPilot-Linux-x64-v$RELEASE_VERSION.sha256"
+      - name: Install desktop test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libnss3 libgbm1 libgl1 libfontconfig1 libharfbuzz0b fonts-dejavu-core fonts-noto-cjk
+      - name: Install deb
+        id: install_deb
+        run: sudo apt-get install -y "./release-assets/OfferPilot-Linux-x64-v$RELEASE_VERSION.deb"
+      - name: Verify installed deb and frozen backend
+        working-directory: electron
+        run: >-
+          xvfb-run -a pnpm run test:linux
+          --executable /opt/OfferPilot/offerpilot
+          --resources /opt/OfferPilot/resources
+          --output "$RUNNER_TEMP/deb-evidence"
+      - name: Verify deb uninstall
+        if: always() && steps.install_deb.outcome == 'success'
+        run: |
+          sudo apt-get remove -y offerpilot
+          test ! -e /opt/OfferPilot/offerpilot
+          if [[ -f "$RUNNER_TEMP/deb-evidence/result.json" ]]; then
+            node --input-type=module <<'NODE'
+          import { existsSync, readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          import path from 'node:path';
+          const result = JSON.parse(readFileSync(path.join(process.env.RUNNER_TEMP, 'deb-evidence/result.json')));
+          assert.ok(existsSync(path.join(result.runtime, 'config.yaml')), 'Uninstall removed runtime data');
+          NODE
+          fi
+      - name: Extract AppImage for resource verification
+        run: |
+          mkdir -p "$RUNNER_TEMP/appimage"
+          chmod +x "release-assets/OfferPilot-Linux-x64-v$RELEASE_VERSION.AppImage"
+          cd "$RUNNER_TEMP/appimage"
+          "$GITHUB_WORKSPACE/release-assets/OfferPilot-Linux-x64-v$RELEASE_VERSION.AppImage" --appimage-extract > /dev/null
+      - name: Verify AppImage launch and frozen backend
+        working-directory: electron
+        run: >-
+          xvfb-run -a pnpm run test:linux
+          --executable "$GITHUB_WORKSPACE/release-assets/OfferPilot-Linux-x64-v$RELEASE_VERSION.AppImage"
+          --resources "$RUNNER_TEMP/appimage/squashfs-root/resources"
+          --output "$RUNNER_TEMP/appimage-evidence"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-verification-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/deb-evidence
+            ${{ runner.temp }}/appimage-evidence
+          retention-days: 14
 
-          $assetName = "OfferPilot-Windows-x64-$env:RELEASE_TAG.exe"
-          $assetPath = Join-Path $env:GITHUB_WORKSPACE $assetName
-          Copy-Item -LiteralPath $installer.FullName -Destination $assetPath -Force
-
-          "path=$assetPath" >> $env:GITHUB_OUTPUT
-          "name=$assetName" >> $env:GITHUB_OUTPUT
-
-      - name: Create or update GitHub Release
-        shell: pwsh
+  publish_release:
+    name: Publish verified installers
+    needs: [resolve_release, build_windows, build_linux, verify_linux]
+    if: always() && needs.resolve_release.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    concurrency:
+      group: offerpilot-publish-${{ needs.resolve_release.outputs.tag }}
+      cancel-in-progress: false
+    env:
+      RELEASE_VERSION: ${{ needs.resolve_release.outputs.version }}
+      RELEASE_PLATFORMS: ${{ needs.resolve_release.outputs.platforms }}
+      WINDOWS_RESULT: ${{ needs.build_windows.result }}
+      LINUX_RESULT: ${{ needs.build_linux.result }}
+      VERIFY_LINUX_RESULT: ${{ needs.verify_linux.result }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve_release.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enforce publication gate
+        run: node electron/scripts/release-policy.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-installers'
+          merge-multiple: true
+          path: release-assets
+      - name: Publish complete release or replace selected assets
         env:
           GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          TAG: ${{ env.RELEASE_TAG }}
-          ASSET_PATH: ${{ steps.artifact.outputs.path }}
-        run: |
-          gh release view $env:TAG --repo $env:REPOSITORY 2>$null | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $env:TAG `
-              --repo $env:REPOSITORY `
-              --title $env:TAG `
-              --verify-tag `
-              --generate-notes
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to create GitHub Release $env:TAG."
-            }
-          }
-
-          gh release upload $env:TAG $env:ASSET_PATH `
-            --repo $env:REPOSITORY `
-            --clobber
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to upload the Windows installer to GitHub Release $env:TAG."
-          }
+        run: node electron/scripts/publish-release.mjs

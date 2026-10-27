@@ -1,6 +1,6 @@
 # OfferPilot
 
-OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Vite + React SPA 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、聊天附件上传与文件库复用、LangGraph checkpoint 会话恢复，以及 Windows 桌面安装包构建。
+OfferPilot 是一个本地运行的 AI 求职助手单仓库项目，包含 FastAPI 后端、Vite + React SPA 前端和 Electron 桌面壳。当前能力覆盖简历文件上传与预览、模型供应商和模型选择配置、AI 同步/流式对话、聊天附件上传与文件库复用、LangGraph checkpoint 会话恢复，以及 Windows/Linux 桌面安装包构建。
 
 ## 项目结构
 
@@ -16,8 +16,8 @@ OfferPilot/
 三个子项目目前保持依赖和命令独立：
 
 - `backend/` 使用 Python `>=3.13` 和 `uv`。
-- `frontend/` 使用 Node.js、npm、Vite、React 19 和 React Router。
-- `electron/` 使用 Node.js、npm、Electron、Vite、Electron Builder。
+- `frontend/` 使用 Node.js 22、pnpm 12.15.0、Vite、React 19 和 React Router。
+- `electron/` 使用 Node.js 22、pnpm 12.15.0、Electron、Vite、Electron Builder。
 
 ## 核心功能
 
@@ -32,8 +32,8 @@ OfferPilot/
 
 - Python `>=3.13`
 - `uv`
-- Node.js 和 npm
-- Windows 安装包构建需要 Electron Builder 与后端 PyInstaller 打包依赖
+- Node.js 22 和 pnpm 12.15.0
+- Windows x64 或 Linux x64 原生安装包构建需要 Electron Builder 与后端 PyInstaller 打包依赖
 
 后端默认使用 SQLite，不需要额外数据库服务。PostgreSQL 配置已预留，可在 `backend/config.yaml` 中启用。
 
@@ -61,8 +61,8 @@ uv run python run_server.py --reload --host 127.0.0.1 --port 8080
 
 ```sh
 cd frontend
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
 前端默认使用当前页面同源相对路径；未设置 `VITE_API_URL` 时，Vite 开发服务器会把 API 代理到 `VITE_API_PROXY_TARGET`，默认是 `http://127.0.0.1:8080`。本地访问地址通常是 `http://127.0.0.1:3000`。
@@ -71,8 +71,8 @@ npm run dev
 
 ```sh
 cd electron
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
 Electron 开发模式会自动查找相邻的 `backend/` 和 `frontend/`，选择可用 localhost 端口启动两个子进程，并把后端 API 地址注入给前端。
@@ -89,7 +89,7 @@ PowerShell 示例：
 ```powershell
 $env:OFFER_PILOT_BACKEND_DIR="C:\projects\OfferPilot\backend"
 $env:OFFER_PILOT_FRONTEND_DIR="C:\projects\OfferPilot\frontend"
-npm run dev
+pnpm run dev
 ```
 
 ## 常用命令
@@ -108,31 +108,37 @@ uv run pytest tests/unit/test_resume_api.py
 
 ```sh
 cd frontend
-npm run lint
-npm run build
+pnpm run lint
+pnpm run build
 ```
 
 Electron：
 
 ```sh
 cd electron
-npm run lint
-npm run build:electron
-npm run build
+pnpm run lint
+pnpm run build:electron
+pnpm run build
 ```
 
-在 `electron/` 目录运行 `npm run build` 会依次构建并 staging `frontend/dist`、用 PyInstaller 打包后端、构建 Electron/Vite 输出，并生成 Windows x64 NSIS 安装包。生产版只启动 FastAPI，前端静态文件由 FastAPI 托管。
+在 `electron/` 目录运行 `pnpm run build` 会依次构建前端、用 PyInstaller 打包后端、构建 Electron，并根据当前宿主系统生成 Windows x64 NSIS 或 Linux x64 AppImage、deb 安装包。也可明确运行 `pnpm run build:win` 或 `pnpm run build:linux`；构建要求对应系统的 x64 主机。生产版由 FastAPI 同时提供 API 和 React SPA。
 
-## Windows 发布
+Linux 正式产物在 Ubuntu 22.04 构建，并在 Ubuntu 22.04、24.04 验证。系统构建依赖、安装、校验及故障排查见 [Electron 文档](electron/README.md)。
 
-Windows 发布由 `.github/workflows/build-windows-release.yml` 中的
-`Release` workflow 管理。请从 GitHub Actions 的 `main` 分支手动运行：
+## 桌面发布
 
-1. 选择 `bump-patch`、`bump-minor` 或 `bump-major`。
-2. 检查并合并自动创建的 `release/vX.Y.Z` Pull Request。
-3. 合并后 workflow 会创建 `vX.Y.Z` tag，构建 Windows x64 NSIS 安装包，并创建带自动生成说明的 GitHub Release。
+`.github/workflows/build-windows-release.yml` 中的 `Release` 工作流统一管理两个平台：
 
-版本 bump 会同步根项目、前端、Electron、锁文件和侧边栏版本号；后端包版本独立维护。如需重建已有版本，选择 `build-windows`，并输入不带 `v` 前缀的现有版本号 `X.Y.Z`。上传的安装包名称为 `OfferPilot-Windows-x64-vX.Y.Z.exe`。
+1. 从 `main` 手动运行 `bump-patch`、`bump-minor` 或 `bump-major`。
+2. 检查并合并生成的 `release/vX.Y.Z` Pull Request。
+3. 合并后创建不可变的 `vX.Y.Z` 标签，并行构建 Windows、Linux，在两个 Ubuntu 版本验证 Linux 安装包。
+4. 全部必要检查通过后，将完整资产上传草稿 Release，再公开发布并自动生成说明。
+
+版本升级会同步根项目、前端、Electron 和双语侧边栏版本号。pnpm 锁文件固定依赖，没有需要随应用升级的版本字段；后端包版本独立维护。
+
+发布资产为 `OfferPilot-Windows-x64-vX.Y.Z.exe`、`OfferPilot-Linux-x64-vX.Y.Z.AppImage`、`OfferPilot-Linux-x64-vX.Y.Z.deb` 和 Linux 的 `.sha256` 校验文件。使用 `build-windows` 或 `build-linux`，输入不带 `v` 的已有版本号，可替换已公开 Release 的单平台资产；使用 `build-all` 恢复未发布或草稿状态的版本。构建日志、成功产物及失败时已有的安装包在 Actions 中保留 14 天。
+
+缺少 pnpm 发布工具或 Linux 构建支持的旧标签会明确报错，需要发布新版本，已有标签保持不变。
 
 ## 运行配置
 
@@ -153,6 +159,8 @@ Windows 发布由 `.github/workflows/build-windows-release.yml` 中的
 - `OFFER_PILOT_FRONTEND_DIST`：FastAPI 前端目录覆盖路径，默认查找仓库中的 `frontend/dist`；Electron 生产版通过 `--frontend-dist` 传入 `resources/frontend`。
 
 Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置；首次启动时如果该文件不存在，会在 `~/.offerpilot` 下创建默认配置、SQLite 数据库目录、简历上传目录和后端运行时日志目录。托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
+
+可通过 `OFFER_PILOT_RUNTIME_DIR` 指定独立运行目录，同时隔离后端数据和 Electron 用户数据；默认目录保持不变。
 
 ## API 概览
 

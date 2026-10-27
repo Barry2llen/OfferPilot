@@ -10,14 +10,17 @@ Development resolves sibling projects at `../backend` and `../frontend`, unless 
 
 ## Build, Test, and Development Commands
 
-- `npm install`: install dependencies from `package-lock.json`.
-- `npm run dev`: run the Vite/Electron development shell.
-- `npm run lint`: run ESLint with zero warnings allowed.
-- `npm run build:electron`: run `tsc` and build `dist/` plus `dist-electron/`.
-- `npm run build:frontend`: build `../frontend` with Vite, then stage `frontend/dist` into `resources/frontend`.
-- `npm run build:backend`: package `../backend` with `uv` and PyInstaller, then stage the executable.
-- `npm run build` / `npm run build:win`: build assets and the Windows x64 NSIS installer.
-- `npm run preview`: preview the Vite renderer build.
+- `pnpm install --frozen-lockfile`: install dependencies from `pnpm-lock.yaml`.
+- `pnpm run dev`: run the Vite/Electron development shell.
+- `pnpm run lint`: run ESLint with zero warnings allowed.
+- `pnpm run build:electron`: run `tsc` and build `dist/` plus `dist-electron/`.
+- `pnpm run build:frontend`: build `../frontend` with Vite, then stage `frontend/dist` into `resources/frontend`.
+- `pnpm run build:backend`: package `../backend` with `uv` and PyInstaller, then stage the executable.
+- `pnpm run build`: build native x64 installers for the current Windows/Linux host.
+- `pnpm run build:win` / `pnpm run build:linux`: explicitly build Windows NSIS or Linux AppImage and deb.
+- `pnpm run test`: run Node packaging/release unit tests.
+- `pnpm run test:linux --executable ... --resources ...`: validate a packaged app with Playwright and a display/Xvfb.
+- `pnpm run preview`: preview the Vite renderer build.
 
 ## Coding Style & Naming Conventions
 
@@ -25,7 +28,7 @@ Use TypeScript, ES modules, React function components, and hooks. Follow two-spa
 
 ## Testing Guidelines
 
-No test runner is configured. Validate changes with `npm run lint` and the narrowest relevant build command. When adding tests, use `*.test.ts` or `*.test.tsx` near the code, or `tests/` for cross-module behavior. Prioritize Electron startup, managed-process lifecycle behavior, preload contracts, and renderer state changes.
+Packaging tests use Node’s built-in test runner. Validate changes with `pnpm run lint` and the narrowest relevant build command. When adding tests, use `*.test.ts` or `*.test.tsx` near the code, or `tests/` for cross-module behavior. Prioritize Electron startup, managed-process lifecycle behavior, preload contracts, and renderer state changes.
 
 ## Commit & Pull Request Guidelines
 
@@ -34,3 +37,5 @@ Recent history uses short imperative subjects such as `Integrate app into Electr
 ## Security & Configuration Tips
 
 Do not commit secrets, logs, packaged binaries, or generated `resources/` contents. Production reads and creates `config.yaml` under `~/.offerpilot`; keep defaults local-safe. Never expose Node primitives directly through preload.
+
+Linux compatibility archives must retain pinned HTTPS sources, SHA-256 and package copyright files. Only the Linux backend child receives private ICU/OpenSSL library paths. Use Ubuntu 22.04 for release builds and verify installers on 22.04/24.04. `OFFER_PILOT_RUNTIME_DIR` isolates backend and Electron data during packaged-app tests. Keep release gate tests aligned with the unified Release workflow.

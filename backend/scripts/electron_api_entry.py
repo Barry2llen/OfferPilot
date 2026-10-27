@@ -12,8 +12,12 @@ if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
 
-def main() -> None:
+def main() -> int:
     args = parse_args()
+    if args.self_check:
+        from scripts.packaging_self_check import run_self_check
+
+        return run_self_check()
     runtime_dir = Path(args.runtime_dir).expanduser().resolve()
     runtime_dir.mkdir(parents=True, exist_ok=True)
     os.chdir(runtime_dir)
@@ -30,10 +34,16 @@ def main() -> None:
         log_level=args.log_level,
         loop=resolve_uvicorn_loop(),
     )
+    return 0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run OfferPilot API for Electron.")
+    parser.add_argument(
+        "--self-check",
+        action="store_true",
+        help="Check PDF/DOCX rendering and OCR models offline, then exit.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--log-level", default="info")
@@ -50,4 +60,4 @@ def parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

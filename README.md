@@ -6,7 +6,7 @@ OfferPilot is a locally hosted AI job-search assistant monorepo with a
 FastAPI backend, a Vite + React SPA frontend, and an Electron desktop shell.
 It supports resume upload and preview, model-provider and model-selection
 configuration, synchronous and streaming AI conversations, reusable chat
-attachments, LangGraph checkpoint recovery, and Windows desktop packaging.
+attachments, LangGraph checkpoint recovery, and Windows/Linux desktop packaging.
 
 ## Project structure
 
@@ -22,8 +22,8 @@ OfferPilot/
 The three subprojects keep their dependencies and commands independent:
 
 - `backend/` uses Python `>=3.13` and `uv`.
-- `frontend/` uses Node.js, npm, Vite, React 19, and React Router.
-- `electron/` uses Node.js, npm, Electron, Vite, and Electron Builder.
+- `frontend/` uses Node.js 22, pnpm 12.15.0, Vite, React 19, and React Router.
+- `electron/` uses Node.js 22, pnpm 12.15.0, Electron, Vite, and Electron Builder.
 
 ## Core features
 
@@ -48,9 +48,9 @@ The three subprojects keep their dependencies and commands independent:
 
 - Python `>=3.13`
 - `uv`
-- Node.js and npm
-- Electron Builder and backend PyInstaller packaging dependencies for Windows
-  installer builds
+- Node.js 22 and pnpm 12.15.0
+- Electron Builder and backend PyInstaller packaging dependencies for native
+  Windows x64 or Linux x64 installer builds
 
 The backend uses SQLite by default and needs no additional database service.
 PostgreSQL configuration is available in `backend/config.yaml`.
@@ -84,8 +84,8 @@ and deep-route fallback from [http://127.0.0.1:8080/](http://127.0.0.1:8080/).
 
 ```sh
 cd frontend
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
 The frontend uses the current page's same-origin relative API path by default.
@@ -98,8 +98,8 @@ The local frontend is usually available at
 
 ```sh
 cd electron
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
 Electron development discovers sibling `backend/` and `frontend/`
@@ -118,7 +118,7 @@ PowerShell example:
 ```powershell
 $env:OFFER_PILOT_BACKEND_DIR="C:\projects\OfferPilot\backend"
 $env:OFFER_PILOT_FRONTEND_DIR="C:\projects\OfferPilot\frontend"
-npm run dev
+pnpm run dev
 ```
 
 ## Common commands
@@ -137,41 +137,55 @@ Frontend:
 
 ```sh
 cd frontend
-npm run lint
-npm run typecheck
-npm run build
+pnpm run lint
+pnpm run typecheck
+pnpm run build
 ```
 
 Electron:
 
 ```sh
 cd electron
-npm run lint
-npm run build:electron
-npm run build
+pnpm run lint
+pnpm run build:electron
+pnpm run build
 ```
 
-Running `npm run build` in `electron/` builds and stages `frontend/dist`,
-packages the backend with PyInstaller, builds the Electron/Vite output, and
-generates a Windows x64 NSIS installer. The packaged application starts only
-FastAPI; FastAPI serves the frontend static files.
+Running `pnpm run build` in `electron/` builds the frontend, packages the
+backend with PyInstaller, and builds installers for the current host: Windows
+x64 NSIS or Linux x64 AppImage and deb. Use `pnpm run build:win` or
+`pnpm run build:linux` to select a platform explicitly; builds require a native
+x64 host. The packaged application starts FastAPI, which serves the React SPA.
 
-## Windows releases
+Linux release builds use Ubuntu 22.04 and are verified on Ubuntu 22.04 and
+24.04. Install build prerequisites and follow installation, checksum and
+troubleshooting instructions in [the Electron guide](electron/README.md).
 
-Windows releases are managed by
-`.github/workflows/build-windows-release.yml` through the `Release` workflow.
-Run version bumps from the `main` branch in GitHub Actions:
+## Desktop releases
 
-1. Select `bump-patch`, `bump-minor`, or `bump-major`.
+The `Release` workflow in `.github/workflows/build-windows-release.yml`
+handles both platforms:
+
+1. Dispatch `bump-patch`, `bump-minor`, or `bump-major` from `main`.
 2. Review and merge the generated `release/vX.Y.Z` pull request.
-3. The merge creates tag `vX.Y.Z`, builds the Windows x64 NSIS installer, and
-   publishes a GitHub Release with automatically generated notes.
+3. The merge creates an immutable `vX.Y.Z` tag, builds both platforms, and
+   verifies Linux installers on both supported Ubuntu versions.
+4. After all required jobs succeed, a draft Release receives the complete
+   assets and is published with automatically generated notes.
 
-The bump keeps the root project, frontend, Electron shell, lockfiles, and
-sidebar version labels synchronized. The backend package version is managed
-independently. To rebuild an existing release asset, run the same workflow with
-`build-windows` and enter the existing version as `X.Y.Z` without the leading
-`v`. The uploaded asset is named `OfferPilot-Windows-x64-vX.Y.Z.exe`.
+Versions are synchronized across the root, frontend, Electron and both sidebar
+translations. pnpm lockfiles pin dependencies; they have no application-version
+field to bump. The backend package version remains independent.
+
+Published assets are `OfferPilot-Windows-x64-vX.Y.Z.exe`,
+`OfferPilot-Linux-x64-vX.Y.Z.AppImage`, `OfferPilot-Linux-x64-vX.Y.Z.deb`,
+and `OfferPilot-Linux-x64-vX.Y.Z.sha256`.
+Use `build-windows` or `build-linux` with an existing `X.Y.Z` tag to replace
+only that platform's assets in an existing published Release. Use `build-all`
+to recover an unpublished or draft release. Builds and logs remain available
+as Actions artifacts for 14 days, including partial installers on failures.
+Older tags without the pnpm/release tooling or Linux support fail clearly;
+prepare a new version rather than moving an existing tag.
 
 ## Runtime configuration
 
@@ -208,7 +222,9 @@ After packaging, Electron reads backend configuration from
 `~/.offerpilot/config.yaml`. On first launch it creates default
 configuration, SQLite data, resume-upload, and backend runtime-log
 directories under `~/.offerpilot`. Managed-process stdout/stderr remains
-under Electron's `userData/logs`.
+under Electron's `userData/logs`. Set `OFFER_PILOT_RUNTIME_DIR` to isolate
+both backend data and Electron user data under a different directory; the
+default paths are unchanged.
 
 ## API overview
 

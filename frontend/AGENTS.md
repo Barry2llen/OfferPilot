@@ -40,11 +40,11 @@
 
 ## Development commands
 
-- `npm install`: install dependencies.
-- `npm run dev`: start the local Vite server.
-- `npm run lint`: run ESLint.
-- `npm run typecheck`: run the TypeScript compiler without emitting files.
-- `npm run build`: create the production Vite build.
+- `pnpm install --frozen-lockfile`: install dependencies.
+- `pnpm run dev`: start the local Vite server.
+- `pnpm run lint`: run ESLint.
+- `pnpm run typecheck`: run the TypeScript compiler without emitting files.
+- `pnpm run build`: create the production Vite build.
 
 ## React and routing conventions
 
@@ -123,9 +123,9 @@
 
 ## Validation
 
-- After TypeScript/React changes, run `npm run lint` and
-  `npm run typecheck`.
-- For route, Vite, API-boundary, or rendering changes, run `npm run build`.
+- After TypeScript/React changes, run `pnpm run lint` and
+  `pnpm run typecheck`.
+- For route, Vite, API-boundary, or rendering changes, run `pnpm run build`.
 - For UI behavior changes, verify initial load, deep-route refresh, desktop
   and mobile layouts, language detection, manual switching, persistence,
   loading/error/empty states, and browser console errors.
