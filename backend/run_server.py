@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 
 from utils.asyncio_windows import resolve_uvicorn_loop
+from utils.stdio import configure_utf8_stdio
 
 
 def main() -> None:
+    configure_utf8_stdio()
     args = parse_args()
 
     import uvicorn

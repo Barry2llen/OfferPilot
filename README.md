@@ -226,6 +226,23 @@ under Electron's `userData/logs`. Set `OFFER_PILOT_RUNTIME_DIR` to isolate
 both backend data and Electron user data under a different directory; the
 default paths are unchanged.
 
+Terminal output and new logs use UTF-8. Python development, packaged and build
+children use `PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8:backslashreplace` and
+`PYTHONUNBUFFERED=1`; backend entry points also configure available standard
+streams. Logs containing invalid UTF-8 are preserved as `.legacy-<id>` archives
+before new logs are opened. Undecodable external bytes are reported with an
+`[encoding-error: source]` diagnostic and `\xNN` escapes; historical text is
+not rewritten.
+
+The Electron development launcher decodes and forwards native output. Main
+rebuilds restart Electron, while preload updates keep the current process.
+Closing the dev server or pressing Ctrl+C requests shutdown over private IPC,
+with a three-second grace period before forced process-tree cleanup. Exited
+PIDs are harmless; cleanup failures report the PID, operation and exit code.
+System-wide encoding and GPU settings are unchanged, and AMD/Chromium errors
+remain visible.
+The Electron GUI starts visibly; hidden startup is reserved for background helpers.
+
 ## API overview
 
 - `/resumes`: resume upload/parsing, list, detail, replacement, deletion,

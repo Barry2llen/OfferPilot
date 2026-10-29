@@ -13,6 +13,9 @@ if str(_BACKEND_ROOT) not in sys.path:
 
 
 def main() -> int:
+    from utils.stdio import configure_utf8_stdio
+
+    configure_utf8_stdio()
     args = parse_args()
     if args.self_check:
         from scripts.packaging_self_check import run_self_check

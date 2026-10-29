@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pythonEnvironment } from './runtime-output.mjs'
 
 export const electronRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -21,7 +22,7 @@ export function resolveProject(folder, env = process.env) {
 }
 
 function run(command, args, cwd = electronRoot, env = process.env) {
-  const result = spawnSync(command, args, { cwd, stdio: 'inherit', env })
+  const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: { ...env, ...pythonEnvironment } })
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(`${command} failed (exit ${result.status}, signal ${result.signal}).`)
 }

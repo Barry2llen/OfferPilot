@@ -162,6 +162,18 @@ Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置；首次
 
 可通过 `OFFER_PILOT_RUNTIME_DIR` 指定独立运行目录，同时隔离后端数据和 Electron 用户数据；默认目录保持不变。
 
+终端输出和新日志统一使用 UTF-8。Python 开发、打包运行及构建子进程固定设置
+`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8:backslashreplace` 和
+`PYTHONUNBUFFERED=1`，后端入口也会配置可用的标准输出和错误输出流。
+已有日志若包含非法 UTF-8，会原样归档为 `.legacy-<id>` 后新建日志；无法解码的
+外部字节以 `[encoding-error: source]` 和 `\xNN` 转义形式保留，不猜测转码或改写历史文本。
+
+Electron 开发启动器会解码并转发原生日志。主进程重建会重启桌面进程，preload
+更新保留当前进程。关闭开发服务或按 Ctrl+C 时，启动器先通过内部 IPC 请求正常退出，
+等待最多 3 秒后再强制清理进程树。进程已退出时不再重复报错，真正的清理失败会报告
+PID、操作和退出码。这些机制不修改系统全局编码或 GPU 配置，AMD/Chromium 错误仍会显示。
+Electron 图形进程以可见方式启动，隐藏启动仅用于后台辅助进程。
+
 ## API 概览
 
 - `/resumes`：简历上传解析、列表、详情、替换解析、删除和预览。
