@@ -15,6 +15,7 @@ export function terminateProcessTree(pid, {
   run = spawnSync,
   report = message => console.error(message),
   group = false,
+  force = false,
 } = {}) {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Invalid managed process PID')
   const target = platform !== 'win32' && group && isProcessAlive(-pid, kill) ? -pid : pid
@@ -29,11 +30,12 @@ export function terminateProcessTree(pid, {
     return false
   }
   try {
-    kill(target, 'SIGTERM')
+    const signal = force ? 'SIGKILL' : 'SIGTERM'
+    kill(target, signal)
     return true
   } catch (error) {
     if (error.code === 'ESRCH') return true
-    report(`[process-cleanup] SIGTERM failed pid=${pid} error=${error.code ?? 'unknown'}`)
+    report(`[process-cleanup] ${force ? 'SIGKILL' : 'SIGTERM'} failed pid=${pid} error=${error.code ?? 'unknown'}`)
     return false
   }
 }

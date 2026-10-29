@@ -25,7 +25,7 @@ export function createDevLauncher({
 
   function cleanOwnedProcesses(record) {
     for (const [pid, group] of [...record.ownedPids].reverse()) {
-      if (forceStop(pid, { group })) record.ownedPids.delete(pid)
+      if (forceStop(pid, { group, force: true })) record.ownedPids.delete(pid)
     }
   }
 
@@ -42,7 +42,7 @@ export function createDevLauncher({
     hooked = true
     host.once('exit', () => {
       if (current) {
-        if (current.child.pid) forceStop(current.child.pid, { group: process.platform !== 'win32' })
+        if (current.child.pid) forceStop(current.child.pid, { group: process.platform !== 'win32', force: true })
         cleanOwnedProcesses(current)
       }
     })
@@ -121,7 +121,9 @@ export function createDevLauncher({
     ])
     clearTimeout(timer)
     if (!graceful) {
-      if (!record.exited && record.child.pid && !forceStop(record.child.pid, { group: process.platform !== 'win32' })) {
+      if (!record.exited && record.child.pid && !forceStop(record.child.pid, {
+        group: process.platform !== 'win32', force: true,
+      })) {
         throw new Error(`Cannot stop Electron pid=${record.child.pid}`)
       }
       cleanOwnedProcesses(record)

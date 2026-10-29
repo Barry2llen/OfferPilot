@@ -7,4 +7,5 @@ export function terminateProcessTree(pid: number, options?: {
   run?: typeof spawnSync
   report?: (message: string) => void
   group?: boolean
+  force?: boolean
 }): boolean

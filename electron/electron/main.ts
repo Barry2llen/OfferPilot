@@ -299,14 +299,22 @@ function attachProcessLogging(processInfo: ManagedProcess) {
     forwardUtf8(processInfo.child.stderr, logStream, `${processInfo.name}:stderr`),
   ]
   processInfo.closed = new Promise((resolve) => {
+    let childClosed = false
+    let logFailed = false
     logStream.on('error', (error: NodeJS.ErrnoException) => {
+      logFailed = true
       console.error(`[${processInfo.name}] log write failed error=${error.code ?? 'unknown'}`)
-      resolve()
+      if (childClosed) resolve()
     })
     processInfo.child.once('close', async (code, signal) => {
+      childClosed = true
       for (const pid of processInfo.trackedPids) notifyManagedPid(pid, false)
       await Promise.all(outputs.map(output => output.readableEnded
         ? Promise.resolve() : new Promise<void>(done => output.once('end', done))))
+      if (logFailed) {
+        resolve()
+        return
+      }
       logStream.end(`\n[${new Date().toISOString()}] exited code=${code ?? 'null'} signal=${signal ?? 'null'}\n`, resolve)
     })
   })
@@ -320,21 +328,29 @@ async function stopManagedProcesses() {
     stopManagedProcess(processInfo)
   }
   let timer: ReturnType<typeof setTimeout> | undefined
-  await Promise.race([
-    Promise.all(processes.map(processInfo => processInfo.closed)),
-    new Promise<void>(resolve => { timer = setTimeout(resolve, 2000) }),
+  const graceful = await Promise.race([
+    Promise.all(processes.map(processInfo => processInfo.closed)).then(() => true),
+    new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2000) }),
   ])
   clearTimeout(timer)
+  if (!graceful) {
+    for (const processInfo of [...processes].reverse()) {
+      stopManagedProcess(processInfo, true)
+    }
+  }
 }
 
-function stopManagedProcess(processInfo: ManagedProcess) {
+function stopManagedProcess(processInfo: ManagedProcess, force = false) {
   const pids = [...processInfo.trackedPids]
   if (processInfo.child.pid) {
     pids.push(processInfo.child.pid)
   }
 
   for (const pid of [...new Set(pids)].reverse()) {
-    terminateProcessTree(pid, { group: pid === processInfo.child.pid && process.platform !== 'win32' })
+    terminateProcessTree(pid, {
+      group: pid === processInfo.child.pid && process.platform !== 'win32',
+      force,
+    })
   }
 }
 
