@@ -4,6 +4,7 @@ import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { backendEnvironment } from './backend-environment'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.join(__dirname, '..')
@@ -26,6 +27,13 @@ let mainWindow: BrowserWindow | null = null
 let managedProcesses: ManagedProcess[] = []
 
 app.setName('OfferPilot')
+
+const runtimeOverride = process.env.OFFER_PILOT_RUNTIME_DIR
+if (runtimeOverride) {
+  const userData = path.join(path.resolve(runtimeOverride), 'electron')
+  mkdirSync(userData, { recursive: true })
+  app.setPath('userData', userData)
+}
 
 const singleInstanceLock = app.requestSingleInstanceLock()
 if (!singleInstanceLock) {
@@ -129,7 +137,7 @@ async function startProductionServices(): Promise<RuntimeServices> {
     '--frontend-dist',
     frontendDist,
   ], runtimeDir, {
-    PYTHONUNBUFFERED: '1',
+    ...backendEnvironment(backendExe),
   })
 
   await waitForUrl(`${apiBaseUrl}/health`, 'backend')
@@ -359,7 +367,9 @@ function resolvePackagedFrontendDist(): string {
 }
 
 function ensureBackendRuntimeConfig(): string {
-  const runtimeDir = path.join(app.getPath('home'), '.offerpilot')
+  const runtimeDir = runtimeOverride
+    ? path.resolve(runtimeOverride)
+    : path.join(app.getPath('home'), '.offerpilot')
   const dataDir = path.join(runtimeDir, 'data')
   const resumeDir = path.join(dataDir, 'resumes')
   const configPath = path.join(runtimeDir, 'config.yaml')
@@ -445,18 +455,18 @@ function delay(ms: number) {
 }
 
 function resolveFrontendDevCommand(port: number) {
-  const npmArgs = ['run', 'dev', '--', '--port', String(port)]
+  const pnpmArgs = ['run', 'dev', '--port', String(port)]
 
   if (process.platform === 'win32') {
     return {
       command: process.env.ComSpec || 'cmd.exe',
-      args: ['/d', '/s', '/c', 'npm.cmd', ...npmArgs],
+      args: ['/d', '/s', '/c', 'pnpm.cmd', ...pnpmArgs],
     }
   }
 
   return {
-    command: 'npm',
-    args: npmArgs,
+    command: 'pnpm',
+    args: pnpmArgs,
   }
 }
 

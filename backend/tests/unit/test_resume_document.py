@@ -94,24 +94,29 @@ def test_convert_docx_to_preview_images_with_aspose_module(
     _create_docx(file_path, ["Jane Doe", "Python Engineer"])
 
     class FakeImageSaveOptions:
+        __slots__ = ("page_set",)
+
         def __init__(self, _: str) -> None:
-            self.page_index = 0
-            self.page_count = 0
+            self.page_set = 0
 
     class FakeDocument:
         def __init__(self, _: str) -> None:
             self.page_count = 2
 
         def save(self, buffer, options: FakeImageSaveOptions) -> None:
-            buffer.write(f"page-{options.page_index}".encode("ascii"))
+            buffer.write(f"page-{options.page_set}".encode("ascii"))
 
     fake_words = ModuleType("aspose.words")
-    fake_words.Document = FakeDocument
-    fake_words.SaveFormat = SimpleNamespace(PNG="png")
-    fake_words.saving = SimpleNamespace(ImageSaveOptions=FakeImageSaveOptions)
+    fake_words.__dict__.update(
+        Document=FakeDocument,
+        SaveFormat=SimpleNamespace(PNG="png"),
+        saving=SimpleNamespace(
+            ImageSaveOptions=FakeImageSaveOptions, PageSet=lambda page: page
+        ),
+    )
 
     fake_aspose = ModuleType("aspose")
-    fake_aspose.words = fake_words
+    fake_aspose.__dict__["words"] = fake_words
     monkeypatch.setitem(sys.modules, "aspose", fake_aspose)
     monkeypatch.setitem(sys.modules, "aspose.words", fake_words)
 
@@ -168,9 +173,10 @@ def test_convert_docx_raises_conversion_error_when_renderer_fails(
     _create_docx(file_path, ["Jane Doe"])
 
     class FakeImageSaveOptions:
+        __slots__ = ("page_set",)
+
         def __init__(self, _: str) -> None:
-            self.page_index = 0
-            self.page_count = 0
+            self.page_set = 0
 
     class FakeDocument:
         def __init__(self, _: str) -> None:
@@ -180,17 +186,24 @@ def test_convert_docx_raises_conversion_error_when_renderer_fails(
             raise RuntimeError("render failed")
 
     fake_words = ModuleType("aspose.words")
-    fake_words.Document = FakeDocument
-    fake_words.SaveFormat = SimpleNamespace(PNG="png")
-    fake_words.saving = SimpleNamespace(ImageSaveOptions=FakeImageSaveOptions)
+    fake_words.__dict__.update(
+        Document=FakeDocument,
+        SaveFormat=SimpleNamespace(PNG="png"),
+        saving=SimpleNamespace(
+            ImageSaveOptions=FakeImageSaveOptions, PageSet=lambda page: page
+        ),
+    )
 
     fake_aspose = ModuleType("aspose")
-    fake_aspose.words = fake_words
+    fake_aspose.__dict__["words"] = fake_words
     monkeypatch.setitem(sys.modules, "aspose", fake_aspose)
     monkeypatch.setitem(sys.modules, "aspose.words", fake_words)
 
-    with pytest.raises(ResumePreviewConversionError, match="Failed to convert DOCX"):
+    with pytest.raises(
+        ResumePreviewConversionError, match="Failed to convert DOCX"
+    ) as raised:
         _build_resume(file_path).convert_resume_to_image_base64()
+    assert str(raised.value.__cause__) == "render failed"
 
 
 def test_extract_text_delegates_pdf_to_helper(

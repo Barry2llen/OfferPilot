@@ -143,8 +143,7 @@ def _convert_docx_to_images(file_path: Path) -> list[RenderedDocumentImage]:
         previews: list[RenderedDocumentImage] = []
         for page_index in range(document.page_count):
             options = aw.saving.ImageSaveOptions(aw.SaveFormat.PNG)
-            options.page_index = page_index
-            options.page_count = 1
+            options.page_set = aw.saving.PageSet(page_index)
             buffer = io.BytesIO()
             document.save(buffer, options)
             previews.append(_encode_image(buffer.getvalue(), "image/png"))
@@ -175,7 +174,7 @@ def _decode_bytes(payload: bytes) -> str:
         from_bytes = getattr(charset_module, "from_bytes", None)
         if callable(from_bytes):
             matches = from_bytes(payload)
-            best = matches.best() if matches is not None else None
+            best = getattr(matches, "best")() if matches is not None else None
             if best is not None:
                 output = str(best)
                 if output:

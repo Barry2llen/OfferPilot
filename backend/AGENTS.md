@@ -193,3 +193,7 @@ Pull requests must state:
 
 If request bodies, response structures, SSE events, configuration formats, or
 database schemas change, include examples or migration notes.
+
+## Frozen desktop backend
+
+The packaged entry supports `--self-check` for offline PDF/DOCX rendering and OCR-model initialization, without starting HTTP. Keep its exit-code/JSON contract covered by `tests/unit/test_packaging_entry.py`. Linux native compatibility libraries are staged by Electron and scoped to the backend child. Run the full pytest suite for packaging/startup infrastructure changes.

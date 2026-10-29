@@ -58,11 +58,11 @@ Common commands:
 
 ```sh
 cd frontend
-npm install
-npm run dev
-npm run lint
-npm run typecheck
-npm run build
+pnpm install --frozen-lockfile
+pnpm run dev
+pnpm run lint
+pnpm run typecheck
+pnpm run build
 ```
 
 ## Electron conventions
@@ -81,11 +81,11 @@ Common commands:
 
 ```sh
 cd electron
-npm install
-npm run dev
-npm run lint
-npm run build:electron
-npm run build
+pnpm install --frozen-lockfile
+pnpm run dev
+pnpm run lint
+pnpm run build:electron
+pnpm run build
 ```
 
 ## Cross-project change rules
@@ -108,6 +108,10 @@ npm run build
 ## Submission and verification
 
 - After backend code changes, run focused `uv run pytest ...`; run the full suite for cross-module or infrastructure changes.
-- After frontend TypeScript/React changes, run at least `npm run lint` and `npm run typecheck`; run `npm run build` for routing, build configuration, or server/client boundary changes.
-- After Electron changes, run at least `npm run lint`; run the relevant build command for packaging or managed-process changes.
+- After frontend TypeScript/React changes, run at least `pnpm run lint` and `pnpm run typecheck`; run `pnpm run build` for routing, build configuration, or server/client boundary changes.
+- After Electron changes, run at least `pnpm run lint`; run the relevant build command for packaging or managed-process changes.
 - Change or PR notes should state the purpose, affected modules, commands run, and whether configuration, database, API, SSE, or packaging behavior changed.
+
+## Desktop release validation
+
+Use Node.js 22, pnpm 12.15.0 and Python 3.13. Install frontend/Electron dependencies with `pnpm install --frozen-lockfile`; pnpm lockfiles have no application-version field. Default Electron builds select the native Windows/Linux x64 platform; `build:linux` produces AppImage and deb. Linux releases build on Ubuntu 22.04 and verify on 22.04/24.04. Keep compatibility-library checksums/licenses, offline `--self-check`, packaging tests and the unified publish gate in sync. Packaged tests may set `OFFER_PILOT_RUNTIME_DIR` to isolate backend data and Electron user data.
