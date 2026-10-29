@@ -6,6 +6,7 @@ import react from "@vitejs/plugin-react";
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const apiPaths = [
   "/ai",
+  "/analysis",
   "/job-descriptions",
   "/model-providers",
   "/model-selections",

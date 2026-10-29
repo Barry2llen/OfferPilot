@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any
@@ -39,7 +39,11 @@ from services.model_selection_service import ModelSelectionService
 from utils.i18n import localize_error, public_run_error
 from utils.logger import logger
 from utils.stream import render_sse_event, to_jsonable
-from utils.tool_outputs import summarize_tool_output
+from utils.tool_outputs import (
+    ANALYSIS_TOOL_NAMES,
+    is_tool_output_error,
+    summarize_tool_output,
+)
 
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
 
@@ -58,6 +62,7 @@ class ChatRun:
     cancel_requested: bool = False
     open_tools: dict[str, str] = field(default_factory=dict)
     ended_tools: set[str] = field(default_factory=set)
+    tool_analysis: dict[str, dict[str, Any]] = field(default_factory=dict)
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -322,8 +327,16 @@ class ChatRunManager:
     async def publish(self, rid: str, event: str, data: dict[str, Any]) -> None:
         run = self.runs[rid]
         tool_id = data.get("tool_call_id")
+        if event == "tool_progress" and (
+            not isinstance(tool_id, str) or tool_id not in run.open_tools
+        ):
+            return
         if isinstance(tool_id, str):
-            if event == "tool_start":
+            if event == "tool_progress":
+                if tool_id in run.ended_tools:
+                    return
+                run.tool_analysis[tool_id] = data
+            elif event == "tool_start":
                 if tool_id in run.ended_tools or tool_id in run.open_tools:
                     return
                 run.open_tools[tool_id] = data["tool_name"]
@@ -357,6 +370,16 @@ class ChatRunManager:
             and run.projection[-1]["event"] == event
         ):
             run.projection[-1]["data"]["content"] += data.get("content", "")
+        elif event == "tool_progress":
+            run.projection = [
+                item
+                for item in run.projection
+                if not (
+                    item["event"] == event
+                    and item["data"].get("tool_call_id") == tool_id
+                )
+            ]
+            run.projection.append(item)
         elif event not in {"input_required", "input_resolved", "run_status"}:
             run.projection.append(item)
         for queue in tuple(run.subscribers):
@@ -370,7 +393,7 @@ class ChatRunManager:
         if event in {"input_required", "input_resolved"}:
             await self._status(run, "running")
 
-    async def stream(self, rid: str, after: int = 0) -> AsyncIterator[str]:
+    async def stream(self, rid: str, after: int = 0) -> AsyncGenerator[str, None]:
         current = await self.get(rid)
         run = self.runs.get(rid)
         if run is None:
@@ -528,7 +551,11 @@ class ChatRunManager:
                         )
                     elif name == "on_app_tool_end":
                         output = data.get("output")
-                        failed = getattr(output, "status", None) == "error"
+                        summary = summarize_tool_output(data["tool_name"], output)
+                        failed = getattr(output, "status", None) == "error" or (
+                            data["tool_name"] in ANALYSIS_TOOL_NAMES
+                            and is_tool_output_error(output)
+                        )
                         await self.publish(
                             rid,
                             "tool_error" if failed else "tool_end",
@@ -536,8 +563,18 @@ class ChatRunManager:
                                 "tool_name": data["tool_name"],
                                 "tool_call_id": data["tool_call_id"],
                                 **(
+                                    {"output": summary}
+                                    if not failed
+                                    or data["tool_name"] in ANALYSIS_TOOL_NAMES
+                                    else {}
+                                ),
+                                **(
                                     {
-                                        "detail": public_run_error(
+                                        "detail": summary.get("error")
+                                        if data["tool_name"] in ANALYSIS_TOOL_NAMES
+                                        and isinstance(summary, dict)
+                                        and summary.get("error")
+                                        else public_run_error(
                                             str(getattr(output, "content", output)),
                                             sub["locale"],
                                         )
@@ -551,6 +588,8 @@ class ChatRunManager:
                                 ),
                             },
                         )
+                    elif name == "on_analysis_job_event":
+                        await self.publish(rid, "tool_progress", data)
                     elif name == "on_tool_call_error":
                         await self.publish(
                             rid,
@@ -606,6 +645,23 @@ class ChatRunManager:
             for tool_id, tool_name in tuple(run.open_tools.items()):
                 completed = completed_tools.get(tool_id)
                 succeeded = completed is not None and completed.status != "error"
+                analysis = run.tool_analysis.get(tool_id)
+                result = (
+                    summarize_tool_output(tool_name, completed)
+                    if completed is not None
+                    else None
+                )
+                if result is None and analysis:
+                    result = {
+                        **{
+                            key: analysis.get(key)
+                            for key in ("resource_type", "resource_id", "job_id")
+                        },
+                        "status": "failed",
+                        "error": localize_error(
+                            "Analysis was cancelled.", sub["locale"]
+                        ),
+                    }
                 await self.publish(
                     rid,
                     "tool_end" if succeeded else "tool_error",
@@ -613,10 +669,18 @@ class ChatRunManager:
                         "tool_call_id": tool_id,
                         "tool_name": tool_name,
                         **(
+                            {"output": result}
+                            if result is not None
+                            and (succeeded or tool_name in ANALYSIS_TOOL_NAMES)
+                            else {}
+                        ),
+                        **(
                             {"output": summarize_tool_output(tool_name, completed)}
                             if succeeded
                             else {
-                                "detail": localize_error(
+                                "detail": result.get("error")
+                                if isinstance(result, dict) and result.get("error")
+                                else localize_error(
                                     "Execution ended; the tool result is unknown.",
                                     sub["locale"],
                                 ),

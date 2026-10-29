@@ -25,7 +25,7 @@ OfferPilot/
 - 模型配置：维护模型供应商、API Key、Base URL 和具体模型选择；响应不回显 API Key 明文。
 - AI 对话：提供 `/ai/chat` 同步对话和 `/ai/chat/stream` SSE 流式对话，支持文本、图片、PDF、DOCX 和常见文本文件附件。
 - 文件库：前端新增“文件库”页面，后端提供 `/ai/files` 系列接口，可查看历史聊天附件并在不同会话中复用。
-- Agent 运行：基于 LangChain/LangGraph，支持工具调用、失败 interrupt/retry 和数据库 checkpoint。
+- Agent 运行：基于 LangChain/LangGraph，支持工具调用、原生异步用户输入与重试，以及数据库 checkpoint。
 - 桌面运行：Electron 开发模式自动启动后端和前端，打包后从 Electron resources 启动本地服务。
 
 ## 环境要求
@@ -183,11 +183,23 @@ Electron 图形进程以可见方式启动，隐藏启动仅用于后台辅助�
 - `/ai/chat/stream`：SSE 流式 AI 对话。
 - `/ai/files`：聊天附件文件库列表、详情和原文件查看。
 
-AI 对话流式事件包括 `thread`、`token`、`tool_start`、`tool_end`、`tool_error`、`interrupt`、`final`、`error`。前端当前也支持展示 `reasoning` 类型事件。`thread` 事件会额外返回 `resolved_attachments`、`attachment_count` 和 `requires_image_input`，用于前端回填正式文件 ID，并在图片模式附件线程切换到仅文本模型时展示非阻塞提示。
+AI 对话流式事件包括 `thread`、`token`、`tool_start`、`tool_progress`、`tool_end`、`tool_error`、`input_required`、`input_resolved`、`run_status`、`snapshot`、`final`、`error`。前端也支持展示 `reasoning` 类型事件。`thread` 事件会额外返回 `resolved_attachments`、`attachment_count` 和 `requires_image_input`，用于前端回填正式文件 ID，并在图片模式附件线程切换到仅文本模型时展示非阻塞提示。
 
 简历上传和替换接口使用 `text/event-stream` 返回解析进度，事件包括 `resume`、`progress`、`model_error`、`final`、`error`，请求必须携带 `selection_id`。SSE 连接断开不代表解析取消，最终结果以列表/详情接口持久化的解析状态为准。
 
-客户端收到 `interrupt` 后，应使用同一个 `thread_id` 发送 `command.type="retry"` 恢复执行。
+聊天由 `ChatRunManager` 执行，通过 `POST /ai/chat/runs` 提交、`GET /ai/chat/runs/{run_id}/events` 订阅或重连。收到 `input_required` 后，通过 `POST /ai/chat/runs/{run_id}/inputs/{request_id}` 回答，原协程继续执行。旧版 query/retry 命令返回 410。断开订阅不会取消执行；主动停止通过运行的 cancel 接口执行。
+
+## Supervisor 分析工具
+
+聊天支持使用当前会话模型调用简历和岗位分析。简历分析接受已有简历 ID，或将文件库中的
+PDF、DOCX、PNG、JPG、JPEG 文件复制为新简历；岗位分析接受 JD 文本、来源 URL 和图片文件 ID。
+分析结果保存在简历库和岗位分析页，聊天工具卡片显示进度、模型重试、错误和详情链接。
+全局 `/analysis/events` 订阅让列表、详情在任务更新和断线重连后自动刷新。
+
+离开聊天页或断开连接不会停止分析；主动停止聊天会取消该轮尚未完成的分析，记录以失败状态
+结束并注明已取消。再次请求分析正在处理的简历会返回现有记录链接，保留原任务。
+后端重启将遗留的处理中记录标为失败，已完成结果继续保留。无需数据库迁移或新增配置，
+事件载荷与生命周期见[聊天运行协议](backend/docs/chat-runs.md)。
 
 ## 开发约定
 

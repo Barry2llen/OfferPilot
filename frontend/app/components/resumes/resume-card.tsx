@@ -4,10 +4,13 @@ import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 import { resumesApi } from "@/app/lib/api/resumes";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
+import AnalysisTaskStatus from "@/app/components/analysis/analysis-task-status";
 import type { ResumeListItem } from "@/app/lib/api/types";
+import type { AnalysisTaskSnapshot } from "@/app/lib/analysis-events/types";
 
 interface ResumeCardProps {
   resume: ResumeListItem;
+  analysisTask?: AnalysisTaskSnapshot;
   onDelete: (resume: ResumeListItem) => void;
   deleting: boolean;
 }
@@ -63,6 +66,7 @@ function fileIconTone(type: string | null) {
 
 export default function ResumeCard({
   resume,
+  analysisTask,
   onDelete,
   deleting,
 }: ResumeCardProps) {
@@ -122,6 +126,7 @@ export default function ResumeCard({
             >
               {description}
             </p>
+            <AnalysisTaskStatus task={analysisTask} />
           </div>
         </div>
 

@@ -792,7 +792,7 @@ async def cancel_chat_run(request: Request, run_id: str):
     openapi_extra=_RUN_BODY,
     summary="Start and subscribe to a chat run",
     description="Compatibility entry point for prompt submissions. Execution survives SSE disconnection. Answers use the separate run input endpoint; legacy query/retry commands return 410.",
-    response_description="SSE events including thread, token, reasoning, tool_start/end/error, input_required/resolved, run_status, snapshot, final and error.",
+    response_description="SSE events including thread, token, reasoning, tool_start/progress/end/error, input_required/resolved, run_status, snapshot, final and error. Analysis progress identifies its record and tool_call_id.",
     responses=_RUN_ERRORS,
 )
 async def chat_stream(request: Request):

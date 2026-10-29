@@ -318,7 +318,7 @@ export function useChatStream() {
                 )
                   continue;
                 if (
-                  ["tool_start", "tool_end", "tool_error"].includes(
+                  ["tool_start", "tool_progress", "tool_end", "tool_error"].includes(
                     event.event,
                   ) &&
                   (typeof event.data.tool_call_id !== "string" ||

@@ -301,6 +301,16 @@ def _suffix(raw: str, marker: str) -> str:
 
 
 _RUN_ERROR_KEYS: Mapping[str, str] = {
+    "Analysis was cancelled.": "analysisCancelled",
+    "Analysis was superseded by a newer job.": "analysisSuperseded",
+    "Backend stopped; analysis was interrupted.": "analysisInterrupted",
+    "Resume analysis is already processing.": "analysisBusy",
+    "Provide exactly one of resume_id or file_id.": "analysisResumeSource",
+    "Resume ID must be positive.": "analysisPositiveId",
+    "A model selection is required for analysis.": "modelSelectionRequired",
+    "Analysis service is shutting down.": "analysisInterrupted",
+    "Analysis ended without a result.": "analysisInterrupted",
+    "JD text, source URL, or at least one image is required.": "jdSourceRequired",
     "This run is no longer active.": "runInactive",
     "User input is required. Use the interactive chat endpoint.": "interactiveEndpointRequired",
     "Too many pending input requests.": "pendingInputLimit",
@@ -327,6 +337,34 @@ _RUN_ERROR_KEYS: Mapping[str, str] = {
 
 MESSAGES.update(
     {
+        "analysisCancelled": {
+            "zh-CN": "分析已取消。",
+            "en-US": "Analysis was cancelled.",
+        },
+        "analysisSuperseded": {
+            "zh-CN": "此分析已被新任务替代。",
+            "en-US": "Analysis was superseded by a newer job.",
+        },
+        "analysisInterrupted": {
+            "zh-CN": "后端已退出，分析已中断。",
+            "en-US": "Backend stopped; analysis was interrupted.",
+        },
+        "analysisBusy": {
+            "zh-CN": "此简历正在分析中，请等待当前任务完成。",
+            "en-US": "This resume is already being analyzed. Wait for the current task to finish.",
+        },
+        "analysisResumeSource": {
+            "zh-CN": "请在 resume_id 和 file_id 中提供且仅提供一个。",
+            "en-US": "Provide exactly one of resume_id or file_id.",
+        },
+        "analysisPositiveId": {
+            "zh-CN": "简历 ID 必须为正数。",
+            "en-US": "Resume ID must be positive.",
+        },
+        "jdSourceRequired": {
+            "zh-CN": "必须提供 JD 文本、来源 URL 或至少一张图片。",
+            "en-US": "JD text, source URL, or at least one image is required.",
+        },
         "runInactive": {
             "zh-CN": "此次运行已结束。",
             "en-US": "This run is no longer active.",

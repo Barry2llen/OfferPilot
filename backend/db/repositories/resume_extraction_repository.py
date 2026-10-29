@@ -1,3 +1,6 @@
+from datetime import datetime
+
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from db.models import ResumeExtractionORM
@@ -11,6 +14,19 @@ class ResumeExtractionRepository:
 
     def get_by_resume_id(self, resume_id: int) -> ResumeExtractionORM | None:
         return self._session.get(ResumeExtractionORM, resume_id)
+
+    def recover_processing(self) -> None:
+        self._session.execute(
+            update(ResumeExtractionORM)
+            .where(
+                ResumeExtractionORM.status == "processing",
+            )
+            .values(
+                status="failed",
+                error_message="Backend stopped; analysis was interrupted.",
+                completed_at=datetime.now(),
+            )
+        )
 
     def upsert(self, extraction: ResumeExtractionORM) -> ResumeExtractionORM:
         existing = self.get_by_resume_id(extraction.resume_id)

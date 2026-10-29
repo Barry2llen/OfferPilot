@@ -16,6 +16,7 @@ import type {
   ChatStreamState,
   ChatReducerResult,
   ToolCallEntry,
+  AnalysisToolProgress,
 } from "./types";
 
 export function extractTextContent(content: unknown): string {
@@ -226,6 +227,7 @@ function toolCallToMessage(entry: ToolCallEntry, id: string): ChatMessage {
     toolInput: entry.input,
     toolOutput: entry.output,
     toolError: entry.error,
+    toolAnalysis: entry.analysis,
   };
 }
 
@@ -416,6 +418,73 @@ function addAgentStatusEffect(
   value: ChatStreamState["agentStatus"],
 ): void {
   effects.push({ type: "agent_status", value });
+}
+
+function clampAnalysisProgress(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(value, 1));
+}
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function analysisProgressFromValue(
+  value: unknown,
+  fallback?: AnalysisToolProgress,
+): AnalysisToolProgress | undefined {
+  const parsed = parseMaybeJson(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return fallback;
+  }
+
+  const item = parsed as Record<string, unknown>;
+  const resourceType = item.resource_type;
+  const resourceId = item.resource_id;
+  if (
+    (resourceType !== "resume" && resourceType !== "job_description") ||
+    typeof resourceId !== "number" || !Number.isSafeInteger(resourceId) || resourceId <= 0
+  ) {
+    return fallback;
+  }
+
+  const event = typeof item.event === "string" ? item.event : undefined;
+  const previousProgress = fallback?.progress ?? 0;
+  const status: AnalysisToolProgress["status"] =
+    item.status === "failed" || event === "error"
+      ? "failed"
+      : item.status === "parsed" || event === "final"
+        ? "parsed"
+        : "processing";
+  const error =
+    typeof item.error === "string"
+      ? item.error
+      : typeof item.detail === "string" && event === "error"
+        ? item.detail
+        : fallback?.error ?? null;
+
+  return {
+    resourceType,
+    resourceId,
+    jobId: typeof item.job_id === "string" ? item.job_id : fallback?.jobId,
+    eventId: typeof item.event_id === "number" ? item.event_id : fallback?.eventId,
+    status,
+    progress:
+      status === "parsed"
+        ? 1
+        : clampAnalysisProgress(item.progress, previousProgress),
+    message: status !== "processing" ? null : typeof item.message === "string" ? item.message : fallback?.message ?? null,
+    modelError:
+      status !== "processing" || event === "progress" ? null : typeof item.detail === "string" && event === "model_error"
+        ? item.detail
+        : fallback?.modelError ?? null,
+    error: status === "parsed" ? null : error,
+  };
 }
 
 export function reduceChatEvent(
@@ -620,12 +689,15 @@ export function reduceChatEvent(
       );
       const toolCalls = [...next.toolCalls];
       if (index >= 0) {
-        toolCalls[index] = { ...toolCalls[index], output, status: "success" };
+        const analysis = analysisProgressFromValue(output, toolCalls[index].analysis);
+        toolCalls[index] = { ...toolCalls[index], output, analysis,
+          status: analysis?.status === "failed" ? "error" : "success" };
       } else {
         toolCalls.push({
           name,
           output,
-          status: "success",
+          analysis: analysisProgressFromValue(output),
+          status: analysisProgressFromValue(output)?.status === "failed" ? "error" : "success",
           toolCallId:
             typeof data.tool_call_id === "string"
               ? data.tool_call_id
@@ -637,6 +709,30 @@ export function reduceChatEvent(
       next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
       next = endAssistantSegment(next);
       addAgentStatusEffect(effects, "generating");
+      break;
+    }
+
+    case "tool_progress": {
+      const name = typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
+      const toolCallId =
+        typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
+      const existing = next.toolCalls.find((entry) => entry.toolCallId === toolCallId);
+      if (!toolCallId || !existing || existing.status !== "running") break;
+      if (existing.analysis?.eventId !== undefined && typeof data.event_id === "number" && data.event_id <= existing.analysis.eventId) break;
+      const index = findLastRunningToolCallIndex(next.toolCalls, name, toolCallId);
+      const toolCalls = [...next.toolCalls];
+      const previous = index >= 0 ? toolCalls[index] : undefined;
+      const analysis = analysisProgressFromValue(data, previous?.analysis);
+      if (!analysis) break;
+
+      const entry: ToolCallEntry = {
+        ...(previous ?? { name, status: "running" as const }),
+        toolCallId: previous?.toolCallId ?? toolCallId,
+        analysis,
+      };
+      if (index >= 0) toolCalls[index] = entry;
+      else toolCalls.push(entry);
+      next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
       break;
     }
 
@@ -669,12 +765,16 @@ export function reduceChatEvent(
         toolCalls[index] = {
           ...toolCalls[index],
           error: detail,
+          output: data.output,
+          analysis: analysisProgressFromValue(data.output, toolCalls[index].analysis),
           status: "error",
         };
       } else {
         toolCalls.push({
           name,
           error: detail,
+          output: data.output,
+          analysis: analysisProgressFromValue(data.output),
           status: "error",
           toolCallId:
             typeof data.tool_call_id === "string"
@@ -842,6 +942,9 @@ export function mapChatHistory(
       (message.role as ChatMessage["role"]) || "assistant",
     );
     next = { ...next, nextMessageId: messageId.nextMessageId };
+    const toolAnalysis = message.role === "tool" &&
+      (message.name === "analyze_resume" || message.name === "analyze_job_description")
+      ? analysisProgressFromValue(message.content) : undefined;
     const mapped: ChatMessage = {
       id: messageId.id,
       role: message.role as ChatMessage["role"],
@@ -856,7 +959,11 @@ export function mapChatHistory(
       reasoningDurationMs: parseDurationMs(message.reasoning_duration_ms),
       toolCallId: message.tool_call_id ?? undefined,
       toolName: message.name ?? undefined,
-      toolStatus: message.status ?? undefined,
+      toolStatus: message.role === "tool"
+        ? (message.status === "error" || toolAnalysis?.status === "failed" ? "error" : message.status ?? "success")
+        : message.status ?? undefined,
+      toolAnalysis,
+      toolError: toolAnalysis?.error ?? undefined,
       toolOutput: message.role === "tool" ? message.content : undefined,
     };
     if (shouldDisplayHistoryMessage(mapped)) messages.push(mapped);
