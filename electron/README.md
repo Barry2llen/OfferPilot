@@ -25,6 +25,15 @@ with `OFFER_PILOT_BACKEND_DIR` and `OFFER_PILOT_FRONTEND_DIR` when necessary;
 these overrides also apply to builds. Services bind to available localhost
 ports. Windows uses the backend's Psycopg-compatible event loop.
 
+The development launcher forwards Electron stdout/stderr as UTF-8, including
+native Chromium messages. Main-process rebuilds restart Electron; preload
+updates keep the current process. Closing Vite or pressing Ctrl+C requests
+shutdown over the private `offerpilot:shutdown` IPC channel and waits up to
+three seconds before forced process-tree cleanup. Already-exited processes
+are harmless; real cleanup failures report the PID, operation and exit code.
+The Electron GUI starts with `windowsHide: false`; only background helpers use
+hidden startup, so Windows does not suppress the main window's first show.
+
 ## Native builds
 
 Run commands below from `electron/`:
@@ -177,3 +186,14 @@ Electron `userData/logs`. Installation and removal preserve these directories.
 Set `OFFER_PILOT_RUNTIME_DIR` to select an isolated root: backend files live at
 that root and Electron user data/logs at its `electron/` subdirectory. This is
 used by packaged-app verification and leaves the default paths unchanged.
+
+Application-owned terminal output and new logs use UTF-8. Python development,
+packaged and build processes receive `PYTHONUTF8=1`,
+`PYTHONIOENCODING=utf-8:backslashreplace` and `PYTHONUNBUFFERED=1`; backend
+entry points also configure available stdout/stderr streams explicitly.
+Existing log files with invalid UTF-8 are preserved as `.legacy-<id>` archives
+before a new log is opened. Invalid external bytes appear as an
+`[encoding-error: source]` diagnostic with `\xNN` escapes, without guessing
+an encoding or inserting replacement characters. Historical text is not
+rewritten. These changes do not change the system code page or GPU settings;
+AMD/Chromium diagnostics remain visible.

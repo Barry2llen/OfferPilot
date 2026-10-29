@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog, Menu } from 'electron'
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { backendEnvironment } from './backend-environment'
+import { forwardUtf8, prepareUtf8Log, pythonEnvironment, Utf8Decoder } from '../scripts/runtime-output.mjs'
+import { terminateProcessTree } from '../scripts/process-cleanup.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.join(__dirname, '..')
@@ -16,6 +18,8 @@ interface ManagedProcess {
   name: string
   child: ChildProcessWithoutNullStreams
   trackedPids: Set<number>
+  stopping: boolean
+  closed: Promise<void>
 }
 
 interface RuntimeServices {
@@ -25,6 +29,9 @@ interface RuntimeServices {
 
 let mainWindow: BrowserWindow | null = null
 let managedProcesses: ManagedProcess[] = []
+let shuttingDown = false
+let shutdownComplete = false
+let shutdown: Promise<void> | undefined
 
 app.setName('OfferPilot')
 
@@ -48,7 +55,22 @@ if (!singleInstanceLock) {
   app.whenReady().then(startApplication)
 }
 
-app.on('before-quit', stopManagedProcesses)
+app.on('before-quit', (event) => {
+  if (shutdownComplete) return
+  event.preventDefault()
+  shuttingDown = true
+  shutdown ??= stopManagedProcesses().finally(() => {
+    shutdownComplete = true
+    app.quit()
+  })
+})
+
+if (!app.isPackaged && process.send) {
+  process.on('message', (message) => {
+    if (message === 'offerpilot:shutdown') app.quit()
+  })
+  process.once('disconnect', () => app.quit())
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -70,12 +92,13 @@ async function startApplication() {
       ? await startProductionServices()
       : await startDevelopmentServices()
 
+    if (shuttingDown) return
     process.env.OFFER_PILOT_API_BASE_URL = services.apiBaseUrl
     process.env.OFFER_PILOT_APP_URL = services.appUrl
     createWindow(services.appUrl)
   } catch (error) {
-    stopManagedProcesses()
-    showStartupFailure(error)
+    await stopManagedProcesses()
+    if (!shuttingDown) showStartupFailure(error)
   }
 }
 
@@ -104,7 +127,7 @@ async function startDevelopmentServices(): Promise<RuntimeServices> {
     '--port',
     String(backendPort),
   ], backendDir, {
-    PYTHONUNBUFFERED: '1',
+    ...pythonEnvironment,
   })
 
   trackBackendServerPid(backendProcess)
@@ -228,17 +251,21 @@ function startManagedProcess(
   try {
     child = spawn(command, args, {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...env, ...pythonEnvironment },
       stdio: 'pipe',
       windowsHide: true,
+      detached: process.platform !== 'win32',
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to start ${name} with "${formatCommand(command, args)}" in ${cwd}: ${message}`)
   }
-  const managed = { name, child, trackedPids: new Set<number>() }
+  const managed: ManagedProcess = {
+    name, child, trackedPids: new Set<number>(), stopping: false, closed: Promise.resolve(),
+  }
   if (child.pid) {
     managed.trackedPids.add(child.pid)
+    notifyManagedPid(child.pid, true, process.platform !== 'win32')
   }
   managedProcesses.push(managed)
   attachProcessLogging(managed)
@@ -248,7 +275,7 @@ function startManagedProcess(
   })
 
   child.on('exit', (code, signal) => {
-    console.info(`[${name}] exited with code=${code ?? 'null'} signal=${signal ?? 'null'}`)
+    console.info(`[${name}] ${managed.stopping ? 'stopped during shutdown' : 'exited'} code=${code ?? 'null'} signal=${signal ?? 'null'}`)
   })
 
   return managed
@@ -257,76 +284,98 @@ function startManagedProcess(
 function attachProcessLogging(processInfo: ManagedProcess) {
   const logsDir = path.join(app.getPath('userData'), 'logs')
   mkdirSync(logsDir, { recursive: true })
-  const logStream = createWriteStream(path.join(logsDir, `${processInfo.name}.log`), {
+  const filename = path.join(logsDir, `${processInfo.name}.log`)
+  const archive = prepareUtf8Log(filename)
+  const logStream = createWriteStream(filename, {
     flags: 'a',
+    encoding: 'utf8',
   })
   const prefix = `[${new Date().toISOString()}]`
 
+  if (archive) logStream.write(`${prefix} Previous non-UTF-8 log archived as ${archive}\n`)
   logStream.write(`${prefix} Starting ${processInfo.name}\n`)
-  processInfo.child.stdout.on('data', (chunk: Buffer) => {
-    logStream.write(chunk)
-  })
-  processInfo.child.stderr.on('data', (chunk: Buffer) => {
-    logStream.write(chunk)
-  })
-  processInfo.child.on('close', (code, signal) => {
-    logStream.write(`\n[${new Date().toISOString()}] exited code=${code ?? 'null'} signal=${signal ?? 'null'}\n`)
-    logStream.end()
+  const outputs = [
+    forwardUtf8(processInfo.child.stdout, logStream, `${processInfo.name}:stdout`),
+    forwardUtf8(processInfo.child.stderr, logStream, `${processInfo.name}:stderr`),
+  ]
+  processInfo.closed = new Promise((resolve) => {
+    let childClosed = false
+    let logFailed = false
+    logStream.on('error', (error: NodeJS.ErrnoException) => {
+      logFailed = true
+      console.error(`[${processInfo.name}] log write failed error=${error.code ?? 'unknown'}`)
+      if (childClosed) resolve()
+    })
+    processInfo.child.once('close', async (code, signal) => {
+      childClosed = true
+      for (const pid of processInfo.trackedPids) notifyManagedPid(pid, false)
+      await Promise.all(outputs.map(output => output.readableEnded
+        ? Promise.resolve() : new Promise<void>(done => output.once('end', done))))
+      if (logFailed) {
+        resolve()
+        return
+      }
+      logStream.end(`\n[${new Date().toISOString()}] exited code=${code ?? 'null'} signal=${signal ?? 'null'}\n`, resolve)
+    })
   })
 }
 
-function stopManagedProcesses() {
-  for (const processInfo of [...managedProcesses].reverse()) {
+async function stopManagedProcesses() {
+  const processes = managedProcesses
+  managedProcesses = []
+  for (const processInfo of [...processes].reverse()) {
+    processInfo.stopping = true
     stopManagedProcess(processInfo)
   }
-  managedProcesses = []
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const graceful = await Promise.race([
+    Promise.all(processes.map(processInfo => processInfo.closed)).then(() => true),
+    new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2000) }),
+  ])
+  clearTimeout(timer)
+  if (!graceful) {
+    for (const processInfo of [...processes].reverse()) {
+      stopManagedProcess(processInfo, true)
+    }
+  }
 }
 
-function stopManagedProcess(processInfo: ManagedProcess) {
+function stopManagedProcess(processInfo: ManagedProcess, force = false) {
   const pids = [...processInfo.trackedPids]
   if (processInfo.child.pid) {
     pids.push(processInfo.child.pid)
   }
 
   for (const pid of [...new Set(pids)].reverse()) {
-    killProcessTree(pid)
+    terminateProcessTree(pid, {
+      group: pid === processInfo.child.pid && process.platform !== 'win32',
+      force,
+    })
   }
+}
 
-  if (!processInfo.child.killed) {
+function notifyManagedPid(pid: number, active: boolean, group = false) {
+  if (!app.isPackaged && process.connected && process.send) {
     try {
-      processInfo.child.kill()
+      process.send({ type: 'offerpilot:managed-pid', pid, active, group }, () => {})
     } catch {
-      // The direct child may already be gone after process-tree cleanup.
+      // Shutdown may close the private channel before managed processes exit.
     }
   }
 }
 
-function killProcessTree(pid: number) {
-  if (process.platform === 'win32') {
-    killWindowsProcessTree(pid)
-    return
-  }
-
-  try {
-    process.kill(pid, 'SIGTERM')
-  } catch {
-    // The process may have exited between tracking and cleanup.
-  }
-}
-
-function killWindowsProcessTree(pid: number) {
-  spawnSync('taskkill.exe', ['/pid', String(pid), '/t', '/f'], {
-    stdio: 'ignore',
-    windowsHide: true,
-  })
-}
-
 function trackBackendServerPid(processInfo: ManagedProcess) {
+  const decoder = new Utf8Decoder('backend:pid')
+  let tail = ''
   processInfo.child.stdout.on('data', (chunk: Buffer) => {
-    const output = chunk.toString('utf-8')
-    const match = output.match(/Started server process \[(\d+)]/)
+    tail = (tail + decoder.write(chunk)).slice(-4096)
+    const match = tail.match(/Started server process \[(\d+)]/)
     if (match) {
-      processInfo.trackedPids.add(Number(match[1]))
+      const pid = Number(match[1])
+      if (!processInfo.trackedPids.has(pid)) {
+        processInfo.trackedPids.add(pid)
+        notifyManagedPid(pid, true)
+      }
     }
   })
 }
@@ -430,6 +479,7 @@ async function waitForUrl(url: string, label: string, timeoutMs = 60_000) {
   let lastError = ''
 
   while (Date.now() - startedAt < timeoutMs) {
+    if (shuttingDown) throw new Error('Application is shutting down')
     try {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 2_000)

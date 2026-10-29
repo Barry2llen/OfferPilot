@@ -1,7 +1,10 @@
 import sys
+from pathlib import Path
 from typing import Any, Callable, overload, override
 
 from loguru import logger as _logger
+
+from utils.stdio import configure_utf8_stdio, prepare_utf8_log
 
 
 def _is_debug_enabled() -> bool:
@@ -37,13 +40,20 @@ class LoggerProxy(type(_logger)):
             )
 
 
+configure_utf8_stdio()
 _logger.remove()
+if sys.stdout is not None:
+    _logger.add(
+        sys.stdout,
+        colorize=True,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}",
+    )
+_archive = prepare_utf8_log(Path("./logs/runtime.log"))
 _logger.add(
-    sys.stdout,
-    colorize=True,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}",
+    "./logs/runtime.log", rotation="10 MB", encoding="utf-8", errors="backslashreplace"
 )
-_logger.add("./logs/runtime.log", rotation="10 MB")
+if _archive is not None:
+    _logger.info(f"Previous non-UTF-8 log archived as {_archive}")
 
 logger = LoggerProxy(_logger)
 

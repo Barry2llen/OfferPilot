@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { assertBuildHost, pnpmInvocation } from '../scripts/build.mjs'
 import { assertLinuxX64, assertSelfContainedSymlinks, libraries, verifyChecksum } from '../scripts/linux-libraries.mjs'
 import { backendEnvironment } from '../electron/backend-environment.ts'
+import { pythonEnvironment } from '../scripts/runtime-output.mjs'
 import { bumpVersion, checkReleaseSupport, checkVersion, nextVersion } from '../scripts/release-version.mjs'
 import { collectAssets } from '../scripts/collect-release.mjs'
 import { publishRelease, validateAssets } from '../scripts/publish-release.mjs'
@@ -69,10 +70,10 @@ test('Linux libraries are scoped to the backend environment and missing librarie
   await mkdir(compat)
   for (const library of libraries) for (const file of library.files) await writeFile(path.join(compat, file), 'library')
   assert.deepEqual(backendEnvironment(executable, 'linux', original), {
-    PYTHONUNBUFFERED: '1', LD_LIBRARY_PATH: `${compat}:/system-libraries`,
+    ...pythonEnvironment, LD_LIBRARY_PATH: `${compat}:/system-libraries`,
   })
   assert.deepEqual(original, { LD_LIBRARY_PATH: '/system-libraries', OTHER: 'unchanged' })
-  assert.deepEqual(backendEnvironment(executable, 'win32', original), { PYTHONUNBUFFERED: '1' })
+  assert.deepEqual(backendEnvironment(executable, 'win32', original), pythonEnvironment)
 })
 
 async function versionFixture(t) {
