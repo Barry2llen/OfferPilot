@@ -718,6 +718,100 @@ async def _until(predicate) -> None:
             await asyncio.sleep(0.005)
 
 
+@pytest.mark.parametrize("kind", ["resume", "job_description"])
+@pytest.mark.parametrize("failed", [False, True])
+async def test_analysis_tool_waits_for_result_after_progress_queue_overflows(
+    analysis_env: Any, monkeypatch: pytest.MonkeyPatch, kind: str, failed: bool
+) -> None:
+    env = analysis_env
+    observer_ready = asyncio.Event()
+    release_observer = asyncio.Event()
+    burst_sent = asyncio.Event()
+    finish = asyncio.Event()
+    forwarded: list[dict[str, Any]] = []
+
+    class Workflow:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def astream_events(
+            self, selection: Any, *args: Any, **kwargs: Any
+        ) -> Resume | JobDescription:
+            await observer_ready.wait()
+            for index in range(300):
+                await kwargs["handlers"]["on_custom_event"](
+                    {
+                        "name": "on_progress_update",
+                        "data": {
+                            "progress": index / 300,
+                            "message": "Extracted resume text.",
+                        },
+                    }
+                )
+            burst_sent.set()
+            await finish.wait()
+            if failed:
+                raise RuntimeError("Burst workflow failed")
+            if kind == "resume":
+                return Resume(document=args[0], raw_text="completed after burst")
+            return JobDescription(
+                raw_text="completed after burst", job_title="Engineer"
+            )
+
+    async def forward_event(name: str, data: dict[str, Any]) -> None:
+        if data["event"] in {"resume", "job_description"}:
+            observer_ready.set()
+            await release_observer.wait()
+        forwarded.append(data)
+
+    monkeypatch.setattr(
+        "services.resume_extraction_jobs.ResumeExtractWorkflow"
+        if kind == "resume"
+        else "services.jd_analysis_jobs.JdAnalysisWorkflow",
+        Workflow,
+    )
+    monkeypatch.setattr(
+        "agent.tools.analysis._adispatch_custom_event_safely", forward_event
+    )
+    tool = get_analysis_tools(env.service)[kind == "job_description"]
+    args = {"resume_id": env.document.id} if kind == "resume" else {"jd_text": "job"}
+    task = asyncio.create_task(
+        tool.ainvoke({**args, "runtime": _runtime(env.selection, locale="en-US")})
+    )
+    try:
+        await asyncio.wait_for(burst_sent.wait(), 5)
+        release_observer.set()
+        await _until(
+            lambda: (
+                task.done() or any(item["event"] == "progress" for item in forwarded)
+            )
+        )
+        assert not task.done(), "Slow observation must not end an active analysis"
+        finish.set()
+        output = await asyncio.wait_for(task, 5)
+        assert isinstance(output, ToolMessage)
+        assert output.status == ("error" if failed else "success")
+        assert output.artifact["status"] == ("failed" if failed else "parsed")
+        assert forwarded[-1]["event"] == ("error" if failed else "final")
+        if kind == "resume":
+            detail = _resume_detail(env)
+            assert detail.parse_status == ("failed" if failed else "parsed")
+            assert detail.parse_error == ("Burst workflow failed" if failed else None)
+        else:
+            with env.database.get_session_factory()() as session:
+                detail = JobDescriptionAnalysisService(
+                    JobDescriptionAnalysisRepository(session)
+                ).get_analysis(output.artifact["resource_id"])
+            assert detail.status == ("failed" if failed else "parsed")
+            assert detail.error_message == ("Burst workflow failed" if failed else None)
+    finally:
+        release_observer.set()
+        finish.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 @pytest.mark.parametrize(
     "kind,args",
     [

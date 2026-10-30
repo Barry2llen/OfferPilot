@@ -37,9 +37,7 @@ class AnalysisJob:
     selection_id: int
     locale: Locale
     history: deque[AnalysisJobEvent] = field(default_factory=lambda: deque(maxlen=256))
-    subscribers: set[asyncio.Queue[AnalysisJobEvent | None]] = field(
-        default_factory=set
-    )
+    subscribers: set[asyncio.Queue[AnalysisJobEvent]] = field(default_factory=set)
     done: bool = False
     sequence: int = 0
     task: asyncio.Task[None] | None = None
@@ -147,14 +145,11 @@ class AnalysisJobManager:
             self._event_hub.publish_nowait(item)
         for queue in tuple(job.subscribers):
             if queue.full():
-                while not queue.empty():
-                    queue.get_nowait()
+                # Observation may skip old updates, but must still receive the terminal.
+                queue.get_nowait()
+            queue.put_nowait(item)
+            if done:
                 job.subscribers.discard(queue)
-                queue.put_nowait(None)
-            else:
-                queue.put_nowait(item)
-                if done:
-                    job.subscribers.discard(queue)
 
     async def progress(self, job: AnalysisJob, event: Mapping[str, Any]) -> None:
         name, data = event.get("name"), event.get("data") or {}
@@ -257,7 +252,7 @@ class AnalysisJobManager:
     async def events(
         self, resource_id: int, job_id: str
     ) -> AsyncGenerator[AnalysisJobEvent, None]:
-        queue: asyncio.Queue[AnalysisJobEvent | None] = asyncio.Queue(128)
+        queue: asyncio.Queue[AnalysisJobEvent] = asyncio.Queue(128)
         async with self._lock:
             job = self._by_id.get(job_id)
             if job is None or job.resource_id != resource_id:
@@ -272,8 +267,6 @@ class AnalysisJobManager:
                     return
             while not job.done or not queue.empty():
                 event = await queue.get()
-                if event is None:
-                    break
                 yield event
                 if event.event in {"final", "error"}:
                     return

@@ -742,7 +742,7 @@ async def get_chat_run(request: Request, run_id: str):
 @router.get(
     "/chat/runs/{run_id}/events",
     summary="Subscribe to chat events",
-    description="Replay events after the supplied sequence, then follow live events. A snapshot replaces expired replay history. Disconnecting does not cancel execution.",
+    description="Replay events after the supplied sequence, then follow live events. A snapshot replaces expired replay history and preserves merged analysis progress, phase messages and model retry details per tool call. Disconnecting does not cancel execution.",
     response_description="Sequenced SSE events or a display snapshot.",
     responses=_RUN_ERRORS,
 )

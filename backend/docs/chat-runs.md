@@ -36,9 +36,10 @@ plus resource identity, `job_id`, the inner event name and progress/retry data:
 ```
 
 The normal `run_id`, `thread_id` and monotonic `event_id` fields are attached by
-ChatRunManager. Replay includes these events; snapshots retain the latest progress
-per tool call. Progress after a tool terminal is ignored. Success and failure
-outputs retain record metadata in both live events and saved chat history.
+ChatRunManager. Replay includes the original incremental events; snapshots merge
+updates per tool call so model retries retain the last progress and phase message.
+Progress after a tool terminal is ignored. Success and failure outputs retain
+record metadata in both live events and saved chat history.
 
 `GET /analysis/events` is an independent, application-wide SSE subscription. It
 starts with `snapshot`, whose `tasks` array contains current task projections;
@@ -52,10 +53,13 @@ No historical event cursor is required on this endpoint.
 
 The feed keeps active tasks and up to 256 recent task projections; subscriber
 queues hold 128 events. Slow subscribers disconnect and recover with a fresh
-snapshot. Job-local event history is bounded to 256 events. Progress and known
-errors are rendered in each subscriber's request locale. Persisted technical
-error details remain unchanged. AppProvider owns one subscription across pages;
-record refreshes occur on creation, terminal events and feed snapshots.
+snapshot. Job-local event history is bounded to 256 events, and each job observer
+queues at most 128 events. A full job-observer queue drops its oldest update while
+keeping the subscription and terminal result; slow observation never cancels work.
+Progress and known errors are rendered in each subscriber's request locale.
+Persisted technical error details remain unchanged. AppProvider owns one
+subscription across pages; record refreshes occur on creation, terminal events
+and feed snapshots.
 
 Closing subscriptions or leaving a page never cancels analysis. Explicit chat
 cancellation cancels and awaits that run's unfinished analysis jobs, storing

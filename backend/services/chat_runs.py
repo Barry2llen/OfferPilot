@@ -371,15 +371,17 @@ class ChatRunManager:
         ):
             run.projection[-1]["data"]["content"] += data.get("content", "")
         elif event == "tool_progress":
-            run.projection = [
-                item
-                for item in run.projection
-                if not (
-                    item["event"] == event
-                    and item["data"].get("tool_call_id") == tool_id
-                )
-            ]
-            run.projection.append(item)
+            projection = []
+            for previous in run.projection:
+                if (
+                    previous["event"] == event
+                    and previous["data"].get("tool_call_id") == tool_id
+                ):
+                    # Retry deltas omit the last progress and phase message.
+                    item = {"event": event, "data": {**previous["data"], **data}}
+                else:
+                    projection.append(previous)
+            run.projection = [*projection, item]
         elif event not in {"input_required", "input_resolved", "run_status"}:
             run.projection.append(item)
         for queue in tuple(run.subscribers):

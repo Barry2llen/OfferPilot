@@ -62,6 +62,97 @@ async def test_empty_replay_buffer_always_sends_snapshot(manager):
     await manager.shutdown()
 
 
+@pytest.mark.parametrize("resource_type", ["resume", "job_description"])
+async def test_analysis_retry_snapshot_preserves_progress_and_phase(
+    manager: ChatRunManager, resource_type: str
+) -> None:
+    row = await submit(manager)
+    rid = row["run_id"]
+    await until(lambda: manager.broker.list_pending(rid))
+    identity = {
+        "tool_name": f"analyze_{resource_type}",
+        "tool_call_id": "analysis-call",
+        "resource_type": resource_type,
+        "resource_id": 1,
+        "job_id": "analysis-job",
+        "status": "processing",
+    }
+    await manager.publish(rid, "tool_start", identity)
+    await manager.publish(
+        rid,
+        "tool_progress",
+        {
+            **identity,
+            "event": "progress",
+            "progress": 0.65,
+            "message": "Extracting facts",
+        },
+    )
+    other = {
+        **identity,
+        "tool_call_id": "other-call",
+        "resource_id": 2,
+        "job_id": "other-job",
+    }
+    await manager.publish(rid, "tool_start", other)
+    await manager.publish(
+        rid,
+        "tool_progress",
+        {
+            **other,
+            "event": "progress",
+            "progress": 0.25,
+            "message": "Extracting sections",
+        },
+    )
+    for attempt in (1, 2):
+        await manager.publish(
+            rid,
+            "tool_progress",
+            {
+                **identity,
+                "event": "model_error",
+                "detail": "Retrying",
+                "attempt": attempt,
+                "max_attempts": 3,
+            },
+        )
+    delta = json.loads(manager.runs[rid].events[-1][1].split("data: ", 1)[1])
+    assert "progress" not in delta and "message" not in delta
+    manager.limits = manager.limits.model_copy(update={"replay_events": 1})
+    await manager.publish(rid, "token", {"content": "waiting"})
+
+    for after in (0, 1):
+        stream = manager.stream(rid, after)
+        try:
+            snapshot = await anext(stream)
+        finally:
+            await stream.aclose()
+        assert snapshot.startswith("event: snapshot\n")
+        projection = json.loads(snapshot.split("data: ", 1)[1])["events"]
+        progress = {
+            event["data"]["tool_call_id"]: event["data"]
+            for event in projection
+            if event["event"] == "tool_progress"
+        }
+        assert len(progress) == 2
+        assert progress["analysis-call"] == {
+            **identity,
+            "event": "model_error",
+            "progress": 0.65,
+            "message": "Extracting facts",
+            "detail": "Retrying",
+            "attempt": 2,
+            "max_attempts": 3,
+            "thread_id": row["thread_id"],
+            "run_id": rid,
+            "event_id": delta["event_id"],
+        }
+        assert progress["other-call"]["progress"] == 0.25
+        assert progress["other-call"]["message"] == "Extracting sections"
+    await manager.shutdown()
+
+
 async def test_result_survives_eviction_restart_and_does_not_use_latest_turn(manager):
     first = await submit(manager, "first")
     assert await manager.result(first["run_id"]) == "first"
