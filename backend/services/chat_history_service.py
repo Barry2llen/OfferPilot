@@ -14,6 +14,7 @@ from schemas.ai import (
     AIChatHistorySummary,
 )
 from schemas.chat_file import ChatAttachmentRef
+from utils.message_content import extract_message_reasoning, extract_text_content
 from utils.tool_outputs import (
     ANALYSIS_TOOL_NAMES,
     QUERY_TOOL_NAME,
@@ -226,14 +227,8 @@ def _message_attr(message: Any, attr: str) -> Any:
 
 
 def _message_reasoning_content(message: Any) -> str:
-    additional_kwargs = _message_attr(message, "additional_kwargs")
-    if not isinstance(additional_kwargs, dict):
-        return ""
-
-    reasoning_content = additional_kwargs.get("reasoning_content")
-    if isinstance(reasoning_content, str) and reasoning_content.strip():
-        return reasoning_content
-    return ""
+    reasoning = extract_message_reasoning(message)
+    return reasoning if reasoning.strip() else ""
 
 
 def _message_display_content(message: Any) -> str | None:
@@ -313,18 +308,7 @@ def _message_text(message: Any) -> str:
 
 
 def _content_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict) and isinstance(item.get("text"), str):
-                parts.append(item["text"])
-        if parts:
-            return "".join(parts)
-    return ""
+    return extract_text_content(content)
 
 
 def _jsonable(value: Any) -> Any:

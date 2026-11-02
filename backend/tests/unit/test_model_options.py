@@ -381,3 +381,12 @@ def test_reasoning_blocks_are_not_emitted_as_answer_text():
     )
     assert _extract_chunk_text(reasoning) == ""
     assert _extract_chunk_reasoning(reasoning) == "thought"
+
+
+def test_reasoning_stream_preserves_whitespace_between_content_blocks():
+    chunks = [
+        AIMessageChunk(content=[{"type": "thinking", "thinking": value}])
+        for value in ("first", " ", "second")
+    ]
+    assert "".join(_extract_chunk_reasoning(chunk) for chunk in chunks) == "first second"
+    assert all(_extract_chunk_text(chunk) == "" for chunk in chunks)

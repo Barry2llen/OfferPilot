@@ -28,6 +28,48 @@ describe("chat stream adapter", () => {
     expect(formatDisplayContent([{ type: "reasoning", text: "thought" }, { type: "text", text: "answer" }])).toBe("answer");
     expect(formatDisplayContent([{ type: "reasoning", text: "thought" }])).toBe("");
   });
+  it.each([
+    { type: "thinking", thinking: "thought", signature: "opaque-signature" },
+    { type: "reasoning", summary: [{ type: "summary_text", text: "thought" }] },
+    { type: "reasoning", text: "thought" },
+    { type: "reasoning", reasoning: "thought" },
+    { type: "summary_text", text: "thought" },
+  ])("preserves reasoning and duration when replacing the live chat with history", (block) => {
+    let state = beginChat(createChatState(), "hello", undefined);
+    for (const [name, data] of [
+      ["reasoning", { content: "thought" }],
+      ["reasoning_done", { duration_ms: 1350 }],
+      ["token", { content: "answer" }],
+      ["final", { content: [block, { type: "text", text: "answer" }] }],
+    ] as const) {
+      state = reduceChatEvent(state, event(name, data), labels).state;
+    }
+    const liveAnswer = state.messages.find((message) => message.role === "assistant");
+    expect(liveAnswer).toMatchObject({
+      content: "answer", reasoning: "thought", reasoningDurationMs: 1350,
+    });
+    const restored = mapChatHistory([
+      {
+        role: "assistant", type: "ai",
+        content: [block, { type: "text", text: "answer" }],
+        reasoning: "thought", reasoning_duration_ms: 1350,
+      },
+    ], state).state;
+    expect(restored.messages).toHaveLength(1);
+    expect(restored.messages[0]).toMatchObject({
+      content: "answer", reasoning: "thought", reasoningDurationMs: 1350,
+    });
+    const reasoningOnly = mapChatHistory([
+      {
+        role: "assistant", type: "ai", content: [block],
+        reasoning: "thought", reasoning_duration_ms: 1350,
+      },
+    ], state).state;
+    expect(reasoningOnly.messages).toHaveLength(1);
+    expect(reasoningOnly.messages[0]).toMatchObject({
+      content: "", reasoning: "thought", reasoningDurationMs: 1350,
+    });
+  });
   it("sends a thinking override for JSON and attachment submissions", () => {
     const override = { value: "high" };
     const json = buildStreamBody(1, "hello", "thread", undefined, { thinkingOverride: override });

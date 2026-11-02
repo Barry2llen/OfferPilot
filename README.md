@@ -53,6 +53,8 @@ The three subprojects keep their dependencies and commands independent:
 - AI conversations: `/ai/chat` for synchronous responses and
   `/ai/chat/stream` for SSE streaming, with text, image, PDF, DOCX, and common
   text-file attachments.
+  Thinking text and its recorded duration are restored from saved conversation
+  history for provider content blocks as well as legacy reasoning metadata.
 - File library: the frontend provides a file-library page and the backend
   exposes `/ai/files` endpoints for viewing and reusing historical chat
   attachments across conversations.

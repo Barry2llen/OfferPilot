@@ -369,7 +369,8 @@ async def list_chat_histories(
     summary="Get AI conversation history",
     description=(
         "Read the complete message history for a thread_id from the latest LangGraph checkpoint "
-        "and convert it into a simplified structure for the frontend."
+        "and convert it into a simplified structure for the frontend. Provider reasoning "
+        "blocks and legacy reasoning metadata are exposed separately with recorded duration."
     ),
     response_description="Returns the complete history for the requested conversation.",
     responses={

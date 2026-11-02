@@ -146,7 +146,10 @@ class AIChatHistoryMessage(BaseModel):
     )
     reasoning: str | None = Field(
         default=None,
-        description="Intermediate reasoning before model inference or tool calls; the frontend should render it collapsed.",
+        description=(
+            "Assistant reasoning extracted from provider content blocks or reasoning_content "
+            "metadata. Kept separate from the answer and rendered collapsed."
+        ),
         examples=["我需要先检索最新资料。"],
     )
     reasoning_duration_ms: int | None = Field(
