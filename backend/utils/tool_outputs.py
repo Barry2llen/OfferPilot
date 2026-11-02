@@ -13,6 +13,7 @@ SEARCH_RESULT_TOOL_NAMES = {
 }
 SEARCH_RESULTS_EMPTY_MESSAGE = "未提取到可展示的搜索链接"
 QUERY_TOOL_NAME = "query"
+ANALYSIS_TOOL_NAMES = {"analyze_resume", "analyze_job_description"}
 
 _SEARCH_RESULT_FRONTEND_FIELDS = ("url", "title", "favicon")
 _SEARCH_RESULT_TEXT_FIELD_MAP = {
@@ -30,11 +31,55 @@ def summarize_tool_output(tool_name: str, output: Any) -> Any:
     if tool_name == QUERY_TOOL_NAME:
         return summarize_query_tool_output(output)
 
+    if tool_name in ANALYSIS_TOOL_NAMES:
+        return summarize_analysis_tool_output(output)
+
     if tool_name not in SEARCH_RESULT_TOOL_NAMES:
         return output
 
     summaries = summarize_search_tool_output(output)
     return summaries if summaries else {"message": SEARCH_RESULTS_EMPTY_MESSAGE}
+
+
+def summarize_analysis_tool_output(output: Any) -> dict[str, Any]:
+    if isinstance(output, BaseMessage):
+        artifact = getattr(output, "artifact", None)
+        if isinstance(artifact, dict):
+            return artifact
+        output = output.content
+
+    if isinstance(output, str):
+        try:
+            output = json.loads(output)
+        except json.JSONDecodeError:
+            return {"status": "unknown", "detail": output}
+
+    if isinstance(output, dict):
+        return output
+    return {"status": "unknown", "detail": str(output)}
+
+
+def is_tool_output_error(output: Any) -> bool:
+    if getattr(output, "status", None) == "error":
+        return True
+
+    artifact = getattr(output, "artifact", None)
+    if isinstance(artifact, dict) and artifact.get("status") == "failed":
+        return True
+
+    content = getattr(output, "content", None)
+    if isinstance(content, str):
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get("status") in {"error", "failed"}:
+            return True
+
+    if isinstance(output, dict):
+        return output.get("status") in {"error", "failed"}
+
+    return False
 
 
 def summarize_query_tool_output(output: Any) -> dict[str, Any]:
@@ -232,8 +277,11 @@ def _parse_repr_search_result_text(output: str) -> list[dict[str, str]]:
 
 __all__ = [
     "QUERY_TOOL_NAME",
+    "ANALYSIS_TOOL_NAMES",
     "SEARCH_RESULT_TOOL_NAMES",
     "SEARCH_RESULTS_EMPTY_MESSAGE",
+    "is_tool_output_error",
+    "summarize_analysis_tool_output",
     "summarize_query_tool_output",
     "summarize_search_tool_output",
     "summarize_tool_output",

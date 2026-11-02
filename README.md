@@ -254,7 +254,7 @@ The Electron GUI starts visibly; hidden startup is reserved for background helpe
 - `/ai/files`: chat-attachment library list, detail, and original-file
   access.
 
-AI streaming events include `thread`, `token`, `tool_start`,
+AI streaming events include `thread`, `token`, `tool_start`, `tool_progress`,
 `tool_end`, `tool_error`, `input_required`, `input_resolved`, `run_status`,
 `snapshot`, `final`, and `error`. The
 frontend also supports `reasoning` events. A `thread` event can include
@@ -307,6 +307,23 @@ Simplified Chinese. REST and SSE requests send `Accept-Language`; the backend
 returns matching `Content-Language` and localizes known errors and temporary
 progress messages. AI output, user input, and source documents remain
 unchanged.
+
+## Supervisor analysis tools
+
+Chat can run resume and job-description analysis with the selected conversation
+model. Resume analysis accepts an existing resume ID or a supported file-library
+file ID; JD analysis accepts pasted text, a source URL and/or image file IDs.
+The tools create or update the same records used by the resume and JD pages.
+Chat tool cards show progress, retries, errors and links to the result pages.
+An application-wide `/analysis/events` subscription keeps lists and details up
+to date after navigation or reconnection.
+
+Leaving the chat or disconnecting keeps analysis running. Explicitly stopping
+the chat cancels its unfinished analysis and records a failure marked cancelled.
+An already-running resume analysis is left running when requested again. Backend
+restart marks abandoned analyses failed; completed results remain available.
+See [the chat run protocol](backend/docs/chat-runs.md) for event payloads and
+lifecycle details. No database migration or new configuration is required.
 
 ## Development conventions
 

@@ -32,6 +32,7 @@ export default function ChatMessage({ message, streaming = false }: Props) {
       <ToolCallCard
         entry={{
           name: message.toolName || "unknown_tool",
+          toolCallId: message.toolCallId,
           input: message.toolInput,
           output:
             message.toolStatus === "error"
@@ -39,8 +40,9 @@ export default function ChatMessage({ message, streaming = false }: Props) {
               : message.toolOutput ?? message.content,
           error:
             message.toolStatus === "error"
-              ? message.toolError ?? message.content
+              ? message.toolError ?? message.toolAnalysis?.error ?? message.content
               : undefined,
+          analysis: message.toolAnalysis,
           status: normalizeToolStatus(message.toolStatus),
         }}
       />

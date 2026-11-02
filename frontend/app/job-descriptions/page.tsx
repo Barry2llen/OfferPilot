@@ -5,6 +5,7 @@ import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import Card from "@/app/components/ui/card";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
+import AnalysisTaskStatus from "@/app/components/analysis/analysis-task-status";
 import ChatAttachmentCard from "@/app/components/chat/chat-attachment-card";
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
 import { Skeleton } from "@/app/components/ui/skeleton";
@@ -35,6 +36,7 @@ import type {
   JobDescriptionStreamLabels,
   JobDescriptionTask,
 } from "@/app/lib/job-descriptions/types";
+import { analysisTaskKey } from "@/app/lib/analysis-events/types";
 
 interface LocalJdImage {
   key: string;
@@ -72,7 +74,7 @@ function isImageFile(file: ChatFileListItem): boolean {
 export default function JobDescriptionsPage() {
   const { t } = useTranslation();
   const fetchAnalyses = useCallback(() => jobDescriptionsApi.list(), []);
-  const { data, loading, error, refetch } = useAsyncData(fetchAnalyses, [
+  const { data, loading, error, refetch, refresh } = useAsyncData(fetchAnalyses, [
     fetchAnalyses,
   ]);
   const [models, setModels] = useState<ModelSelectionResponse[]>([]);
@@ -95,6 +97,10 @@ export default function JobDescriptionsPage() {
   const { state } = useAppContext();
   const { setModelSelection } = useAppActions();
   const { addToast } = useToast();
+
+  useEffect(() => {
+    if (state.analysisEventVersions.job_description > 0) refresh();
+  }, [refresh, state.analysisEventVersions.job_description]);
 
   useEffect(
     () => () => {
@@ -519,6 +525,13 @@ export default function JobDescriptionsPage() {
                   {item.error_message && (
                     <p className="mt-2 text-sm text-error-text">{item.error_message}</p>
                   )}
+                  <AnalysisTaskStatus
+                    task={
+                      state.analysisTasks[
+                        analysisTaskKey("job_description", item.id)
+                      ]
+                    }
+                  />
                   <p className="mt-2 text-xs text-text-muted">
                     {formatTime(item.created_at)} · {t("jobDescription.countBlocksFacts", {
                       blocks: formatLocaleNumber(item.block_count),

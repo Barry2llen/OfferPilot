@@ -53,14 +53,7 @@ class ResumeService:
         return self._to_detail(self._require_resume(resume_id))
 
     def create_from_file(self, uploaded_file: UploadedResumeFile) -> ResumeDetail:
-        filename = Path(uploaded_file.filename).name
-        if not filename:
-            raise ResumeValidationError("Uploaded file name is required.")
-        if not uploaded_file.content:
-            raise EmptyResumeContentError("Uploaded file is empty.")
-
-        suffix = Path(filename).suffix.lower()
-        self._validate_suffix(suffix)
+        filename, suffix = self.validate_upload(uploaded_file)
 
         saved_path = self._build_target_path(suffix)
         saved_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +75,17 @@ class ResumeService:
 
         return self._to_detail(created)
 
+    def validate_upload(self, uploaded_file: UploadedResumeFile) -> tuple[str, str]:
+        filename = Path(uploaded_file.filename).name
+        if not filename:
+            raise ResumeValidationError("Uploaded file name is required.")
+        if not uploaded_file.content:
+            raise EmptyResumeContentError("Uploaded file is empty.")
+
+        suffix = Path(filename).suffix.lower()
+        self._validate_suffix(suffix)
+        return filename, suffix
+
     def replace_resume_file(
         self,
         resume_id: int,
@@ -96,14 +100,7 @@ class ResumeService:
                 require_exists=False,
             )
 
-        filename = Path(uploaded_file.filename).name
-        if not filename:
-            raise ResumeValidationError("Uploaded file name is required.")
-        if not uploaded_file.content:
-            raise EmptyResumeContentError("Uploaded file is empty.")
-
-        suffix = Path(filename).suffix.lower()
-        self._validate_suffix(suffix)
+        filename, suffix = self.validate_upload(uploaded_file)
 
         saved_path = self._build_target_path(suffix)
         saved_path.parent.mkdir(parents=True, exist_ok=True)
@@ -160,7 +157,7 @@ class ResumeService:
         )
 
     def begin_extraction(self, resume_id: int, selection_id: int) -> ResumeDetail:
-        self._require_extraction_repository()
+        extraction_repository = self._require_extraction_repository()
         document = self._require_resume(resume_id)
         extraction = ResumeExtractionORM(
             resume_id=resume_id,
@@ -174,10 +171,10 @@ class ResumeService:
         )
 
         try:
-            self._extraction_repository.upsert(extraction)
-            self._extraction_repository.commit()
+            extraction_repository.upsert(extraction)
+            extraction_repository.commit()
         except Exception:
-            self._extraction_repository.rollback()
+            extraction_repository.rollback()
             raise
 
         return self._to_detail(document)
@@ -188,7 +185,7 @@ class ResumeService:
         selection_id: int,
         resume: Resume,
     ) -> ResumeDetail:
-        self._require_extraction_repository()
+        extraction_repository = self._require_extraction_repository()
         document = self._require_resume(resume_id)
         sections = [section.model_dump(mode="json") for section in resume.sections]
         extraction = ResumeExtractionORM(
@@ -203,10 +200,10 @@ class ResumeService:
         )
 
         try:
-            self._extraction_repository.upsert(extraction)
-            self._extraction_repository.commit()
+            extraction_repository.upsert(extraction)
+            extraction_repository.commit()
         except Exception:
-            self._extraction_repository.rollback()
+            extraction_repository.rollback()
             raise
 
         return self._to_detail(document)
@@ -217,7 +214,7 @@ class ResumeService:
         selection_id: int,
         error_message: str,
     ) -> ResumeDetail:
-        self._require_extraction_repository()
+        extraction_repository = self._require_extraction_repository()
         document = self._require_resume(resume_id)
         extraction = ResumeExtractionORM(
             resume_id=resume_id,
@@ -231,10 +228,10 @@ class ResumeService:
         )
 
         try:
-            self._extraction_repository.upsert(extraction)
-            self._extraction_repository.commit()
+            extraction_repository.upsert(extraction)
+            extraction_repository.commit()
         except Exception:
-            self._extraction_repository.rollback()
+            extraction_repository.rollback()
             raise
 
         return self._to_detail(document)
@@ -352,9 +349,10 @@ class ResumeService:
             return None
         return normalized[:180]
 
-    def _require_extraction_repository(self) -> None:
+    def _require_extraction_repository(self) -> ResumeExtractionRepository:
         if self._extraction_repository is None:
             raise RuntimeError("Resume extraction repository is required.")
+        return self._extraction_repository
 
     def _resolve_storage_path(
         self,

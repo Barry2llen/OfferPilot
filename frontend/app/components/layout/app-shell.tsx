@@ -15,7 +15,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           sidebarCollapsed ? "lg:pl-16" : "lg:pl-60"
         }`}
       >
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto pt-16 lg:pt-0">{children}</main>
       </div>
     </div>
   );

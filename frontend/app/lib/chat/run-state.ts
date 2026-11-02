@@ -47,7 +47,7 @@ export function isProjectedEvent(
   )
     return false;
   return (
-    !["tool_start", "tool_end", "tool_error"].includes(item.event) ||
+    !["tool_start", "tool_progress", "tool_end", "tool_error"].includes(item.event) ||
     (typeof data.tool_call_id === "string" && data.tool_call_id.length > 0)
   );
 }

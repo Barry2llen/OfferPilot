@@ -279,10 +279,7 @@ def test_analyze_job_description_rejects_empty_input(
         )
 
     assert response.status_code == 422
-    assert (
-        "JD text, source URL, or at least one image is required."
-        in response.json()["detail"]
-    )
+    assert "必须提供 JD 文本、来源 URL 或至少一张图片。" in response.json()["detail"]
 
 
 def test_analyze_job_description_returns_404_for_missing_selection(

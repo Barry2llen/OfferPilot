@@ -18,6 +18,7 @@ from schemas.config.base import Config
 from utils.custom_events import _adispatch_custom_event_safely
 from utils.json import jsonify
 from utils.logger import logger
+from utils.tool_outputs import ANALYSIS_TOOL_NAMES, is_tool_output_error
 
 from ..base import BaseAgentState, BaseGraph, InputRequest
 from ..compaction import (
@@ -84,6 +85,9 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 tool_call_id=tool_call.get("id") or "",
                 name=tool_call["name"],
             )
+
+        if tool_call["name"] in ANALYSIS_TOOL_NAMES and is_tool_output_error(msg):
+            msg.status = "error"
 
         if tool and tool.return_direct and msg.status != "error":
             msg.additional_kwargs.update({"return_direct": True})

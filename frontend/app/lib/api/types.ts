@@ -198,6 +198,30 @@ export interface ChatFileListItem {
 export type ChatFileDetail = ChatFileListItem;
 
 // ─── AI Chat ───
+export type AnalysisResourceType = "resume" | "job_description";
+
+export interface AnalysisToolResult {
+  resource_type?: AnalysisResourceType;
+  resource_id?: number;
+  job_id?: string;
+  status: "processing" | "parsed" | "failed";
+  error?: string;
+  detail?: ResumeDetail | JobDescriptionAnalysisDetail;
+}
+
+export interface AnalysisToolProgressEvent {
+  tool_call_id: string;
+  tool_name: "analyze_resume" | "analyze_job_description";
+  resource_type: AnalysisResourceType;
+  resource_id: number;
+  job_id: string;
+  event_id: number;
+  event: string;
+  progress?: number;
+  message?: string;
+  detail?: string;
+}
+
 export interface AIChatHistorySummary {
   thread_id: string;
   title: string;

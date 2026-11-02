@@ -6,6 +6,19 @@ import type {
   ChatAttachmentRef,
   QueryChoice,
 } from "@/app/lib/api/types";
+import type { AnalysisResourceType } from "@/app/lib/api/types";
+
+export interface AnalysisToolProgress {
+  resourceType: AnalysisResourceType;
+  resourceId: number;
+  jobId?: string;
+  eventId?: number;
+  status: "processing" | "parsed" | "failed";
+  progress: number;
+  message: string | null;
+  modelError: string | null;
+  error: string | null;
+}
 
 export interface ToolCallEntry {
   toolCallId?: string;
@@ -14,6 +27,7 @@ export interface ToolCallEntry {
   output?: unknown;
   error?: string;
   status: "running" | "success" | "error";
+  analysis?: AnalysisToolProgress;
 }
 
 export interface ChatAttachmentItem {
@@ -47,6 +61,7 @@ export interface ChatMessage {
   toolInput?: Record<string, unknown>;
   toolOutput?: unknown;
   toolError?: string;
+  toolAnalysis?: AnalysisToolProgress;
 }
 
 export interface ChatStreamEvent {

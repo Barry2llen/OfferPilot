@@ -1,6 +1,5 @@
 from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from fastapi.responses import StreamingResponse
@@ -8,8 +7,6 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from db.repositories import (
-    ChatFileRepository,
-    ChatThreadFileRepository,
     JobDescriptionAnalysisRepository,
     ModelSelectionRepository,
 )
@@ -27,14 +24,12 @@ from schemas.job_description_analysis import (
     JobDescriptionAnalysisListItem,
 )
 from services import (
-    ChatFileService,
     JobDescriptionAnalysisService,
     ModelSelectionService,
     UploadedChatFile,
 )
 from services.jd_analysis_jobs import JdAnalysisJobManager
 from utils.i18n import request_locale
-from utils.stream import render_sse_event
 
 router = APIRouter(prefix="/job-descriptions", tags=["job-descriptions"])
 
@@ -83,14 +78,6 @@ def _build_analysis_service(session: Session) -> JobDescriptionAnalysisService:
     return JobDescriptionAnalysisService(JobDescriptionAnalysisRepository(session))
 
 
-def _build_chat_file_service(request: Request, session: Session) -> ChatFileService:
-    return ChatFileService(
-        file_repository=ChatFileRepository(session),
-        thread_file_repository=ChatThreadFileRepository(session),
-        upload_dir=request.app.state.config.chat_file_upload_dir,
-    )
-
-
 def _get_model_selection(selection_id: int, session: Session):
     selection_service = ModelSelectionService(ModelSelectionRepository(session))
     selection = selection_service.get_by_id(selection_id)
@@ -100,10 +87,6 @@ def _get_model_selection(selection_id: int, session: Session):
             detail=f"Model selection not found: {selection_id}",
         )
     return selection
-
-
-def _sse(event: str, data: dict[str, Any]) -> str:
-    return render_sse_event(event, data)
 
 
 async def _read_upload_file(file: StarletteUploadFile) -> bytes:
@@ -280,33 +263,14 @@ async def analyze_job_description(
 ) -> StreamingResponse:
     payload = await _parse_payload(request)
     selection = _get_model_selection(payload.selection_id, session)
-    chat_file_service = _build_chat_file_service(request, session)
-    analysis_service = _build_analysis_service(session)
-    created_file_paths = []
-
     try:
-        stored_files = chat_file_service.store_files(payload.uploaded_files)
-        created_file_paths = stored_files.created_file_paths
-        image_file_ids = [record.id for record in stored_files.records]
-        images = [
-            analysis_service.image_record_to_data_url(record)
-            for record in stored_files.records
-        ]
-
-        for file_id in payload.file_ids:
-            stored = chat_file_service.get_file_raw(file_id)
-            images.append(analysis_service.stored_file_to_data_url(stored))
-            image_file_ids.append(file_id)
-
-        analysis_service.validate_sources(
+        handle = await request.app.state.analysis_service.start_job_description(
+            selection=selection,
             jd_text=payload.jd_text,
             source_url=payload.source_url,
-            image_file_ids=image_file_ids,
-        )
-        detail = analysis_service.create_processing(
-            selection_id=payload.selection_id,
-            source_url=payload.source_url,
-            image_file_ids=image_file_ids,
+            file_ids=payload.file_ids,
+            uploaded_files=payload.uploaded_files,
+            locale=request_locale(request),
         )
     except (
         ChatFileNotFoundError,
@@ -316,28 +280,10 @@ async def analyze_job_description(
         ResumeValidationError,
         UnsupportedChatFileError,
     ) as error:
-        session.rollback()
-        for path in created_file_paths:
-            path.unlink(missing_ok=True)
         _raise_input_error(error)
-
-    manager: JdAnalysisJobManager = request.app.state.jd_analysis_jobs
-    job_id = await manager.start(
-        analysis_id=detail.id,
-        selection_id=payload.selection_id,
-        selection=selection,
-        jd_text=payload.jd_text,
-        source_url=payload.source_url,
-        images=images,
-        initial_event=_sse("job_description", {"job_description": detail}),
-        locale=request_locale(request),
-    )
-
     return StreamingResponse(
         _stream_jd_analysis(
-            request=request,
-            analysis_id=detail.id,
-            job_id=job_id,
+            request=request, analysis_id=handle.resource_id, job_id=handle.job_id
         ),
         media_type="text/event-stream",
     )

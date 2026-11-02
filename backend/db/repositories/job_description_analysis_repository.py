@@ -1,4 +1,6 @@
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from db.models import JobDescriptionAnalysisORM
@@ -9,6 +11,19 @@ class JobDescriptionAnalysisRepository:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def recover_processing(self) -> None:
+        self._session.execute(
+            update(JobDescriptionAnalysisORM)
+            .where(
+                JobDescriptionAnalysisORM.status == "processing",
+            )
+            .values(
+                status="failed",
+                error_message="Backend stopped; analysis was interrupted.",
+                completed_at=datetime.now(),
+            )
+        )
 
     def create(self, analysis: JobDescriptionAnalysisORM) -> JobDescriptionAnalysisORM:
         self._session.add(analysis)
@@ -21,7 +36,7 @@ class JobDescriptionAnalysisRepository:
             JobDescriptionAnalysisORM.created_at.desc(),
             JobDescriptionAnalysisORM.id.desc(),
         )
-        return self._session.scalars(statement).all()
+        return list(self._session.scalars(statement).all())
 
     def get_by_id(self, analysis_id: int) -> JobDescriptionAnalysisORM | None:
         return self._session.get(JobDescriptionAnalysisORM, analysis_id)

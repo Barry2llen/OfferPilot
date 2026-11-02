@@ -6,6 +6,7 @@ interface UseAsyncDataResult<T> {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  refresh: () => void;
 }
 
 export function useAsyncData<T>(
@@ -16,23 +17,25 @@ export function useAsyncData<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const requestRef = useRef(0);
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
+  const fetch = useCallback(async (showLoading = true) => {
+    const request = ++requestRef.current;
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const result = await fetcher();
-      if (mountedRef.current) {
+      if (mountedRef.current && request === requestRef.current) {
         setData(result);
       }
     } catch (err: unknown) {
-      if (mountedRef.current) {
+      if (mountedRef.current && request === requestRef.current) {
         const message =
           err instanceof Error ? err.message : i18n.t("common.unknown");
         setError(message);
       }
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && request === requestRef.current) {
         setLoading(false);
       }
     }
@@ -44,8 +47,18 @@ export function useAsyncData<T>(
     fetch();
     return () => {
       mountedRef.current = false;
+      requestRef.current += 1;
     };
   }, [fetch]);
 
-  return { data, loading, error, refetch: fetch };
+  const refetch = useCallback(() => void fetch(true), [fetch]);
+  const refresh = useCallback(() => void fetch(false), [fetch]);
+
+  return {
+    data,
+    loading,
+    error,
+    refetch,
+    refresh,
+  };
 }

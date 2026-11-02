@@ -1,5 +1,74 @@
 # Native asynchronous chat runs
 
+## Supervisor resume and job-description analysis
+
+The Supervisor registers two tools using the model selected for the current run:
+
+- `analyze_resume(resume_id?, file_id?)` requires exactly one source. An existing
+  resume is re-analyzed; a supported file-library attachment is copied into a new,
+  independently stored resume. Supported formats are PDF, DOCX, PNG, JPG and JPEG.
+- `analyze_job_description(jd_text?, source_url?, file_ids?)` requires at least one
+  source and creates a new record for every valid invocation. File IDs must refer
+  to PNG/JPG/JPEG images. Inputs may be combined.
+
+Tools use the existing workflow, automatic model retries, job manager and result
+repositories. They return `resource_type` (`resume` or `job_description`),
+`resource_id`, `job_id`, `status` and a structured `result` to the model. The tool
+artifact preserves the full persisted `detail` for display and history. Failures
+have ToolMessage status `error`, with record metadata when a record exists.
+An already-running resume analysis returns an error with the existing record
+link and `status: processing`; it is not restarted. File replacement retains its
+existing behavior and supersedes the previous job, whose result cannot overwrite
+the replacement. Invalid inputs are rejected before entering processing.
+
+Job tasks run in an isolated execution context. Internal model output, internal
+tools and user-input ports do not enter the Supervisor stream. Model retry
+exhaustion fails the analysis rather than waiting for a chat answer. The outer
+tool observes structured progress and waits for the persisted terminal result.
+File preparation and result writes own short database sessions in worker threads,
+so SQLite checkpoint writers can finish without blocking the event loop. Cancellation
+awaits any in-flight write before publishing its terminal outcome.
+New `tool_progress` events carry the normal chat run identity and `tool_call_id`,
+plus resource identity, `job_id`, the inner event name and progress/retry data:
+
+```json
+{"tool_name":"analyze_resume","tool_call_id":"call-1","resource_type":"resume","resource_id":3,"job_id":"job-1","event":"progress","progress":0.5,"message":"Extracted resume text."}
+```
+
+The normal `run_id`, `thread_id` and monotonic `event_id` fields are attached by
+ChatRunManager. Replay includes the original incremental events; snapshots merge
+updates per tool call so model retries retain the last progress and phase message.
+Progress after a tool terminal is ignored. Success and failure outputs retain
+record metadata in both live events and saved chat history.
+
+`GET /analysis/events` is an independent, application-wide SSE subscription. It
+starts with `snapshot`, whose `tasks` array contains current task projections;
+subsequent events are `resume`, `job_description`, `progress`, `model_error`,
+`final` and `error`. All carry `resource_type`, `resource_id`, `job_id` and an
+application-wide `event_id`. Snapshots contain status, progress, phase message,
+model retry and error information. Each connection and reconnection replaces
+the frontend task map and refreshes persisted list/detail data. Event sequence
+numbers restart with the backend; the initial snapshot resets that watermark.
+No historical event cursor is required on this endpoint.
+
+The feed keeps active tasks and up to 256 recent task projections; subscriber
+queues hold 128 events. Slow subscribers disconnect and recover with a fresh
+snapshot. Job-local event history is bounded to 256 events, and each job observer
+queues at most 128 events. A full job-observer queue drops its oldest update while
+keeping the subscription and terminal result; slow observation never cancels work.
+Progress and known errors are rendered in each subscriber's request locale.
+Persisted technical error details remain unchanged. AppProvider owns one
+subscription across pages; record refreshes occur on creation, terminal events
+and feed snapshots.
+
+Closing subscriptions or leaving a page never cancels analysis. Explicit chat
+cancellation cancels and awaits that run's unfinished analysis jobs, storing
+`failed` with `Analysis was cancelled.`. A result already persisted successfully
+stays successful. Cancellation and supersession preserve links in tool history.
+Application shutdown awaits jobs before closing database engines; startup marks
+abandoned processing records failed. Jobs are not resumed across a restart.
+These changes use existing tables and require no schema migration.
+
 ## Ownership
 
 ChatRunManager owns one Task per active run and one FIFO queue per conversation.

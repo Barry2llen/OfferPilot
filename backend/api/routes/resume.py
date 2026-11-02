@@ -1,5 +1,4 @@
 from collections.abc import AsyncGenerator, Generator
-from typing import Any
 from urllib.parse import quote
 
 from fastapi import (
@@ -30,13 +29,11 @@ from exceptions import (
 )
 from schemas.resume_document import (
     ResumeDetail,
-    ResumeDocument,
     ResumeListItem,
 )
 from services import ModelSelectionService, ResumeService, UploadedResumeFile
 from services.resume_extraction_jobs import ResumeExtractionJobManager
 from utils.i18n import request_locale
-from utils.stream import render_sse_event
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -87,10 +84,6 @@ async def _read_upload_file(file: UploadFile) -> bytes:
         await file.close()
 
 
-def _sse(event: str, data: dict[str, Any]) -> str:
-    return render_sse_event(event, data)
-
-
 def _get_model_selection(selection_id: int, session: Session):
     selection_service = ModelSelectionService(ModelSelectionRepository(session))
     selection = selection_service.get_by_id(selection_id)
@@ -100,10 +93,6 @@ def _get_model_selection(selection_id: int, session: Session):
             detail=f"Model selection not found: {selection_id}",
         )
     return selection
-
-
-def _resume_document_from_detail(detail: ResumeDetail) -> ResumeDocument:
-    return ResumeDocument.model_validate(detail.model_dump())
 
 
 async def _stream_resume_extraction(
@@ -210,41 +199,25 @@ async def upload_resume_file(
     session: Session = Depends(_get_request_db_session),
 ) -> StreamingResponse:
     selection = _get_model_selection(selection_id, session)
-    service = _build_resume_service(request, session)
     payload = await _read_upload_file(file)
-
     try:
-        detail = service.create_from_file(
-            UploadedResumeFile(
+        handle = await request.app.state.analysis_service.start_resume_file(
+            selection=selection,
+            uploaded_file=UploadedResumeFile(
                 filename=file.filename or "",
                 content_type=file.content_type,
                 content=payload,
-            )
+            ),
+            resume_id=None,
+            locale=request_locale(request),
         )
-        processing_detail = service.begin_extraction(detail.id, selection_id)
     except UnsupportedResumeFileError as error:
         raise HTTPException(status_code=415, detail=str(error)) from error
-    except (
-        EmptyResumeContentError,
-        ResumeValidationError,
-    ) as error:
+    except (EmptyResumeContentError, ResumeValidationError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-
-    manager: ResumeExtractionJobManager = request.app.state.resume_extraction_jobs
-    job_id = await manager.start(
-        resume_id=detail.id,
-        selection_id=selection_id,
-        selection=selection,
-        resume_document=_resume_document_from_detail(processing_detail),
-        initial_event=_sse("resume", {"resume": processing_detail}),
-        locale=request_locale(request),
-    )
-
     return StreamingResponse(
         _stream_resume_extraction(
-            request=request,
-            resume_id=detail.id,
-            job_id=job_id,
+            request=request, resume_id=handle.resource_id, job_id=handle.job_id
         ),
         media_type="text/event-stream",
     )
@@ -300,44 +273,27 @@ async def replace_resume_file(
     session: Session = Depends(_get_request_db_session),
 ) -> StreamingResponse:
     selection = _get_model_selection(selection_id, session)
-    service = _build_resume_service(request, session)
     payload = await _read_upload_file(file)
-
     try:
-        detail = service.replace_resume_file(
-            resume_id,
-            UploadedResumeFile(
+        handle = await request.app.state.analysis_service.start_resume_file(
+            selection=selection,
+            uploaded_file=UploadedResumeFile(
                 filename=file.filename or "",
                 content_type=file.content_type,
                 content=payload,
             ),
+            resume_id=resume_id,
+            locale=request_locale(request),
         )
-        processing_detail = service.begin_extraction(detail.id, selection_id)
     except ResumeNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except UnsupportedResumeFileError as error:
         raise HTTPException(status_code=415, detail=str(error)) from error
-    except (
-        EmptyResumeContentError,
-        ResumeValidationError,
-    ) as error:
+    except (EmptyResumeContentError, ResumeValidationError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-
-    manager: ResumeExtractionJobManager = request.app.state.resume_extraction_jobs
-    job_id = await manager.start(
-        resume_id=detail.id,
-        selection_id=selection_id,
-        selection=selection,
-        resume_document=_resume_document_from_detail(processing_detail),
-        initial_event=_sse("resume", {"resume": processing_detail}),
-        locale=request_locale(request),
-    )
-
     return StreamingResponse(
         _stream_resume_extraction(
-            request=request,
-            resume_id=detail.id,
-            job_id=job_id,
+            request=request, resume_id=handle.resource_id, job_id=handle.job_id
         ),
         media_type="text/event-stream",
     )

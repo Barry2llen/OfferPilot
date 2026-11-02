@@ -14,7 +14,11 @@ from schemas.ai import (
     AIChatHistorySummary,
 )
 from schemas.chat_file import ChatAttachmentRef
-from utils.tool_outputs import QUERY_TOOL_NAME, summarize_tool_output
+from utils.tool_outputs import (
+    ANALYSIS_TOOL_NAMES,
+    QUERY_TOOL_NAME,
+    summarize_tool_output,
+)
 
 _ROLE_BY_MESSAGE_TYPE = {
     "human": "user",
@@ -170,7 +174,11 @@ def _to_history_message(message: Any) -> AIChatHistoryMessage:
         content = ""
 
     if message_type == "tool" and message_name is not None:
-        tool_output = message if str(message_name) == QUERY_TOOL_NAME else content
+        tool_output = (
+            message
+            if str(message_name) in {QUERY_TOOL_NAME, *ANALYSIS_TOOL_NAMES}
+            else content
+        )
         content = summarize_tool_output(str(message_name), tool_output)
 
     payload: dict[str, Any] = {
@@ -283,6 +291,13 @@ def _has_display_content(content: Any) -> bool:
 
 
 def _message_text(message: Any) -> str:
+    if (
+        _message_type(message) == "tool"
+        and _message_attr(message, "name") in ANALYSIS_TOOL_NAMES
+    ):
+        result = summarize_tool_output(str(_message_attr(message, "name")), message)
+        if isinstance(result, dict) and isinstance(result.get("error"), str):
+            return result["error"]
     display_content = _message_display_content(message)
     if display_content is not None:
         return display_content
