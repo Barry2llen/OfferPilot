@@ -98,6 +98,7 @@ in the backend's model configuration database. Existing desktop databases are
 upgraded at startup. Live provider compatibility is not checked by self-check.
 Provider type changes are rejected if linked model selections have incompatible
 saved settings; adjust or remove those selections before changing the type.
+Advanced OpenAI-compatible extension fields are forwarded as request body fields.
 For a staged Linux backend, from `electron/`:
 
 ```sh

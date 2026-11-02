@@ -48,6 +48,8 @@ The three subprojects keep their dependencies and commands independent:
   Changing a provider's type is rejected with HTTP 422 if any linked model's
   saved API mode, thinking settings, or advanced parameters are incompatible.
   Adjust or remove the linked selections before switching provider types.
+  OpenAI-compatible extension fields such as `top_k` can be entered directly in
+  the advanced JSON object and are forwarded in the provider's request body.
 - AI conversations: `/ai/chat` for synchronous responses and
   `/ai/chat/stream` for SSE streaming, with text, image, PDF, DOCX, and common
   text-file attachments.

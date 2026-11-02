@@ -236,7 +236,11 @@ class ModelSelectionCreate(BaseModel):
         default=None, description="Provider-specific default thinking settings."
     )
     extra_params: dict[str, Any] = Field(
-        default_factory=dict, description="Additional provider request body parameters."
+        default_factory=dict,
+        description=(
+            "Additional provider request body parameters, including OpenAI-compatible "
+            "extensions. Credentials and application-managed fields are rejected."
+        ),
     )
 
 
@@ -276,7 +280,11 @@ class ModelSelectionUpdate(BaseModel):
         description="Provider-specific default thinking settings; null clears them.",
     )
     extra_params: dict[str, Any] | None = Field(
-        default=None, description="Additional provider request body parameters."
+        default=None,
+        description=(
+            "Additional provider request body parameters, including OpenAI-compatible "
+            "extensions. Credentials and application-managed fields are rejected."
+        ),
     )
 
 
@@ -320,5 +328,6 @@ class ModelSelectionResponse(BaseModel):
         default=None, description="Provider-specific default thinking settings."
     )
     extra_params: dict[str, Any] = Field(
-        default_factory=dict, description="Additional provider request body parameters."
+        default_factory=dict,
+        description="Saved provider request body parameters, including OpenAI-compatible extensions.",
     )

@@ -1,5 +1,6 @@
 import json
 from functools import lru_cache
+from inspect import signature
 from typing import Any, Literal
 
 from langchain.chat_models import BaseChatModel, init_chat_model
@@ -222,6 +223,27 @@ def _resolve_json_schema_ref(ref: str, root: dict[str, Any]) -> dict[str, Any] |
     return resolved if isinstance(resolved, dict) else None
 
 
+def _openai_model_options(
+    extra_params: dict[str, Any], model_class: type[BaseChatModel]
+) -> dict[str, Any]:
+    from openai.resources.chat.completions import Completions
+    from openai.resources.responses import Responses
+
+    native_fields = set(model_class.model_fields)
+    native_fields.update(
+        field.alias for field in model_class.model_fields.values() if field.alias
+    )
+    native_fields.update(signature(Completions.create).parameters)
+    native_fields.update(signature(Responses.create).parameters)
+    options = {key: value for key, value in extra_params.items() if key in native_fields}
+    extensions = {
+        key: value for key, value in extra_params.items() if key not in native_fields
+    }
+    if extensions:
+        options["extra_body"] = extensions
+    return options
+
+
 def load_chat_model(model_selection: ModelSelection | None, **kwargs) -> BaseChatModel:
     if model_selection is None:
         raise ChatModelLoadError("Model selection is required to load a chat model.")
@@ -265,6 +287,13 @@ def _load_chat_model_cached(
     options = json.loads(options_json)
     extra_params = options.get("extra_params") or {}
     options_kwargs = {} if model_provider == "google_genai" and extra_params else dict(extra_params)
+    if extra_params and model_provider in {"openai", "deepseek"}:
+        from langchain_openai import ChatOpenAI
+
+        model_class = (
+            DeepSeekThinkingChatModel if model_provider == "deepseek" else ChatOpenAI
+        )
+        options_kwargs = _openai_model_options(extra_params, model_class)
     thinking = options.get("thinking")
     mode = options.get("api_mode", "auto")
     if model_provider == "openai" and mode != "auto":
@@ -279,7 +308,10 @@ def _load_chat_model_cached(
         elif model_provider == "google_genai" and value is not None:
             options_kwargs["thinking_level" if kind == "level" else "thinking_budget"] = value
         elif model_provider == "deepseek" and value is not None:
-            options_kwargs["extra_body"] = {"thinking": {"type": "disabled" if value == "disabled" else "enabled"}}
+            options_kwargs["extra_body"] = {
+                **options_kwargs.get("extra_body", {}),
+                "thinking": {"type": "disabled" if value == "disabled" else "enabled"},
+            }
             if value != "disabled":
                 options_kwargs["reasoning_effort"] = value
         elif model_provider == "anthropic":

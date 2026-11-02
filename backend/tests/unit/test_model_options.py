@@ -1,9 +1,15 @@
+import json
+from typing import Any
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_openai import ChatOpenAI
+from openai import BadRequestError
 from sqlalchemy import inspect, text
 
-from agent.models.chat import load_chat_model
+from agent.models.chat import GoogleConfiguredChatModel, load_chat_model
 from api.routes.ai import ParsedAIChatPayload, _chat_fingerprint
 from db.engine import DatabaseManager
 from exceptions.agent import ModelRequestConfigurationError
@@ -106,6 +112,7 @@ def test_responses_payload_preserves_tool_history():
         ),
         ToolMessage(content="sunny", tool_call_id="call_1"),
     ]
+    assert isinstance(model, ChatOpenAI)
     payload = model._get_request_payload(
         messages,
         tools=[
@@ -125,9 +132,73 @@ def test_responses_payload_preserves_tool_history():
     load_chat_model.cache_clear()
 
 
+@pytest.mark.parametrize(
+    ("provider", "api_mode"),
+    [
+        ("OpenAI Compatible", "chat_completions"),
+        ("OpenAI Compatible", "responses"),
+        ("OpenAI Compatible", "auto"),
+        ("DeepSeek", "auto"),
+    ],
+)
+async def test_openai_extension_parameters_reach_the_http_request(
+    provider: str, api_mode: str
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(400, json={"error": {"message": "mock rejection"}})
+
+    extra: dict[str, Any] = {"top_k": 40, "top_p": 0.7, "temperature": 0.8}
+    if provider == "OpenAI Compatible" and api_mode != "chat_completions":
+        extra["text"] = {"verbosity": "low"}
+        extra["reasoning"] = {"summary": "auto"}
+    selected = selection(
+        provider,
+        api_mode=api_mode,
+        thinking={"type": "deepseek" if provider == "DeepSeek" else "effort", "value": "high"},
+        extra_params=extra,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        model = load_chat_model(
+            selected, http_async_client=client, temperature=0, max_retries=0
+        )
+        bound = model.bind_tools(
+            [{"name": "example", "parameters": {"type": "object", "properties": {}}}]
+        )
+        try:
+            with pytest.raises(BadRequestError, match="mock rejection"):
+                await bound.ainvoke([HumanMessage(content="hello")])
+        finally:
+            load_chat_model.cache_clear()
+    assert len(requests) == 1
+    payload = json.loads(requests[0].content)
+    assert payload["top_k"] == 40
+    assert payload["top_p"] == 0.7
+    assert payload["temperature"] == 0
+    assert "extra_body" not in payload
+    assert payload["model"] == "example"
+    assert len(payload["tools"]) == 1
+    if provider == "OpenAI Compatible" and api_mode != "chat_completions":
+        assert requests[0].url.path.endswith("/responses")
+        assert payload["text"] == {"verbosity": "low"}
+        assert payload["reasoning"] == {"summary": "auto", "effort": "high"}
+        assert payload["input"]
+    else:
+        assert requests[0].url.path.endswith("/chat/completions")
+        assert payload["messages"]
+        assert payload["reasoning_effort"] == "high"
+    if provider == "DeepSeek":
+        assert payload["thinking"] == {"type": "enabled"}
+
+
 def test_thinking_override_does_not_modify_configuration():
     original = selection("OpenAI", thinking={"type": "effort", "value": "high"})
-    assert apply_thinking_override(original, {"value": None}).thinking.value is None
+    overridden = apply_thinking_override(original, {"value": None})
+    assert overridden.thinking is not None
+    assert original.thinking is not None
+    assert overridden.thinking.value is None
     assert original.thinking.value == "high"
     with pytest.raises(ValueError):
         apply_thinking_override(original, {"value": "invalid"})
@@ -167,11 +238,13 @@ def test_google_advanced_fields_are_sent_and_structured_temperature_wins():
         extra_params={"generationConfig": {"presencePenalty": 0.4, "temperature": 0.8}},
     )
     model = load_chat_model(selected)
+    assert isinstance(model, GoogleConfiguredChatModel)
     config = model._prepare_request([HumanMessage(content="hello")])["config"]
     assert config.presence_penalty == 0.4
     assert config.temperature == 0.8
     assert config.thinking_config.thinking_level.value.lower() == "low"
     structured = load_chat_model(selected, temperature=0)
+    assert isinstance(structured, GoogleConfiguredChatModel)
     assert (
         structured._prepare_request([HumanMessage(content="hello")])[
             "config"
