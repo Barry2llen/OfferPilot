@@ -45,6 +45,9 @@ The three subprojects keep their dependencies and commands independent:
   API-key aliases at any nesting level) or fields controlled by the application. Existing
   databases are upgraded at startup. These combinations are not automatically
   verified against live model services.
+  Changing a provider's type is rejected with HTTP 422 if any linked model's
+  saved API mode, thinking settings, or advanced parameters are incompatible.
+  Adjust or remove the linked selections before switching provider types.
 - AI conversations: `/ai/chat` for synchronous responses and
   `/ai/chat/stream` for SSE streaming, with text, image, PDF, DOCX, and common
   text-file attachments.

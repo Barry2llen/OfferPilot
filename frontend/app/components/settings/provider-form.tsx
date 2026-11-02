@@ -87,6 +87,11 @@ export default function ProviderForm({
             </option>
           ))}
         </select>
+        {isEdit && (
+          <p className="text-xs text-text-muted mt-1">
+            {t("settings.providerTypeCompatibility")}
+          </p>
+        )}
       </div>
 
       <div>

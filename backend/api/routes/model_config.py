@@ -16,6 +16,7 @@ from exceptions import (
     ModelProviderNotFoundError,
     ModelSelectionAlreadyExistsError,
     ModelSelectionNotFoundError,
+    ModelSelectionValidationError,
     UnsupportedModelProviderError,
 )
 from schemas.context_compaction import (
@@ -261,7 +262,11 @@ async def create_model_provider(
     "/model-providers/{provider_name}",
     response_model=ModelProviderResponse,
     summary="Update a model provider",
-    description="Update a model provider. Omit api_key to keep it, or pass null to clear it.",
+    description=(
+        "Update a model provider. Omit api_key to keep it, or pass null to clear it. "
+        "Provider type changes are rejected when existing model selections have "
+        "incompatible API modes, thinking settings, or advanced parameters."
+    ),
     response_description="Returns the updated model provider summary.",
     responses={
         404: _error_response(
@@ -269,8 +274,11 @@ async def create_model_provider(
             example="Model provider not found: default-openai",
         ),
         422: _error_response(
-            "The provider type is not supported.",
-            example="Unsupported provider value: Unknown",
+            "The provider type is unsupported or incompatible with existing model selections.",
+            example=(
+                "The provider type is incompatible with existing model selections; "
+                "update or remove them first."
+            ),
         ),
     },
 )
@@ -310,7 +318,7 @@ async def update_model_provider(
         )
         _commit_or_rollback(session)
         return _provider_response(updated)
-    except UnsupportedModelProviderError as error:
+    except (UnsupportedModelProviderError, ModelSelectionValidationError) as error:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(error)) from error
 

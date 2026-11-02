@@ -67,7 +67,10 @@ class ModelProviderUpdate(BaseModel):
 
     provider: Provider | None = Field(
         default=None,
-        description="New provider type. The current value is kept when omitted.",
+        description=(
+            "New provider type. The current value is kept when omitted. Existing "
+            "model selections must remain compatible with the new type."
+        ),
         examples=["DeepSeek"],
     )
     base_url: str | None = Field(

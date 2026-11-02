@@ -373,6 +373,7 @@ const zhCN = {
     notIdentified: "未识别",
   },
   settings: {
+    providerTypeCompatibility: "切换类型前，关联模型的 API 接口、思考设置和高级参数需兼容新类型。",
     thinking: "思考设置",
     thinkingValue: "思考强度值", thinkingBudget: "思考预算（token）",
     thinkingType_effort: "思考强度", thinkingType_level: "思考等级", thinkingType_budget: "Token 预算", thinkingType_deepseek: "思考模式", thinkingType_adaptive: "自适应思考",
@@ -858,6 +859,7 @@ const enUS = {
     notIdentified: "Not identified",
   },
   settings: {
+    providerTypeCompatibility: "Linked models must have API, thinking, and advanced settings compatible with the new provider type.",
     thinking: "Thinking",
     thinkingValue: "Thinking value", thinkingBudget: "Thinking budget (tokens)",
     thinkingType_effort: "Reasoning effort", thinkingType_level: "Thinking level", thinkingType_budget: "Token budget", thinkingType_deepseek: "Thinking mode", thinkingType_adaptive: "Adaptive thinking",

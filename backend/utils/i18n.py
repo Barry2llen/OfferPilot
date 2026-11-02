@@ -471,6 +471,7 @@ def _known_error_message(
     if raw.startswith("Value error, "):
         raw = raw.removeprefix("Value error, ")
     model_option_messages = {
+        "The provider type is incompatible with existing model selections; update or remove them first.": "提供商类型与已有模型配置不兼容，请先调整或移除关联的模型配置。",
         "API mode is only supported by OpenAI and OpenAI Compatible providers": "只有 OpenAI 和 OpenAI 兼容提供商支持选择 API 接口",
         "Thinking control is not supported by this provider": "该提供商不支持所选思考参数类型",
         "Invalid thinking token budget": "思考 token 预算无效",

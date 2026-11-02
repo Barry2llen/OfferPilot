@@ -96,6 +96,8 @@ nonzero means a dependency or render failed. JSON results are printed to stdout.
 Model API protocol, thinking defaults, and advanced request parameters are saved
 in the backend's model configuration database. Existing desktop databases are
 upgraded at startup. Live provider compatibility is not checked by self-check.
+Provider type changes are rejected if linked model selections have incompatible
+saved settings; adjust or remove those selections before changing the type.
 For a staged Linux backend, from `electron/`:
 
 ```sh
