@@ -255,6 +255,48 @@ def test_bad_request_message_is_localized_and_preserves_provider_detail():
     assert "unsupported reasoning" in public_run_error(error, "en-US")
 
 
+@pytest.mark.parametrize(
+    "extra_params",
+    [
+        {"anthropic_api_key": "sensitive-alias-value"},
+        {"deepseek_api_key": "sensitive-alias-value"},
+        {"custom": {"OpenAI-API-Key": "sensitive-alias-value"}},
+        {"custom": [{"google_api_key": "sensitive-alias-value"}]},
+    ],
+)
+def test_advanced_parameters_reject_credential_aliases(extra_params):
+    with pytest.raises(ValueError, match="Credentials cannot be stored"):
+        selection("Anthropic", extra_params=extra_params)
+
+
+def test_model_options_api_rejects_credential_alias_without_echoing_or_saving(
+    temporary_app_config: Config,
+):
+    with TestClient(create_app(temporary_app_config)) as client:
+        client.post(
+            "/model-providers", json={"name": "test", "provider": "Anthropic"}
+        )
+        payload = {"provider_name": "test", "model_name": "model"}
+        created = client.post("/model-selections", json=payload)
+        selection_id = created.json()["id"]
+        extra = {"anthropic_api_key": "sensitive-alias-value"}
+        rejected_create = client.post(
+            "/model-selections",
+            json={**payload, "model_name": "other", "extra_params": extra},
+        )
+        rejected_update = client.put(
+            f"/model-selections/{selection_id}", json={"extra_params": extra}
+        )
+        for rejected in (rejected_create, rejected_update):
+            assert rejected.status_code == 422
+            assert "sensitive-alias-value" not in rejected.text
+            assert "高级参数中不能保存凭据" in rejected.json()["detail"]
+        listed = client.get("/model-selections")
+        assert listed.status_code == 200
+        assert len(listed.json()) == 1
+        assert listed.json()[0]["extra_params"] == {}
+
+
 def test_reasoning_blocks_are_not_emitted_as_answer_text():
     reasoning = AIMessageChunk(
         content=[

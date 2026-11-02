@@ -127,17 +127,24 @@ def validate_model_options(
     ):
         raise ValueError("max_tokens is managed by the Anthropic budget setting")
 
+    credential_fields = {
+        "api_key",
+        "apikey",
+        "authorization",
+        "access_token",
+        "auth_token",
+        "secret_key",
+        "credentials",
+    }
+    credential_suffixes = tuple(f"_{field}" for field in credential_fields)
+
     def check_credentials(value: Any) -> None:
         if isinstance(value, dict):
             for key, item in value.items():
-                if key.lower().replace("-", "_") in {
-                    "api_key",
-                    "apikey",
-                    "authorization",
-                    "access_token",
-                    "secret_key",
-                    "credentials",
-                }:
+                normalized_key = key.lower().replace("-", "_")
+                if normalized_key in credential_fields or normalized_key.endswith(
+                    credential_suffixes
+                ):
                     raise ValueError(
                         "Credentials cannot be stored in advanced parameters"
                     )

@@ -41,7 +41,8 @@ The three subprojects keep their dependencies and commands independent:
   provider error. Structured extraction uses temperature 0. Some Anthropic models
   or thinking modes reject that temperature, so structured
   extraction with those combinations will fail until the model's settings are changed.
-  Advanced parameters must not contain credentials or fields controlled by the application. Existing
+  Advanced parameters must not contain credentials (including provider-specific
+  API-key aliases at any nesting level) or fields controlled by the application. Existing
   databases are upgraded at startup. These combinations are not automatically
   verified against live model services.
 - AI conversations: `/ai/chat` for synchronous responses and
