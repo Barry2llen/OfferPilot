@@ -64,6 +64,7 @@ runtime_packages = [
 metadata_packages = [
     "fastapi",
     "langchain",
+    "langchain-anthropic",
     "langchain-core",
     "langchain-deepseek",
     "langchain-google-genai",
@@ -86,6 +87,7 @@ hiddenimports = [
     "aiosqlite",
     "aspose.words",
     "fitz",
+    "langchain_anthropic",
     "uvicorn.lifespan.on",
     "uvicorn.loops.auto",
     "uvicorn.protocols.http.auto",

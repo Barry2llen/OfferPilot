@@ -1,12 +1,16 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
+import ThinkingControl from "@/app/components/settings/thinking-control";
+import { defaultThinkingType } from "@/app/lib/thinking";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
 import type {
   ModelSelectionCreate,
   ModelSelectionResponse,
   ModelProviderResponse,
   ModelSelectionUpdate,
+  ApiMode,
+  ThinkingSettings,
 } from "@/app/lib/api/types";
 
 interface SelectionFormProps {
@@ -34,12 +38,18 @@ export default function SelectionForm({
   const [supportsImage, setSupportsImage] = useState(
     initial?.supports_image_input || false
   );
+  const [apiMode, setApiMode] = useState<ApiMode>(initial?.api_mode ?? "auto");
+  const [thinking, setThinking] = useState<ThinkingSettings | null>(initial?.thinking ?? null);
+  const [extraJson, setExtraJson] = useState(JSON.stringify(initial?.extra_params ?? {}, null, 2));
+  const [jsonError, setJsonError] = useState(false);
   const [fetchedProviders, setFetchedProviders] = useState<
     ModelProviderResponse[]
   >([]);
 
   const isEdit = !!initial;
   const providers = providedProviders ?? fetchedProviders;
+  const selectedProvider = providers.find((provider) => provider.name === providerName)?.provider ?? initial?.provider.provider ?? "";
+  const thinkingValue = thinking ?? { type: defaultThinkingType(selectedProvider), value: null };
 
   useEffect(() => {
     if (providedProviders) {
@@ -54,10 +64,22 @@ export default function SelectionForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    let extraParams: unknown;
+    try {
+      extraParams = JSON.parse(extraJson);
+      if (!extraParams || typeof extraParams !== "object" || Array.isArray(extraParams)) throw new Error();
+      setJsonError(false);
+    } catch {
+      setJsonError(true);
+      return;
+    }
     await onSubmit({
       provider_name: providerName,
       model_name: modelName,
       supports_image_input: supportsImage,
+      api_mode: apiMode,
+      thinking: thinkingValue,
+      extra_params: extraParams as Record<string, unknown>,
     });
   };
 
@@ -69,7 +91,7 @@ export default function SelectionForm({
         </label>
         <select
           value={providerName}
-          onChange={(e) => setProviderName(e.target.value)}
+          onChange={(e) => { setProviderName(e.target.value); setThinking(null); setApiMode("auto"); }}
           required
           className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         >
@@ -86,6 +108,21 @@ export default function SelectionForm({
             {t("settings.noAvailableProviders")}
           </p>
         )}
+      </div>
+
+      {(selectedProvider === "OpenAI" || selectedProvider === "OpenAI Compatible") && <div>
+        <label htmlFor="api-mode" className="block text-sm font-medium mb-1.5">{t("settings.apiMode")}</label>
+        <select id="api-mode" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white" value={apiMode} onChange={(e) => setApiMode(e.target.value as ApiMode)}>
+          <option value="auto">{t("settings.apiAuto")}</option><option value="responses">Responses</option><option value="chat_completions">Chat Completions</option>
+        </select>
+      </div>}
+      <ThinkingControl provider={selectedProvider} value={thinkingValue} onChange={setThinking} disabled={submitting} />
+      {selectedProvider === "Anthropic" && <p className="text-xs text-warning-text">{t("settings.anthropicThinkingWarning")}</p>}
+      <div>
+        <label htmlFor="advanced-params" className="block text-sm font-medium mb-1.5">{t("settings.advancedParams")}</label>
+        <textarea id="advanced-params" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 font-mono text-sm" rows={4} value={extraJson} disabled={submitting} onChange={(e) => setExtraJson(e.target.value)} />
+        <p className="text-xs text-text-muted">{t("settings.advancedHelp")}</p>
+        {jsonError && <p role="alert" className="text-xs text-error-text">{t("settings.invalidJson")}</p>}
       </div>
 
       <div>

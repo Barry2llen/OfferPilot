@@ -14,6 +14,7 @@ from langgraph.runtime import Runtime
 
 from agent.interactions import InteractionContext, ask_user, interaction_context
 from exceptions import AgentStateError, ModelCallExecutionError
+from exceptions.agent import ModelRequestConfigurationError, is_model_bad_request
 from schemas.config.base import Config
 from utils.custom_events import _adispatch_custom_event_safely
 from utils.json import jsonify
@@ -41,6 +42,18 @@ from ..tools.base import Tools, ToolsBuilder, normalize_tools, resolve_tools
 
 
 def _message_reasoning_content(message: BaseMessage) -> str:
+    if isinstance(message.content, list):
+        parts: list[str] = []
+        for item in message.content:
+            if isinstance(item, dict) and item.get("type") in {"reasoning", "thinking", "reasoning_text"}:
+                value = item.get("text") or item.get("thinking")
+                if isinstance(value, str):
+                    parts.append(value)
+                for summary in item.get("summary") or []:
+                    if isinstance(summary, dict) and isinstance(summary.get("text"), str):
+                        parts.append(summary["text"])
+        if parts:
+            return "".join(parts)
     additional_kwargs = getattr(message, "additional_kwargs", None)
     if not isinstance(additional_kwargs, dict):
         return ""
@@ -503,6 +516,8 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                     logger.error(
                         f"Error calling model, retries in progress {_ + 1}/{max_retries}:\n{e}"
                     )
+                    if is_model_bad_request(e):
+                        raise ModelRequestConfigurationError(str(getattr(e, "message", e))) from e
 
             logger.error(f"Model call failed after {max_retries} retries.")
 

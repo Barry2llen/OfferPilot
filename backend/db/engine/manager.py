@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listen
 from sqlalchemy.ext.asyncio import (
@@ -24,6 +24,22 @@ from schemas.config.database import (
     SQLiteDatabaseConfig,
 )
 from utils.logger import logger
+
+
+def _upgrade_model_selection(connection: Any) -> None:
+    columns = {
+        column["name"]
+        for column in inspect(connection).get_columns("tb_model_selection")
+    }
+    for name, sql_type in (
+        ("api_mode", "VARCHAR(32)"),
+        ("thinking", "JSON"),
+        ("extra_params", "JSON"),
+    ):
+        if name not in columns:
+            connection.execute(
+                text(f"ALTER TABLE tb_model_selection ADD COLUMN {name} {sql_type}")
+            )
 
 
 def _build_database_url(config: DatabaseConfig, *, async_mode: bool) -> str:
@@ -131,7 +147,9 @@ class DatabaseManager:
             return connection.execute(text("SELECT 1")).scalar_one() == 1
 
     def initialize_tables(self, sql_path: str = "sql/tables.sql") -> None:
-        Base.metadata.create_all(self.get_engine())
+        with self.get_engine().begin() as connection:
+            Base.metadata.create_all(connection)
+            _upgrade_model_selection(connection)
         logger.info(
             "Initialized database tables from ORM metadata; schema snapshot: "
             f"{sql_path}"
@@ -222,6 +240,7 @@ class AsyncDatabaseManager:
     async def initialize_tables(self, sql_path: str = "sql/tables.sql") -> None:
         async with self.get_engine().begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(_upgrade_model_selection)
         logger.info(
             "Initialized async database tables from ORM metadata; schema snapshot: "
             f"{sql_path}"

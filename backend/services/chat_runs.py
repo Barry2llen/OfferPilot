@@ -27,7 +27,7 @@ from db.repositories import (
 )
 from db.repositories.chat_run_repository import ChatRunRepository
 from schemas.config import Config
-from schemas.model_selection import ModelSelection
+from schemas.model_selection import ModelSelection, ThinkingSettings
 from services.chat_events import (
     _extract_chunk_reasoning,
     _extract_chunk_text,
@@ -46,6 +46,28 @@ from utils.tool_outputs import (
 )
 
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
+
+
+def apply_thinking_override(
+    selection: ModelSelection, override: dict[str, Any] | None
+) -> ModelSelection:
+    if override is None:
+        return selection
+    default_types = {
+        "openai": "effort",
+        "openai compatible": "effort",
+        "openai-compatible": "effort",
+        "google": "level",
+        "deepseek": "deepseek",
+        "anthropic": "adaptive",
+    }
+    thinking = selection.thinking or ThinkingSettings.model_validate(
+        {"type": default_types[selection.provider.provider.lower()]}
+    )
+    updated = thinking.model_copy(update={"value": override.get("value")})
+    return ModelSelection.model_validate(
+        {**selection.model_dump(), "thinking": updated.model_dump()}
+    )
 
 
 @dataclass
@@ -500,12 +522,18 @@ class ChatRunManager:
     async def _execute(self, run: ChatRun) -> None:
         rid, tid = run.row["run_id"], run.row["thread_id"]
         sub = run.row["submission"]
+
+        async def resolve_selection() -> ModelSelection:
+            return apply_thinking_override(
+                await self._selection(sub["selection_id"]), sub.get("thinking_override")
+            )
+
         context = InteractionContext(
             self.broker,
             rid,
             tid,
             interactive=sub["interactive"],
-            resolve_model=lambda: self._selection(sub["selection_id"]),
+            resolve_model=resolve_selection,
             locale=sub["locale"],
         )
         token = interaction_context.set(context)
@@ -513,7 +541,7 @@ class ChatRunManager:
         try:
             await self._status(run, "running")
             await self._close_checkpoint(tid)
-            selection = await self._selection(sub["selection_id"])
+            selection = await resolve_selection()
 
             def validate_files():
                 with self.database.get_session_factory()() as session:
@@ -614,7 +642,7 @@ class ChatRunManager:
                     )
                     if text:
                         await self.publish(rid, "token", {"content": text})
-                    elif reasoning:
+                    if reasoning:
                         await self.publish(rid, "reasoning", {"content": reasoning})
                 output = _extract_event_output(event)
                 if output is not None:

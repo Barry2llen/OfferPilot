@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from schemas.chat_file import ChatAttachmentRef
 
 
+class ThinkingOverride(BaseModel):
+    value: str | int | None = Field(default=None, description="Temporary thinking value; null uses the provider default.", examples=["high"])
+
+
 class AIChatCommand(BaseModel):
     type: Literal["prompt", "continue", "retry", "query"] = Field(
         description=(
@@ -51,6 +55,7 @@ class AIChatRequest(BaseModel):
         description="Model selection record ID corresponding to tb_model_selection.id.",
         examples=[1],
     )
+    thinking_override: ThinkingOverride | None = Field(default=None, description="Temporary thinking value for this run.")
     prompt: str | None = Field(
         default=None,
         description="User text message. Optional when attachments are present and required for text-only requests.",
@@ -316,6 +321,7 @@ class AIChatStreamRequest(BaseModel):
         description="Model selection record ID corresponding to tb_model_selection.id.",
         examples=[1],
     )
+    thinking_override: ThinkingOverride | None = Field(default=None, description="Temporary thinking value for this run.")
     prompt: str | None = Field(
         default=None,
         description="User text message. Optional when attachments are present or when using a retry command.",

@@ -19,6 +19,7 @@ from fastapi import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse
 from langchain_core.messages import message_to_dict
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -42,6 +43,7 @@ from schemas.ai import (
     AIChatRequest,
     AIChatResponse,
     AIChatStreamRequest,
+    ThinkingOverride,
 )
 from schemas.chat_file import ChatFileDetail, ChatFileListItem
 from schemas.chat_run import ChatRunResponse, InputAnswer
@@ -95,6 +97,7 @@ class ParsedAIChatPayload:
     command: AIChatCommand | None
     file_ids: list[str]
     uploaded_files: list[UploadedChatFile]
+    thinking_override: ThinkingOverride | None = None
 
 
 def _build_chat_file_service(request: Request, session: Session) -> ChatFileService:
@@ -142,6 +145,7 @@ async def _parse_json_ai_chat_payload(
                 command=payload.command,
                 file_ids=payload.file_ids,
                 uploaded_files=[],
+                thinking_override=payload.thinking_override,
             )
 
         payload = AIChatRequest(**body)
@@ -152,6 +156,7 @@ async def _parse_json_ai_chat_payload(
             command=None,
             file_ids=payload.file_ids,
             uploaded_files=[],
+            thinking_override=payload.thinking_override,
         )
     except Exception as error:
         if isinstance(error, RequestValidationError):
@@ -175,6 +180,20 @@ async def _parse_multipart_ai_chat_payload(
     }
 
     command_raw = form.get("command")
+    thinking_raw = form.get("thinking_override")
+    if isinstance(thinking_raw, str) and thinking_raw.strip():
+        try:
+            payload_data["thinking_override"] = json.loads(thinking_raw)
+        except json.JSONDecodeError as error:
+            raise RequestValidationError(
+                [
+                    {
+                        "loc": ("body", "thinking_override"),
+                        "msg": str(error),
+                        "type": "json_invalid",
+                    }
+                ]
+            ) from error
     if isinstance(command_raw, str) and command_raw.strip():
         try:
             payload_data["command"] = json.loads(command_raw)
@@ -201,6 +220,7 @@ async def _parse_multipart_ai_chat_payload(
                 command=payload.command,
                 file_ids=payload.file_ids,
                 uploaded_files=uploaded_files,
+                thinking_override=payload.thinking_override,
             )
 
         payload = AIChatRequest(**payload_data)
@@ -211,6 +231,7 @@ async def _parse_multipart_ai_chat_payload(
             command=None,
             file_ids=payload.file_ids,
             uploaded_files=uploaded_files,
+            thinking_override=payload.thinking_override,
         )
     except Exception as error:
         if hasattr(error, "errors"):
@@ -549,6 +570,11 @@ def _chat_fingerprint(
             {
                 "thread_id": payload.thread_id,
                 "selection_id": payload.selection_id,
+                **(
+                    {"thinking_override": payload.thinking_override.model_dump()}
+                    if payload.thinking_override is not None
+                    else {}
+                ),
                 "prompt": payload.prompt,
                 "command": payload.command.model_dump() if payload.command else None,
                 "file_ids": payload.file_ids,
@@ -588,6 +614,25 @@ async def _submit_chat_run(request: Request, *, interactive=True):
     def prepare():
         with request.app.state.database.get_session_factory()() as session:
             selection = _get_model_selection(payload.selection_id, session)
+            if payload.thinking_override is not None:
+                from services.chat_runs import apply_thinking_override
+
+                try:
+                    apply_thinking_override(
+                        selection, payload.thinking_override.model_dump()
+                    )
+                except ValidationError as error:
+                    raise HTTPException(
+                        422,
+                        "; ".join(
+                            item["msg"]
+                            for item in error.errors(
+                                include_input=False, include_context=False
+                            )
+                        ),
+                    ) from error
+                except ValueError as error:
+                    raise HTTPException(422, str(error)) from error
             service = _build_chat_file_service(request, session)
             prompt = (
                 (payload.command.prompt if payload.command else None)
@@ -616,6 +661,9 @@ async def _submit_chat_run(request: Request, *, interactive=True):
             return {
                 "prompt": prompt,
                 "selection_id": payload.selection_id,
+                "thinking_override": payload.thinking_override.model_dump()
+                if payload.thinking_override
+                else None,
                 "human_message": message_to_dict(prepared.human_message),
                 "file_ids": [a.file_id for a in prepared.attachments],
                 "resolved_attachments": [
@@ -668,6 +716,11 @@ _RUN_BODY = {
                             "type": "string",
                             "description": "Existing conversation ID; omitted for a new conversation.",
                         },
+                        "thinking_override": (
+                            {"type": "string", "description": "JSON-encoded temporary thinking override, e.g. {\"value\":\"high\"}."}
+                            if media == "multipart/form-data"
+                            else {"type": "object", "description": "Temporary thinking value for this run; null value selects the provider default.", "properties": {"value": {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}}}
+                        ),
                         "file_ids": {
                             "type": "array",
                             "items": {"type": "string"},

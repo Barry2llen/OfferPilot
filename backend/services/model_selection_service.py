@@ -49,6 +49,9 @@ class ModelSelectionService:
             provider=self._to_provider_schema(selection.provider),
             model_name=selection.model_name,
             supports_image_input=selection.supports_image_input,
+            api_mode=selection.api_mode or "auto",
+            thinking=selection.thinking,
+            extra_params=selection.extra_params or {},
         )
 
     def _to_orm(self, selection: ModelSelection) -> ModelSelectionORM:
@@ -58,6 +61,9 @@ class ModelSelectionService:
             provider_name=selection.provider.name,
             model_name=selection.model_name,
             supports_image_input=selection.supports_image_input,
+            api_mode=selection.api_mode,
+            thinking=selection.thinking.model_dump() if selection.thinking else None,
+            extra_params=selection.extra_params,
         )
 
     def _to_provider_schema(self, provider: ModelProviderORM) -> ModelProvider:

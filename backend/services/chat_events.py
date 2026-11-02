@@ -51,13 +51,26 @@ def _extract_chunk_text(chunk: Any) -> str:
         for item in content:
             if isinstance(item, str):
                 parts.append(item)
-            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+            elif isinstance(item, dict) and item.get("type") in (None, "text", "output_text") and isinstance(item.get("text"), str):
                 parts.append(item["text"])
         return "".join(parts)
     return ""
 
 
 def _extract_chunk_reasoning(chunk: Any) -> str:
+    content = getattr(chunk, "content", None)
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") in {"reasoning", "thinking", "reasoning_text", "summary_text"}:
+                value = item.get("text") or item.get("thinking")
+                if isinstance(value, str):
+                    parts.append(value)
+                for summary in item.get("summary") or []:
+                    if isinstance(summary, dict) and isinstance(summary.get("text"), str):
+                        parts.append(summary["text"])
+        if parts:
+            return "".join(parts)
     additional_kwargs = getattr(chunk, "additional_kwargs", None)
     if not isinstance(additional_kwargs, dict):
         return ""

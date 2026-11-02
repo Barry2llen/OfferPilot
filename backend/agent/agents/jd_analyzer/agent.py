@@ -8,6 +8,7 @@ from langgraph.constants import END, START
 from langgraph.graph.state import StateGraph
 
 from agent.interactions import ask_user
+from exceptions.agent import ModelRequestConfigurationError, is_model_bad_request
 from schemas.config import Config
 from schemas.job_description import (
     JdFact,
@@ -313,6 +314,8 @@ class JdAnalyzerAgent(BaseAgent[State]):
                 )
                 break
             except Exception as e:
+                if is_model_bad_request(e):
+                    raise ModelRequestConfigurationError(str(getattr(e, "message", e))) from e
                 logger.error(
                     f"Error calling model for JD extraction after {max_retries} attempts:\n{e}"
                 )
@@ -432,6 +435,8 @@ class JdAnalyzerAgent(BaseAgent[State]):
                     ),
                 )
             except Exception as e:
+                if is_model_bad_request(e):
+                    raise ModelRequestConfigurationError(str(getattr(e, "message", e))) from e
                 logger.error(
                     f"Error extracting facts from JD block '{block.title}': {e}"
                 )

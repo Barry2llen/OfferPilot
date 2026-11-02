@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   beginChat,
+  buildStreamBody,
   clearCommittedMessages,
   createChatState,
+  formatDisplayContent,
   mapChatHistory,
   reduceChatEof,
   reduceChatEvent,
@@ -22,6 +24,18 @@ function event(event: string, data: Record<string, unknown> = {}) {
 }
 
 describe("chat stream adapter", () => {
+  it("does not render reasoning blocks as final answer text", () => {
+    expect(formatDisplayContent([{ type: "reasoning", text: "thought" }, { type: "text", text: "answer" }])).toBe("answer");
+    expect(formatDisplayContent([{ type: "reasoning", text: "thought" }])).toBe("");
+  });
+  it("sends a thinking override for JSON and attachment submissions", () => {
+    const override = { value: "high" };
+    const json = buildStreamBody(1, "hello", "thread", undefined, { thinkingOverride: override });
+    expect(json).toMatchObject({ thinking_override: override });
+    const form = buildStreamBody(1, "hello", "thread", undefined, { fileIds: ["file"], thinkingOverride: override });
+    expect(form).toBeInstanceOf(FormData);
+    expect((form as FormData).get("thinking_override")).toBe('{"value":"high"}');
+  });
   it("keeps concurrent analysis progress separate and ignores late updates", () => {
     let state = beginChat(createChatState(), "分析", undefined);
     for (const id of ["a", "b"]) {

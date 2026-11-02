@@ -1,6 +1,7 @@
 from collections.abc import Generator
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -94,6 +95,9 @@ def _selection_response(
         provider=_provider_response(selection.provider),
         model_name=selection.model_name,
         supports_image_input=selection.supports_image_input,
+        api_mode=selection.api_mode,
+        thinking=selection.thinking,
+        extra_params=selection.extra_params,
         context_window_tokens=DefaultContextBudgetPolicy(
             request.app.state.config.context_compaction
         ).resolve_max_context_tokens(selection),
@@ -444,6 +448,9 @@ async def create_model_selection(
                 provider=provider,
                 model_name=payload.model_name,
                 supports_image_input=payload.supports_image_input,
+                api_mode=payload.api_mode,
+                thinking=payload.thinking,
+                extra_params=payload.extra_params,
             )
         )
         _commit_or_rollback(session)
@@ -454,6 +461,18 @@ async def create_model_selection(
     except ModelProviderNotFoundError as error:
         session.rollback()
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValidationError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail="; ".join(
+                item["msg"]
+                for item in error.errors(include_input=False, include_context=False)
+            ),
+        ) from error
+    except ValueError as error:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.put(
@@ -511,6 +530,15 @@ async def update_model_selection(
                     if payload.supports_image_input is not None
                     else existing.supports_image_input
                 ),
+                api_mode=payload.api_mode
+                if payload.api_mode is not None
+                else existing.api_mode,
+                thinking=payload.thinking
+                if "thinking" in payload.model_fields_set
+                else existing.thinking,
+                extra_params=payload.extra_params
+                if payload.extra_params is not None
+                else existing.extra_params,
             )
         )
         _commit_or_rollback(session)
@@ -521,6 +549,18 @@ async def update_model_selection(
     except ModelSelectionNotFoundError as error:
         session.rollback()
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValidationError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail="; ".join(
+                item["msg"]
+                for item in error.errors(include_input=False, include_context=False)
+            ),
+        ) from error
+    except ValueError as error:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.delete(

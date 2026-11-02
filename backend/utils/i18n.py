@@ -468,6 +468,27 @@ def _known_error_message(
     """Translate known application errors without rewriting unknown technical details."""
 
     raw = str(error)
+    if raw.startswith("Value error, "):
+        raw = raw.removeprefix("Value error, ")
+    model_option_messages = {
+        "API mode is only supported by OpenAI and OpenAI Compatible providers": "只有 OpenAI 和 OpenAI 兼容提供商支持选择 API 接口",
+        "Thinking control is not supported by this provider": "该提供商不支持所选思考参数类型",
+        "Invalid thinking token budget": "思考 token 预算无效",
+        "Anthropic budget requires max_tokens greater than the budget": "Anthropic 的输出 token 上限必须大于思考预算",
+        "Invalid thinking value": "思考设置的值无效",
+        "Credentials cannot be stored in advanced parameters": "高级参数中不能保存凭据",
+        "max_tokens is managed by the Anthropic budget setting": "Anthropic 思考预算模式的输出上限由专门的设置管理",
+        "Google advanced parameters contain managed fields": "Google 高级参数包含由应用管理的字段",
+        "generationConfig must be an object": "generationConfig 必须是 JSON 对象",
+        "Specify generationConfig only once": "generationConfig 只能指定一次",
+    }
+    if raw in model_option_messages:
+        return model_option_messages[raw] if locale == "zh-CN" else raw
+    marker = "Advanced parameters conflict with managed fields: "
+    if raw.startswith(marker):
+        return ("高级参数与应用管理的字段冲突：" if locale == "zh-CN" else marker) + raw.removeprefix(marker)
+    if raw in {"reasoning contains managed request fields", "output_config contains managed request fields", "text contains managed request fields"}:
+        return f"{raw.split()[0]} 包含由应用管理的请求字段" if locale == "zh-CN" else raw
     run_error_key = _RUN_ERROR_KEYS.get(raw)
     if run_error_key is not None:
         return translate(run_error_key, locale)
@@ -665,6 +686,10 @@ def public_run_error(
 ) -> str:
     """Expose known domain errors; retain unknown diagnostics only in server logs."""
     raw = str(error)
+    from exceptions.agent import ModelRequestConfigurationError
+    if isinstance(error, ModelRequestConfigurationError):
+        prefix = "模型请求配置错误，请检查模型设置" if locale == "zh-CN" else "Model request configuration error; check model settings"
+        return f"{prefix}: {raw}"
     if raw in _RUN_ERROR_KEYS or raw.startswith(
         ("Model selection not found:", "Chat file not found:")
     ):

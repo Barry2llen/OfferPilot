@@ -7,11 +7,28 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_deepseek import ChatDeepSeek
-from pydantic import BaseModel
+from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel, Field, SecretStr
 
 from exceptions import ChatModelLoadError
-from schemas.model_selection import ModelSelection
+from schemas.model_selection import ModelSelection, google_extra_params
 from utils.logger import logger
+
+
+class GoogleConfiguredChatModel(ChatGoogleGenerativeAI):
+    """Apply native generation fields that the LangChain constructor does not forward."""
+
+    request_options: dict[str, Any] = Field(default_factory=dict, exclude=True)
+    forced_temperature: float | None = Field(default=None, exclude=True)
+
+    def _prepare_request(self, messages: Any, **kwargs: Any) -> dict[str, Any]:
+        request = super()._prepare_request(messages, **kwargs)
+        config = request["config"]
+        for key, value in self.request_options.items():
+            setattr(config, key, value)
+        if self.forced_temperature is not None:
+            config.temperature = self.forced_temperature
+        return request
 
 
 class DeepSeekThinkingChatModel(ChatDeepSeek):
@@ -213,6 +230,7 @@ def load_chat_model(model_selection: ModelSelection | None, **kwargs) -> BaseCha
         model_name=model_selection.model_name,
         base_url=model_selection.provider.base_url,
         api_key=model_selection.provider.api_key,
+        options_json=json.dumps({"api_mode": model_selection.api_mode, "thinking": model_selection.thinking.model_dump() if model_selection.thinking else None, "extra_params": model_selection.extra_params}, sort_keys=True),
         **kwargs,
     )
 
@@ -224,6 +242,7 @@ def _load_chat_model_cached(
     model_name: str,
     base_url: str | None,
     api_key: str | None,
+    options_json: str = "{}",
     **kwargs: Any,
 ) -> BaseChatModel:
 
@@ -243,14 +262,51 @@ def _load_chat_model_cached(
         case _:
             pass
 
+    options = json.loads(options_json)
+    extra_params = options.get("extra_params") or {}
+    options_kwargs = {} if model_provider == "google_genai" and extra_params else dict(extra_params)
+    thinking = options.get("thinking")
+    mode = options.get("api_mode", "auto")
+    if model_provider == "openai" and mode != "auto":
+        options_kwargs["use_responses_api"] = mode == "responses"
+    if thinking:
+        value, kind = thinking.get("value"), thinking["type"]
+        if model_provider == "openai" and value is not None:
+            if isinstance(options_kwargs.get("reasoning"), dict):
+                options_kwargs["reasoning"] = {**options_kwargs["reasoning"], "effort": value}
+            else:
+                options_kwargs["reasoning_effort"] = value
+        elif model_provider == "google_genai" and value is not None:
+            options_kwargs["thinking_level" if kind == "level" else "thinking_budget"] = value
+        elif model_provider == "deepseek" and value is not None:
+            options_kwargs["extra_body"] = {"thinking": {"type": "disabled" if value == "disabled" else "enabled"}}
+            if value != "disabled":
+                options_kwargs["reasoning_effort"] = value
+        elif model_provider == "anthropic":
+            if kind == "adaptive" and value is not None:
+                options_kwargs["thinking"] = {"type": "adaptive"}
+                options_kwargs["output_config"] = {**options_kwargs.get("output_config", {}), "effort": value}
+            elif kind == "budget" and value is not None:
+                options_kwargs["thinking"] = {"type": "enabled", "budget_tokens": value}
+                options_kwargs["max_tokens"] = thinking["max_tokens"]
+    options_kwargs.update(kwargs)
+
     try:
+        if model_provider == "google_genai" and extra_params:
+            return GoogleConfiguredChatModel(
+                model=model_name,
+                api_key=SecretStr(api_key) if api_key is not None else None,
+                request_options=google_extra_params(extra_params),
+                forced_temperature=kwargs.get("temperature"),
+                **options_kwargs,
+            )
         if model_provider == "deepseek":
             deepseek_kwargs: dict[str, Any] = {"model": model_name}
             if base_url is not None:
                 deepseek_kwargs["api_base"] = base_url
             if api_key is not None:
                 deepseek_kwargs["api_key"] = api_key
-            return DeepSeekThinkingChatModel(**deepseek_kwargs, **kwargs)
+            return DeepSeekThinkingChatModel(**deepseek_kwargs, **options_kwargs)
 
         return (
             init_chat_model(
@@ -258,11 +314,11 @@ def _load_chat_model_cached(
                 model=model_name,
                 base_url=base_url,
                 api_key=api_key,
-                **kwargs,
+                **options_kwargs,
             )
             if required_base_and_key
             else init_chat_model(
-                model_provider=model_provider, model=model_name, **kwargs
+                model_provider=model_provider, model=model_name, api_key=api_key, **options_kwargs
             )
         )
     except Exception as e:

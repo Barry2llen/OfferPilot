@@ -6,6 +6,7 @@ from langgraph.constants import END, START
 from langgraph.graph.state import StateGraph
 
 from agent.interactions import ask_user
+from exceptions.agent import ModelRequestConfigurationError, is_model_bad_request
 from exceptions.resume import ResumePreviewConversionError
 from schemas.model_selection import ModelSelection
 from schemas.resume import (
@@ -135,6 +136,8 @@ class ResumeExtractorAgent(BaseAgent[State]):
 
                 break
             except Exception as e:
+                if is_model_bad_request(e):
+                    raise ModelRequestConfigurationError(str(getattr(e, "message", e))) from e
                 logger.error(f"Error calling model after {max_retries} attempts:\n{e}")
                 _dispatch_custom_event_safely(
                     "on_model_call_error",
@@ -244,6 +247,8 @@ class ResumeExtractorAgent(BaseAgent[State]):
                 )
                 break
             except Exception as e:
+                if is_model_bad_request(e):
+                    raise ModelRequestConfigurationError(str(getattr(e, "message", e))) from e
                 logger.error(f"Error calling model after {max_retries} attempts:\n{e}")
                 _dispatch_custom_event_safely(
                     "on_model_call_error",
@@ -365,6 +370,8 @@ class ResumeExtractorAgent(BaseAgent[State]):
                         ],
                     )
                 except Exception as e:
+                    if is_model_bad_request(e):
+                        raise ModelRequestConfigurationError(str(getattr(e, "message", e))) from e
                     logger.error(
                         f"Error calling model for section {section.title}:\n{e}"
                     )
