@@ -5,10 +5,13 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableLambda
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from openai import BadRequestError
 from sqlalchemy import inspect, text
 
+from agent.models import structured as structured_module
 from agent.models.chat import GoogleConfiguredChatModel, load_chat_model
 from api.routes.ai import ParsedAIChatPayload, _chat_fingerprint
 from db.engine import DatabaseManager
@@ -191,6 +194,77 @@ async def test_openai_extension_parameters_reach_the_http_request(
         assert payload["reasoning_effort"] == "high"
     if provider == "DeepSeek":
         assert payload["thinking"] == {"type": "enabled"}
+
+
+@pytest.mark.parametrize("temperature", [None, 0.8])
+@pytest.mark.parametrize("api_mode", ["chat_completions", "responses"])
+async def test_structured_openai_request_uses_only_configured_temperature(
+    monkeypatch, temperature, api_mode
+):
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(400, json={"error": {"message": "mock rejection"}})
+
+    extra = {} if temperature is None else {"temperature": temperature}
+    selected = selection("OpenAI Compatible", api_mode=api_mode, extra_params=extra)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        monkeypatch.setattr(
+            structured_module,
+            "load_chat_model",
+            lambda selection: load_chat_model(
+                selection, http_async_client=client, max_retries=0
+            ),
+        )
+        model = structured_module.load_structured_model(
+            selected,
+            {"title": "Result", "type": "object", "properties": {"value": {"type": "string"}}},
+            method="function_calling",
+        )
+        try:
+            with pytest.raises(BadRequestError, match="mock rejection"):
+                await model.ainvoke([HumanMessage(content="hello")])
+        finally:
+            load_chat_model.cache_clear()
+
+    assert len(requests) == 1
+    payload = json.loads(requests[0].content)
+    if temperature is None:
+        assert "temperature" not in payload
+    else:
+        assert payload["temperature"] == temperature
+
+
+@pytest.mark.parametrize(
+    ("temperature", "use_advanced_params"),
+    [(None, False), (None, True), (0.8, True)],
+)
+def test_structured_google_request_uses_only_configured_temperature(
+    monkeypatch, temperature, use_advanced_params
+):
+    captured = []
+
+    def capture_model(self, schema, **kwargs):
+        captured.append(self)
+        return RunnableLambda(lambda _: {})
+
+    monkeypatch.setattr(ChatGoogleGenerativeAI, "with_structured_output", capture_model)
+    generation_config = {"presencePenalty": 0.4}
+    if temperature is not None:
+        generation_config["temperature"] = temperature
+    extra = {"generationConfig": generation_config} if use_advanced_params else {}
+    selected = selection("Google", extra_params=extra)
+    try:
+        structured_module.load_structured_model(selected, {"title": "Result", "type": "object"})
+        config = captured[0]._prepare_request([HumanMessage(content="hello")])["config"]
+        if use_advanced_params:
+            assert config.presence_penalty == 0.4
+        assert config.temperature == temperature
+        if temperature is None:
+            assert "temperature" not in config.model_dump(exclude_none=True)
+    finally:
+        load_chat_model.cache_clear()
 
 
 def test_thinking_override_does_not_modify_configuration():
