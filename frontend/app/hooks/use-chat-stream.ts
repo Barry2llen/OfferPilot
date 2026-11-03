@@ -480,6 +480,7 @@ export function useChatStream() {
           threadId,
           command,
           options?.fileIds,
+          options?.thinkingOverride,
           options?.localFiles?.map((file) => [
             file.name,
             file.size,

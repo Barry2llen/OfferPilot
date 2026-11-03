@@ -48,6 +48,7 @@ export default function Home() {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [modelContextWindowWarning, setModelContextWindowWarning] =
     useState(false);
+  const [thinkingOverride, setThinkingOverride] = useState<{ value: string | number | null }>();
 
   const currentModel = models.find(
     (model) => model.id === state.currentModelSelection,
@@ -110,6 +111,7 @@ export default function Home() {
           fileIds: payload.fileIds,
           draftAttachments: payload.draftAttachments,
           onAccepted,
+          thinkingOverride,
         },
       );
     },
@@ -118,12 +120,14 @@ export default function Home() {
       startChat,
       state.currentModelSelection,
       state.currentThreadId,
+      thinkingOverride,
     ],
   );
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
       if (threadId === state.currentThreadId) return;
+      setThinkingOverride(undefined);
       setModelContextWindowWarning(false);
       setThreadId(threadId || null);
       setThreadRequiresImageInput(false);
@@ -133,6 +137,7 @@ export default function Home() {
 
   const handleNewChat = useCallback(() => {
     setModelContextWindowWarning(false);
+    setThinkingOverride(undefined);
     clearMessages();
     setThreadId(null);
     setThreadRequiresImageInput(false);
@@ -153,6 +158,7 @@ export default function Home() {
         (model) => model.id === state.currentModelSelection,
       );
       const nextModel = models.find((model) => model.id === id);
+      if (id !== state.currentModelSelection) setThinkingOverride(undefined);
       setModelSelection(id);
       setModelContextWindowWarning(
         shouldWarnForSmallerContextWindow(
@@ -177,13 +183,14 @@ export default function Home() {
       if (!state.currentThreadId) {
         clearMessages();
       }
-      startChat(state.currentModelSelection, prompt, state.currentThreadId);
+      startChat(state.currentModelSelection, prompt, state.currentThreadId, undefined, { thinkingOverride });
     },
     [
       clearMessages,
       startChat,
       state.currentModelSelection,
       state.currentThreadId,
+      thinkingOverride,
     ],
   );
 
@@ -211,6 +218,8 @@ export default function Home() {
           currentModelSelection={state.currentModelSelection}
           isStreaming={isStreaming}
           onModelChange={handleModelChange}
+          thinkingOverride={thinkingOverride}
+          onThinkingChange={setThinkingOverride}
         />
 
         <ChatArea

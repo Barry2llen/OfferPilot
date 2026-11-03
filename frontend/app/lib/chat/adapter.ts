@@ -29,6 +29,7 @@ export function extractTextContent(content: unknown): string {
         if (
           item &&
           typeof item === "object" &&
+          (!("type" in item) || item.type === "text" || item.type === "output_text") &&
           "text" in item &&
           typeof item.text === "string"
         ) {
@@ -49,6 +50,16 @@ export function formatDisplayContent(content: unknown): string {
   if (text) return text;
   if (content == null) return "";
   if (Array.isArray(content) && content.length === 0) return "";
+  if (
+    Array.isArray(content) &&
+    content.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        "type" in item &&
+        ["reasoning", "thinking", "reasoning_text", "summary_text"].includes(String(item.type)),
+    )
+  ) return "";
 
   try {
     return JSON.stringify(content, null, 2);
@@ -321,11 +332,13 @@ export function buildStreamBody(
       thread_id: threadId ?? null,
       file_ids: fileIds,
       command: command ?? null,
+      ...(options?.thinkingOverride ? { thinking_override: options.thinkingOverride } : {}),
     };
   }
 
   const formData = new FormData();
   formData.append("selection_id", String(selectionId));
+  if (options?.thinkingOverride) formData.append("thinking_override", JSON.stringify(options.thinkingOverride));
   if (command) formData.append("command", JSON.stringify(command));
   if (command?.prompt ?? prompt) {
     formData.append("prompt", command?.prompt ?? prompt);

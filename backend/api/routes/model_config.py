@@ -1,6 +1,7 @@
 from collections.abc import Generator
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,7 @@ from exceptions import (
     ModelProviderNotFoundError,
     ModelSelectionAlreadyExistsError,
     ModelSelectionNotFoundError,
+    ModelSelectionValidationError,
     UnsupportedModelProviderError,
 )
 from schemas.context_compaction import (
@@ -94,6 +96,9 @@ def _selection_response(
         provider=_provider_response(selection.provider),
         model_name=selection.model_name,
         supports_image_input=selection.supports_image_input,
+        api_mode=selection.api_mode,
+        thinking=selection.thinking,
+        extra_params=selection.extra_params,
         context_window_tokens=DefaultContextBudgetPolicy(
             request.app.state.config.context_compaction
         ).resolve_max_context_tokens(selection),
@@ -257,7 +262,11 @@ async def create_model_provider(
     "/model-providers/{provider_name}",
     response_model=ModelProviderResponse,
     summary="Update a model provider",
-    description="Update a model provider. Omit api_key to keep it, or pass null to clear it.",
+    description=(
+        "Update a model provider. Omit api_key to keep it, or pass null to clear it. "
+        "Provider type changes are rejected when existing model selections have "
+        "incompatible API modes, thinking settings, or advanced parameters."
+    ),
     response_description="Returns the updated model provider summary.",
     responses={
         404: _error_response(
@@ -265,8 +274,11 @@ async def create_model_provider(
             example="Model provider not found: default-openai",
         ),
         422: _error_response(
-            "The provider type is not supported.",
-            example="Unsupported provider value: Unknown",
+            "The provider type is unsupported or incompatible with existing model selections.",
+            example=(
+                "The provider type is incompatible with existing model selections; "
+                "update or remove them first."
+            ),
         ),
     },
 )
@@ -306,7 +318,7 @@ async def update_model_provider(
         )
         _commit_or_rollback(session)
         return _provider_response(updated)
-    except UnsupportedModelProviderError as error:
+    except (UnsupportedModelProviderError, ModelSelectionValidationError) as error:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -411,7 +423,10 @@ async def get_model_selection(
     "/model-selections",
     response_model=ModelSelectionResponse,
     summary="Create a model selection",
-    description="Create a model selection that can be referenced by AI services.",
+    description=(
+        "Create a model selection that can be referenced by AI services. "
+        "Set thinking to null to use the provider default."
+    ),
     response_description="Returns the new model selection with its resolved context window capacity.",
     responses={
         404: _error_response(
@@ -421,6 +436,11 @@ async def get_model_selection(
         409: _error_response(
             "The model name already exists for this provider.",
             example="Model selection already exists: default-openai/gpt-4o-mini",
+        ),
+        422: _error_response(
+            "Model options are invalid or advanced parameters contain credentials "
+            "or application-managed fields.",
+            example="Credentials cannot be stored in advanced parameters",
         ),
     },
 )
@@ -444,6 +464,9 @@ async def create_model_selection(
                 provider=provider,
                 model_name=payload.model_name,
                 supports_image_input=payload.supports_image_input,
+                api_mode=payload.api_mode,
+                thinking=payload.thinking,
+                extra_params=payload.extra_params,
             )
         )
         _commit_or_rollback(session)
@@ -454,13 +477,28 @@ async def create_model_selection(
     except ModelProviderNotFoundError as error:
         session.rollback()
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValidationError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail="; ".join(
+                item["msg"]
+                for item in error.errors(include_input=False, include_context=False)
+            ),
+        ) from error
+    except ValueError as error:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.put(
     "/model-selections/{selection_id}",
     response_model=ModelSelectionResponse,
     summary="Update a model selection",
-    description="Update a model selection. Omitted fields keep their current values.",
+    description=(
+        "Update a model selection. Omitted fields keep their current values. "
+        "Set thinking to null to clear it and use the provider default."
+    ),
     response_description="Returns the updated model selection with its resolved context window capacity.",
     responses={
         404: _error_response(
@@ -470,6 +508,11 @@ async def create_model_selection(
         409: _error_response(
             "The model name already exists for this provider.",
             example="Model selection already exists: default-openai/gpt-4o-mini",
+        ),
+        422: _error_response(
+            "Model options are invalid or advanced parameters contain credentials "
+            "or application-managed fields.",
+            example="Credentials cannot be stored in advanced parameters",
         ),
     },
 )
@@ -511,6 +554,15 @@ async def update_model_selection(
                     if payload.supports_image_input is not None
                     else existing.supports_image_input
                 ),
+                api_mode=payload.api_mode
+                if payload.api_mode is not None
+                else existing.api_mode,
+                thinking=payload.thinking
+                if "thinking" in payload.model_fields_set
+                else existing.thinking,
+                extra_params=payload.extra_params
+                if payload.extra_params is not None
+                else existing.extra_params,
             )
         )
         _commit_or_rollback(session)
@@ -521,6 +573,18 @@ async def update_model_selection(
     except ModelSelectionNotFoundError as error:
         session.rollback()
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValidationError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail="; ".join(
+                item["msg"]
+                for item in error.errors(include_input=False, include_context=False)
+            ),
+        ) from error
+    except ValueError as error:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.delete(

@@ -46,6 +46,7 @@ export interface ChatStartOptions {
   fileIds?: string[];
   draftAttachments?: ChatAttachmentItem[];
   onAccepted?: () => void;
+  thinkingOverride?: { value: string | number | null };
 }
 
 export interface ChatMessage {

@@ -148,24 +148,40 @@ export interface ModelProviderUpdate {
 }
 
 // ─── Model Selections ───
+export type ThinkingType = "effort" | "level" | "budget" | "deepseek" | "adaptive";
+export interface ThinkingSettings {
+  type: ThinkingType;
+  value: string | number | null;
+  max_tokens?: number | null;
+}
+export type ApiMode = "auto" | "responses" | "chat_completions";
 export interface ModelSelectionResponse {
   id: number;
   provider: ModelProviderResponse;
   model_name: string;
   supports_image_input: boolean;
   context_window_tokens: number;
+  api_mode?: ApiMode;
+  thinking?: ThinkingSettings | null;
+  extra_params?: Record<string, unknown>;
 }
 
 export interface ModelSelectionCreate {
   provider_name: string;
   model_name: string;
   supports_image_input?: boolean;
+  api_mode?: ApiMode;
+  thinking?: ThinkingSettings | null;
+  extra_params?: Record<string, unknown>;
 }
 
 export interface ModelSelectionUpdate {
   provider_name?: string | null;
   model_name?: string | null;
   supports_image_input?: boolean | null;
+  api_mode?: ApiMode;
+  thinking?: ThinkingSettings | null;
+  extra_params?: Record<string, unknown>;
 }
 
 // ─── Context Compaction Settings ───
@@ -293,6 +309,7 @@ export interface AIChatStreamRequest {
   thread_id?: string | null;
   file_ids?: string[];
   command?: AIChatCommand | null;
+  thinking_override?: { value: string | number | null } | null;
 }
 
 // ─── Agent Status ───

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.messages import (
@@ -670,6 +671,53 @@ def test_ai_chat_history_keeps_assistant_content_and_reasoning_separate(
         "reasoning": "需要先查询最新信息。",
         "reasoning_duration_ms": 12000,
     }
+
+
+@pytest.mark.parametrize(
+    "reasoning_block",
+    [
+        {
+            "type": "reasoning",
+            "summary": [{"type": "summary_text", "text": "先分析问题。"}],
+        },
+        {"type": "reasoning", "text": "先分析问题。"},
+        {"type": "reasoning", "reasoning": "先分析问题。"},
+        {"type": "thinking", "thinking": "先分析问题。", "signature": "opaque-signature"},
+        {"type": "reasoning_text", "text": "先分析问题。"},
+        {"type": "summary_text", "text": "先分析问题。"},
+    ],
+)
+@pytest.mark.parametrize("serialized", [False, True])
+def test_ai_chat_history_restores_content_block_reasoning_and_duration(
+    temporary_app_config: Config, reasoning_block: dict[str, Any], serialized: bool
+) -> None:
+    from agent.graphs.model_call import _record_reasoning_duration
+
+    content = [reasoning_block, {"type": "text", "text": "这是答案。"}]
+    assistant = AIMessage(content=content)
+    assert _record_reasoning_duration(assistant, 1350)
+    saved_message = assistant.model_dump() if serialized else assistant
+    with TestClient(create_app(temporary_app_config)) as client:
+        checkpointer = cast(FastAPI, client.app).state.checkpointer
+        checkpoint = _message_checkpoint(
+            "00000000000000000000000000000001.0000000000000001",
+            [HumanMessage(content="问题"), saved_message],
+        )
+        checkpointer.put(
+            {"configurable": {"thread_id": "block-history"}},
+            checkpoint,
+            {"source": "loop", "step": 0, "parents": {}},
+            checkpoint["channel_versions"],
+        )
+        response = client.get("/ai/chats/block-history/history")
+        assert response.status_code == 200
+        restored = response.json()["messages"][1]
+        assert restored["content"] == content
+        assert restored["reasoning"] == "先分析问题。"
+        assert restored["reasoning_duration_ms"] == 1350
+        assert response.json()["last_message_preview"] == "这是答案。"
+        listed = client.get("/ai/chats").json()["items"][0]
+        assert listed["last_message_preview"] == "这是答案。"
 
 
 def test_ai_chat_history_summarizes_web_search_tool_messages(
@@ -2546,6 +2594,9 @@ def test_ai_chat_history_openapi_documents_history_endpoints(
         == "Get AI conversation history"
     )
     history_message_schema = payload["components"]["schemas"]["AIChatHistoryMessage"]
+    assert "provider content blocks" in history_message_schema["properties"][
+        "reasoning"
+    ]["description"]
     assert "reasoning_duration_ms" in history_message_schema["properties"]
     history_summary_schema = payload["components"]["schemas"]["AIChatHistorySummary"]
     assert "context_compacted" in history_summary_schema["properties"]

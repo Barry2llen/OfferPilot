@@ -32,10 +32,35 @@ The three subprojects keep their dependencies and commands independent:
   Parsing runs in the backend so changing frontend routes does not cancel a
   task that has already started.
 - Model configuration: manage providers, API keys, base URLs, and model
-  selections without returning API keys in plaintext.
+  selections without returning API keys in plaintext. OpenAI and OpenAI
+  Compatible models can select automatic, Responses,
+  or Chat Completions protocol; provider-specific thinking controls and advanced
+  request-body parameters are stored per model. A chat can temporarily override
+  the thinking value for subsequent runs without changing the saved default.
+  Saving a model with the provider default selected or an empty thinking budget
+  stores `thinking: null`, clearing provider-specific thinking settings. An explicit
+  budget of `0` is preserved for Google models.
+  Model and provider capabilities vary; unsupported parameters return the
+  provider error. Structured extraction uses temperature 0. Some Anthropic models
+  or thinking modes reject that temperature, so structured
+  extraction with those combinations will fail until the model's settings are changed.
+  Advanced parameters must not contain credentials (including provider-specific
+  API-key, token, password, and client-secret aliases at any nesting level,
+  in camelCase or separated forms) or fields controlled by the application.
+  Invalid advanced parameters are rejected with HTTP 422 without saving or
+  returning credential values. Existing
+  databases are upgraded at startup. These combinations are not automatically
+  verified against live model services.
+  Changing a provider's type is rejected with HTTP 422 if any linked model's
+  saved API mode, thinking settings, or advanced parameters are incompatible.
+  Adjust or remove the linked selections before switching provider types.
+  OpenAI-compatible extension fields such as `top_k` can be entered directly in
+  the advanced JSON object and are forwarded in the provider's request body.
 - AI conversations: `/ai/chat` for synchronous responses and
   `/ai/chat/stream` for SSE streaming, with text, image, PDF, DOCX, and common
   text-file attachments.
+  Thinking text and its recorded duration are restored from saved conversation
+  history for provider content blocks as well as legacy reasoning metadata.
 - File library: the frontend provides a file-library page and the backend
   exposes `/ai/files` endpoints for viewing and reusing historical chat
   attachments across conversations.

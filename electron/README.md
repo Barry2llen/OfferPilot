@@ -92,6 +92,16 @@ The frozen backend supports `--self-check`: PDF rendering, a DOCX round trip to
 PNG and initialization of the bundled OCR models. It does not start HTTP, read
 model credentials or make external model calls. Exit 0 means all checks pass;
 nonzero means a dependency or render failed. JSON results are printed to stdout.
+
+Model API protocol, thinking defaults, and advanced request parameters are saved
+in the backend's model configuration database. Existing desktop databases are
+upgraded at startup. Live provider compatibility is not checked by self-check.
+Provider type changes are rejected if linked model selections have incompatible
+saved settings; adjust or remove those selections before changing the type.
+Saving the provider default or clearing a thinking budget clears the saved
+thinking settings. Advanced parameters reject credential aliases, including
+camelCase token and password fields, at every nesting level with HTTP 422.
+Advanced OpenAI-compatible extension fields are forwarded as request body fields.
 For a staged Linux backend, from `electron/`:
 
 ```sh

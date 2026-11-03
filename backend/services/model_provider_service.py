@@ -1,7 +1,8 @@
 from db.models import ModelProviderORM
 from db.repositories import ModelProviderRepository
-from exceptions import UnsupportedModelProviderError
+from exceptions import ModelSelectionValidationError, UnsupportedModelProviderError
 from schemas.model_provider import ModelProvider
+from schemas.model_selection import ModelSelection
 
 _DOMAIN_TO_DATABASE_PROVIDER = {
     "OpenAI": "openai",
@@ -36,7 +37,26 @@ class ModelProviderService:
         return self._to_schema(created)
 
     def update(self, provider: ModelProvider) -> ModelProvider:
-        updated = self._repository.update(self._to_orm(provider))
+        orm_provider = self._to_orm(provider)
+        existing = self._repository.get_by_name(provider.name)
+        if existing is not None and existing.provider != orm_provider.provider:
+            for selection in existing.model_selections:
+                try:
+                    ModelSelection.model_validate(
+                        {
+                            "provider": provider,
+                            "model_name": selection.model_name,
+                            "api_mode": selection.api_mode or "auto",
+                            "thinking": selection.thinking,
+                            "extra_params": selection.extra_params or {},
+                        }
+                    )
+                except ValueError as error:
+                    raise ModelSelectionValidationError(
+                        "The provider type is incompatible with existing model "
+                        "selections; update or remove them first."
+                    ) from error
+        updated = self._repository.update(orm_provider)
         return self._to_schema(updated)
 
     def delete(self, name: str) -> bool:

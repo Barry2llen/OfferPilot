@@ -2,6 +2,7 @@ from typing import Any
 
 from langchain_core.messages import BaseMessage
 
+from utils.message_content import extract_message_reasoning, extract_text_content
 from utils.stream import to_jsonable
 
 
@@ -32,38 +33,16 @@ def _has_display_content(content: Any) -> bool:
 
 
 def _extract_message_reasoning(message: Any) -> str:
-    additional_kwargs = getattr(message, "additional_kwargs", None)
-    if not isinstance(additional_kwargs, dict):
-        return ""
-
-    reasoning_content = additional_kwargs.get("reasoning_content")
-    if isinstance(reasoning_content, str) and reasoning_content.strip():
-        return reasoning_content
-    return ""
+    reasoning = extract_message_reasoning(message)
+    return reasoning if reasoning.strip() else ""
 
 
 def _extract_chunk_text(chunk: Any) -> str:
-    content = getattr(chunk, "content", chunk)
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict) and isinstance(item.get("text"), str):
-                parts.append(item["text"])
-        return "".join(parts)
-    return ""
+    return extract_text_content(getattr(chunk, "content", chunk))
 
 
 def _extract_chunk_reasoning(chunk: Any) -> str:
-    additional_kwargs = getattr(chunk, "additional_kwargs", None)
-    if not isinstance(additional_kwargs, dict):
-        return ""
-
-    reasoning_content = additional_kwargs.get("reasoning_content")
-    return reasoning_content if isinstance(reasoning_content, str) else ""
+    return extract_message_reasoning(chunk)
 
 
 def _extract_reasoning_duration_ms(value: Any) -> int | None:

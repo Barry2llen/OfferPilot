@@ -13,4 +13,12 @@ class ModelCallExecutionError(AgentError, RuntimeError):
     """Raised when a model call cannot complete successfully."""
 
 
-__all__ = ["AgentError", "AgentStateError", "ModelCallExecutionError"]
+class ModelRequestConfigurationError(ModelCallExecutionError):
+    """A provider rejected the model request configuration."""
+
+
+def is_model_bad_request(error: BaseException) -> bool:
+    return getattr(error, "status_code", None) == 400 or getattr(error, "code", None) == 400
+
+
+__all__ = ["AgentError", "AgentStateError", "ModelCallExecutionError", "ModelRequestConfigurationError"]

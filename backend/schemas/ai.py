@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from schemas.chat_file import ChatAttachmentRef
 
 
+class ThinkingOverride(BaseModel):
+    value: str | int | None = Field(default=None, description="Temporary thinking value; null uses the provider default.", examples=["high"])
+
+
 class AIChatCommand(BaseModel):
     type: Literal["prompt", "continue", "retry", "query"] = Field(
         description=(
@@ -51,6 +55,7 @@ class AIChatRequest(BaseModel):
         description="Model selection record ID corresponding to tb_model_selection.id.",
         examples=[1],
     )
+    thinking_override: ThinkingOverride | None = Field(default=None, description="Temporary thinking value for this run.")
     prompt: str | None = Field(
         default=None,
         description="User text message. Optional when attachments are present and required for text-only requests.",
@@ -141,7 +146,10 @@ class AIChatHistoryMessage(BaseModel):
     )
     reasoning: str | None = Field(
         default=None,
-        description="Intermediate reasoning before model inference or tool calls; the frontend should render it collapsed.",
+        description=(
+            "Assistant reasoning extracted from provider content blocks or reasoning_content "
+            "metadata. Kept separate from the answer and rendered collapsed."
+        ),
         examples=["我需要先检索最新资料。"],
     )
     reasoning_duration_ms: int | None = Field(
@@ -316,6 +324,7 @@ class AIChatStreamRequest(BaseModel):
         description="Model selection record ID corresponding to tb_model_selection.id.",
         examples=[1],
     )
+    thinking_override: ThinkingOverride | None = Field(default=None, description="Temporary thinking value for this run.")
     prompt: str | None = Field(
         default=None,
         description="User text message. Optional when attachments are present or when using a retry command.",

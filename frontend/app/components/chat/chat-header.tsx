@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
+import ThinkingControl from "@/app/components/settings/thinking-control";
+import { defaultThinkingType } from "@/app/lib/thinking";
 import type { ModelSelectionResponse, AgentStatus } from "@/app/lib/api/types";
 import { useAppContext } from "@/app/lib/context/app-context";
 
@@ -32,6 +34,8 @@ interface ChatHeaderProps {
   currentModelSelection: number | null;
   isStreaming: boolean;
   onModelChange: (id: number | null) => void;
+  thinkingOverride?: { value: string | number | null };
+  onThinkingChange?: (value: { value: string | number | null }) => void;
 }
 
 export default function ChatHeader({
@@ -43,9 +47,13 @@ export default function ChatHeader({
   currentModelSelection,
   isStreaming,
   onModelChange,
+  thinkingOverride,
+  onThinkingChange,
 }: ChatHeaderProps) {
   const { state } = useAppContext();
   const { t } = useTranslation();
+  const selected = models.find((model) => model.id === currentModelSelection);
+  const thinking = selected?.thinking ?? (selected ? { type: defaultThinkingType(selected.provider.provider), value: null } : null);
 
   return (
     <div className="app-region-drag electron-titlebar-safe-right min-h-12 shrink-0 border-b border-border-light bg-white px-4 py-2">
@@ -95,6 +103,9 @@ export default function ChatHeader({
             onChange={onModelChange}
           />
         </div>
+        {selected && thinking && onThinkingChange && <div className="app-region-no-drag">
+          <ThinkingControl provider={selected.provider.provider} value={{ ...thinking, value: thinkingOverride ? thinkingOverride.value : thinking.value }} allowType={false} disabled={isStreaming} onChange={(value) => onThinkingChange({ value: value.value })} />
+        </div>}
       </div>
     </div>
   );

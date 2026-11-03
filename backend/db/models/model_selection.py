@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from typing import Any
+
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -29,6 +31,9 @@ class ModelSelectionORM(Base):
         nullable=False,
         default=False,
     )
+    api_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    thinking: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    extra_params: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     provider: Mapped[ModelProviderORM] = relationship(
         back_populates="model_selections",

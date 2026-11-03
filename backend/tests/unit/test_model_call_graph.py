@@ -1379,3 +1379,27 @@ async def test_successful_compaction_sidecar_survives_business_model_failure(
     stored_snapshot = checkpoint.checkpoint["channel_values"]["context_compaction"]
     assert stored_snapshot["status"] == "complete"
     assert stored_snapshot["messages"][0].content == "compact model view"
+
+
+async def test_bad_request_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    from exceptions.agent import ModelRequestConfigurationError
+
+    calls = 0
+
+    class BadRequest(Exception):
+        status_code = 400
+
+    class FailingModel:
+        def bind_tools(self, tools: object) -> "FailingModel":
+            return self
+
+        async def ainvoke(self, messages: object) -> AIMessage:
+            nonlocal calls
+            calls += 1
+            raise BadRequest("unsupported reasoning")
+
+    monkeypatch.setattr("agent.graphs.model_call.load_chat_model", lambda _: FailingModel())
+    graph = ModelCallGraph(config=Config(model_call_retry_attempts=3), tools=None).get_compiled_graph()
+    with pytest.raises(ModelRequestConfigurationError, match="unsupported reasoning"):
+        await graph.ainvoke(make_state([HumanMessage(content="hello")], model="test-model"))
+    assert calls == 1
