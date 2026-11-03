@@ -21,6 +21,7 @@ class GoogleConfiguredChatModel(ChatGoogleGenerativeAI):
 
     request_options: dict[str, Any] = Field(default_factory=dict, exclude=True)
     forced_temperature: float | None = Field(default=None, exclude=True)
+    omit_default_temperature: bool = Field(default=False, exclude=True)
 
     def _prepare_request(self, messages: Any, **kwargs: Any) -> dict[str, Any]:
         request = super()._prepare_request(messages, **kwargs)
@@ -29,6 +30,8 @@ class GoogleConfiguredChatModel(ChatGoogleGenerativeAI):
             setattr(config, key, value)
         if self.forced_temperature is not None:
             config.temperature = self.forced_temperature
+        elif self.omit_default_temperature and "temperature" not in self.request_options:
+            config.temperature = None
         return request
 
 
@@ -265,6 +268,7 @@ def _load_chat_model_cached(
     base_url: str | None,
     api_key: str | None,
     options_json: str = "{}",
+    _omit_default_temperature: bool = False,
     **kwargs: Any,
 ) -> BaseChatModel:
 
@@ -324,12 +328,15 @@ def _load_chat_model_cached(
     options_kwargs.update(kwargs)
 
     try:
-        if model_provider == "google_genai" and extra_params:
+        if model_provider == "google_genai" and (
+            extra_params or _omit_default_temperature
+        ):
             return GoogleConfiguredChatModel(
                 model=model_name,
                 api_key=SecretStr(api_key) if api_key is not None else None,
                 request_options=google_extra_params(extra_params),
                 forced_temperature=kwargs.get("temperature"),
+                omit_default_temperature=_omit_default_temperature,
                 **options_kwargs,
             )
         if model_provider == "deepseek":

@@ -51,7 +51,7 @@ def test_load_structured_model_keeps_default_structured_output_options(
     assert model._model is wrapped
     assert captured == {
         "model_selection": None,
-        "chat_kwargs": {"temperature": 0},
+        "chat_kwargs": {},
         "schema": {"name": "Result"},
         "kwargs": {},
     }
@@ -90,7 +90,7 @@ def test_load_structured_model_forwards_explicit_method(
     assert model._model is wrapped
     assert captured == {
         "model_selection": None,
-        "chat_kwargs": {"temperature": 0},
+        "chat_kwargs": {},
         "schema": {"name": "Result"},
         "kwargs": {"method": "function_calling"},
     }

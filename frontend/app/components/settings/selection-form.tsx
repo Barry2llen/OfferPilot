@@ -117,7 +117,6 @@ export default function SelectionForm({
         </select>
       </div>}
       <ThinkingControl provider={selectedProvider} value={thinkingValue} onChange={setThinking} disabled={submitting} />
-      {selectedProvider === "Anthropic" && <p className="text-xs text-warning-text">{t("settings.anthropicThinkingWarning")}</p>}
       <div>
         <label htmlFor="advanced-params" className="block text-sm font-medium mb-1.5">{t("settings.advancedParams")}</label>
         <textarea id="advanced-params" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 font-mono text-sm" rows={4} value={extraJson} disabled={submitting} onChange={(e) => setExtraJson(e.target.value)} />

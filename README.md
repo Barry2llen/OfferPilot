@@ -41,9 +41,8 @@ The three subprojects keep their dependencies and commands independent:
   stores `thinking: null`, clearing provider-specific thinking settings. An explicit
   budget of `0` is preserved for Google models.
   Model and provider capabilities vary; unsupported parameters return the
-  provider error. Structured extraction uses temperature 0. Some Anthropic models
-  or thinking modes reject that temperature, so structured
-  extraction with those combinations will fail until the model's settings are changed.
+  provider error. Structured extraction uses the provider's default temperature
+  unless a temperature is explicitly supplied in advanced parameters.
   Advanced parameters must not contain credentials (including provider-specific
   API-key, token, password, and client-secret aliases at any nesting level,
   in camelCase or separated forms) or fields controlled by the application.
