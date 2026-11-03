@@ -61,6 +61,9 @@ The three subprojects keep their dependencies and commands independent:
   text-file attachments.
   Thinking text and its recorded duration are restored from saved conversation
   history for provider content blocks as well as legacy reasoning metadata.
+  Assistant messages show visible text only; Responses reasoning and tool-call
+  blocks stay out of the answer body, while reasoning summaries and tool results
+  keep their dedicated displays.
 - File library: the frontend provides a file-library page and the backend
   exposes `/ai/files` endpoints for viewing and reusing historical chat
   attachments across conversations.

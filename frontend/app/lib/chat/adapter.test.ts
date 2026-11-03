@@ -23,11 +23,98 @@ function event(event: string, data: Record<string, unknown> = {}) {
   return { event, data };
 }
 
+const responsesToolCallContent = [
+  {
+    id: "rs-search",
+    type: "reasoning",
+    summary: [],
+    encrypted_content: "opaque-reasoning-state",
+  },
+  {
+    id: "fc-search",
+    type: "function_call",
+    call_id: "call-search",
+    name: "web_search_exa",
+    arguments: '{"query":"OfferPilot"}',
+  },
+];
+
 describe("chat stream adapter", () => {
   it("does not render reasoning blocks as final answer text", () => {
     expect(formatDisplayContent([{ type: "reasoning", text: "thought" }, { type: "text", text: "answer" }])).toBe("answer");
     expect(formatDisplayContent([{ type: "reasoning", text: "thought" }])).toBe("");
   });
+  it("hides textless Responses tool-call messages when restoring history", () => {
+    const output = { results: [{ title: "OfferPilot", url: "https://example.com" }] };
+    const restored = mapChatHistory([
+      { role: "user", type: "human", content: "search" },
+      { role: "assistant", type: "ai", content: responsesToolCallContent },
+      {
+        role: "tool", type: "tool", name: "web_search_exa",
+        tool_call_id: "call-search", content: output,
+      },
+      { role: "assistant", type: "ai", content: "Found OfferPilot." },
+    ], createChatState()).state;
+
+    expect(restored.messages.map((message) => message.role)).toEqual([
+      "user", "tool", "assistant",
+    ]);
+    expect(restored.messages[1]).toMatchObject({
+      toolCallId: "call-search", toolStatus: "success", toolOutput: output,
+      content: JSON.stringify(output, null, 2),
+    });
+    expect(restored.messages[2].content).toBe("Found OfferPilot.");
+  });
+
+  it("preserves readable reasoning for textless Responses tool calls", () => {
+    const restored = mapChatHistory([{
+      role: "assistant", type: "ai", content: responsesToolCallContent,
+      reasoning: "Checking search results.", reasoning_duration_ms: 1350,
+    }], createChatState()).state;
+
+    expect(restored.messages).toHaveLength(1);
+    expect(restored.messages[0]).toMatchObject({
+      content: "", reasoning: "Checking search results.", reasoningDurationMs: 1350,
+    });
+  });
+
+  it.each([false, true])("does not create a JSON answer from a textless Responses final (tool completed: %s)", (withTool) => {
+    let state = beginChat(createChatState(), "search", undefined);
+    const output = { results: [] };
+    if (withTool) {
+      state = reduceChatEvent(state, event("tool_start", {
+        tool_name: "web_search_exa", tool_call_id: "call-search",
+      }), labels).state;
+      state = reduceChatEvent(state, event("tool_end", {
+        tool_name: "web_search_exa", tool_call_id: "call-search", output,
+      }), labels).state;
+    }
+    state = reduceChatEvent(state, event("final", {
+      content: responsesToolCallContent,
+    }), labels).state;
+
+    expect(state.terminal).toBe(true);
+    expect(state.isStreaming).toBe(false);
+    expect(state.messages.map((message) => message.role)).toEqual(
+      withTool ? ["user", "tool"] : ["user"],
+    );
+    if (withTool) expect(state.messages[1].toolOutput).toEqual(output);
+  });
+
+  it.each(["text", "output_text"])("keeps %s alongside Responses reasoning and tool calls", (type) => {
+    const content = [...responsesToolCallContent, { type, text: "Found OfferPilot." }];
+    const restored = mapChatHistory([
+      { role: "assistant", type: "ai", content },
+    ], createChatState()).state;
+    const completed = reduceChatEvent(
+      beginChat(createChatState(), "search", undefined),
+      event("final", { content }), labels,
+    ).state;
+
+    expect(restored.messages[0].content).toBe("Found OfferPilot.");
+    expect(completed.messages[1].content).toBe("Found OfferPilot.");
+  });
+
   it.each([
     { type: "thinking", thinking: "thought", signature: "opaque-signature" },
     { type: "reasoning", summary: [{ type: "summary_text", text: "thought" }] },
