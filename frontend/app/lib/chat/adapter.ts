@@ -804,7 +804,7 @@ export function reduceChatEvent(
     }
 
     case "final": {
-      const explicitFinalContent = formatDisplayContent(data.content);
+      const explicitFinalContent = extractTextContent(data.content);
       const hasVisibleAssistantContent = next.liveMessages.some(
         (message) =>
           message.role === "assistant" && Boolean(message.content.trim()),
@@ -961,7 +961,9 @@ export function mapChatHistory(
     const mapped: ChatMessage = {
       id: messageId.id,
       role: message.role as ChatMessage["role"],
-      content: formatDisplayContent(message.content),
+      content: message.role === "assistant"
+        ? extractTextContent(message.content)
+        : formatDisplayContent(message.content),
       attachments: Array.isArray(message.attachments)
         ? message.attachments.map((attachment) =>
             normalizeAttachmentRef(attachment, rawUrl),
