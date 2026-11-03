@@ -29,6 +29,8 @@ interface QueryToolOutput {
   secondChoiceDescription?: string;
   thirdChoice?: string;
   thirdChoiceDescription?: string;
+  selected_options?: { id: string; label: string }[];
+  free_text?: string | null;
 }
 
 const statusLabelKeys: Record<ToolStatus, string> = {
@@ -221,7 +223,7 @@ function QueryToolDetails({ entry }: { entry: ToolCallEntry }) {
   const answer = getQueryAnswer(entry);
 
   return (
-    <div className="space-y-2 text-xs leading-relaxed text-text-secondary">
+    <div className="space-y-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-text-secondary">
       <DetailBlock label={i18n.t("chat.question")} value={question || i18n.t("chat.noQuestion")} />
       {entry.status === "success" && (
         <DetailBlock label={i18n.t("chat.answer")} value={answer || i18n.t("chat.noAnswer")} />
@@ -568,6 +570,12 @@ function getQueryAnswer(entry: ToolCallEntry): string {
   if (!output) {
     return "";
   }
+  if (output.selected_options) {
+    const parts = output.selected_options.map((option) => option.label);
+    if (output.free_text) parts.push(output.free_text);
+    if (output.note) parts.push(i18n.t("chat.note", { note: output.note }));
+    return parts.join("\n");
+  }
   if (output.choice === "other") {
     return output.note || i18n.t("chat.other");
   }
@@ -599,6 +607,20 @@ function parseQueryToolOutput(output: unknown): QueryToolOutput | null {
   }
 
   const item = parsed as Record<string, unknown>;
+  if (Array.isArray(item.selected_options)) {
+    const selected = item.selected_options.filter(
+      (option): option is { id: string; label: string } =>
+        Boolean(option) && typeof option === "object" &&
+        typeof option.id === "string" && typeof option.label === "string",
+    );
+    return {
+      question: typeof item.question === "string" ? item.question : "",
+      choice: "",
+      selected_options: selected,
+      free_text: typeof item.free_text === "string" ? item.free_text : null,
+      note: typeof item.note === "string" ? item.note : null,
+    };
+  }
   const choice = item.choice;
   if (typeof choice !== "string") {
     return null;

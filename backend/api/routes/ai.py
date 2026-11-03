@@ -816,7 +816,7 @@ async def subscribe_chat_run(
     "/chat/runs/{run_id}/inputs/{request_id}",
     response_model=ChatRunResponse,
     summary="Answer an input request",
-    description="Wake the original execution without invoking the graph again. Identical repeat answers are idempotent; conflicting answers are rejected.",
+    description="Answer a pending dynamic query with selected_option_ids, optional free_text and note, or submit type=retry for an error. Single mode accepts one option or free text; multiple mode also accepts combinations. Empty answers, duplicate or unknown option IDs and invalid cardinality return 422. Wake the original execution without invoking the graph again. Identical answers (regardless of selection order) are idempotent; conflicting answers return 409.",
     response_description="Current run state.",
     responses=_RUN_ERRORS,
 )

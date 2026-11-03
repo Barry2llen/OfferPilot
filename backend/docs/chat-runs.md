@@ -88,7 +88,8 @@ Neither mechanism writes execution objects into graph state.
 - GET `/ai/chat/runs/{run_id}/events?after=N`: SSE replay after N; zero or an
   expired watermark returns a `snapshot` with current events/pending inputs.
 - POST `/ai/chat/runs/{run_id}/inputs/{request_id}`: `answer` object containing
-  query `choice`/optional `note`, or error retry `type=retry`.
+  query `selected_option_ids`/optional `free_text`/optional `note`, or error retry
+  `type=retry`.
 - POST `/ai/chat/runs/{run_id}/cancel`: idempotent cancellation; waits for cleanup.
 
 An answer returns 200, including identical repeats. Conflicting repeats return
@@ -96,6 +97,52 @@ An answer returns 200, including identical repeats. Conflicting repeats return
 Queue capacity returns 429. Legacy stream query/retry commands return 410.
 All new public fields are documented in OpenAPI. User-facing known errors use
 the request locale; a running interaction retains its submission locale.
+
+### Dynamic query decisions
+
+The tool requires a concrete `question`, explicit `selection_mode` (`single` or
+`multiple`), and at least two `options` with nonblank, unique `id`, nonblank
+`label`, and nonblank `description`. Option count has no fixed upper limit; the
+first option is recommended. Validation happens before registering a waiter or
+publishing `input_required`. For example:
+
+```json
+{
+  "question": "What should we do next?",
+  "selection_mode": "multiple",
+  "options": [
+    {"id": "revise", "label": "Revise resume", "description": "Improve the resume first."},
+    {"id": "prepare", "label": "Prepare interview", "description": "Practice likely questions."}
+  ]
+}
+```
+
+The pending input adds `type=query`, `request_id`, `run_id`, `thread_id`,
+`tool_call_id` and `source`. Run responses, live input events and reconnect
+snapshots preserve the same mode and complete options. Refresh restores the
+question within the original active run; unsent drafts are not stored durably.
+
+```json
+{"answer":{"selected_option_ids":["revise","prepare"],"free_text":"Also discuss salary","note":"Focus on senior roles"}}
+```
+
+Single mode permits exactly one ID or a nonblank free-text answer, exclusively.
+Multiple mode permits any nonempty subset, free text alone, or both. Optional
+notes never count as an answer. Unknown/duplicate IDs, empty answers and invalid
+cardinality return 422 without resolving the question. Text is trimmed, blank
+optional text becomes null, and selected IDs are canonicalized in question
+order before idempotency comparison. Reordered identical selections return 200;
+a different valid answer returns 409. Existing request ownership, timeout,
+cancellation, 410 expiry and retry semantics continue to apply.
+
+The Agent receives `selected_options: [{id, label}]`, `free_text`, and `note`.
+Question, mode and full options are retained in the tool artifact rather than
+duplicated in model-visible content. Both live and historical tool summaries
+merge that artifact with the result. The legacy three-choice history reader
+continues to interpret `firstChoice`, `secondChoice`, `thirdChoice`, `other`
+and their notes. Old-format tool calls and input answers are rejected. No data
+rewrite, database migration, multi-question questionnaire, configurable selection
+limit, new SSE event name, or pre-upgrade run recovery is introduced.
 
 ## Events and frontend reconciliation
 

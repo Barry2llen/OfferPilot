@@ -299,9 +299,22 @@ Use `POST /ai/chat/runs` with an `Idempotency-Key` header to submit a message,
 `GET /ai/chat/runs?thread_id=...` to inspect FIFO queue order, and
 `GET /ai/chat/runs/{run_id}/events?after=...` to subscribe/reconnect. Answer an
 `input_required` request via `POST /ai/chat/runs/{run_id}/inputs/{request_id}`
-with `{"answer":{"choice":"firstChoice","note":null}}` or
+with `{"answer":{"selected_option_ids":["revise"],"free_text":null,"note":null}}` or
 `{"answer":{"type":"retry"}}`. The original coroutine continues without
 replaying the tool. Legacy query/retry commands on `/ai/chat/stream` return 410.
+
+The `query` tool accepts `question`, required `selection_mode` (`single` or
+`multiple`), and `options: [{id, label, description}]`. Provide at least two
+options with unique IDs, with the recommended option first; there is no fixed
+upper limit. Single mode accepts one selected ID or a nonblank `free_text`
+answer. Multiple mode accepts one to all options, free text, or both. `note`
+is an independent, optional explanation and cannot be the only answer.
+Duplicate/unknown IDs, blank answers and invalid single-choice combinations
+return 422. Selected IDs are ordered by the original options before comparing
+repeat answers. Pending questions retain all options and their mode on refresh
+or SSE reconnect. Old three-choice history remains readable; old tool calls and
+old answer bodies are not accepted by the new query contract. This change
+requires no database migration and does not restore pre-upgrade runs.
 
 `POST /ai/chat/runs/{run_id}/cancel` cancels and awaits that run. Success,
 failure and cancellation all advance to the next queued message. Cancel queued

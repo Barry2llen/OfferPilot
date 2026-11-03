@@ -189,6 +189,15 @@ AI 对话流式事件包括 `thread`、`token`、`tool_start`、`tool_progress`�
 
 聊天由 `ChatRunManager` 执行，通过 `POST /ai/chat/runs` 提交、`GET /ai/chat/runs/{run_id}/events` 订阅或重连。收到 `input_required` 后，通过 `POST /ai/chat/runs/{run_id}/inputs/{request_id}` 回答，原协程继续执行。旧版 query/retry 命令返回 410。断开订阅不会取消执行；主动停止通过运行的 cancel 接口执行。
 
+`query` 工具接收 `question`、必填的 `selection_mode`（`single` 或 `multiple`）以及
+`options: [{id, label, description}]`。每次至少两个选项、ID 唯一、首项为推荐项，数量无固定上限。
+回答示例为 `{"answer":{"selected_option_ids":["revise"],"free_text":null,"note":"优先修改最近的经历"}}`；
+错误重试仍使用 `{"answer":{"type":"retry"}}`。单选允许选择一项或仅提交非空手填答案；
+多选允许选择一至全部选项、仅手填，或将勾选与手填组合。补充说明 `note` 独立可选，不能单独作为答案。
+空答案、未知或重复 ID、单选数量超限及单选与手填混用返回 422。服务端按原选项顺序规范化答案，
+同一答案重复提交返回 200，冲突返回 409。刷新或 SSE 重连会恢复待答问题的模式和全部选项。
+旧三选一历史记录仍可读取，新调用和回答不再接受旧格式；无需数据库迁移，也不恢复升级前未完成的运行。
+
 ## Supervisor 分析工具
 
 聊天支持使用当前会话模型调用简历和岗位分析。简历分析接受已有简历 ID，或将文件库中的

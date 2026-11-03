@@ -18,10 +18,19 @@ describe("run protocol boundaries", () => {
       run_id: "r",
       thread_id: "t",
       tool_call_id: "tool",
+      question: "Choose",
+      selection_mode: "multiple",
+      options: [
+        { id: "a", label: "A", description: "Use A" },
+        { id: "b", label: "B", description: "Use B" },
+      ],
     };
     expect(pendingInput(input, "r", "t")).toEqual(input);
     expect(pendingInput(input, "other", "t")).toBeNull();
     expect(pendingInput({ ...input, request_id: 123 }, "r", "t")).toBeNull();
+    expect(pendingInput({ ...input, options: input.options.slice(0, 1) }, "r", "t")).toBeNull();
+    expect(pendingInput({ ...input, options: [input.options[0], input.options[0]] }, "r", "t")).toBeNull();
+    expect(pendingInput({ ...input, selection_mode: undefined }, "r", "t")).toBeNull();
   });
 
   it("never lets stale polls reverse terminal or newer SSE states", () => {

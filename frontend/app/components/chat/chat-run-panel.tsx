@@ -7,7 +7,7 @@ import type {
   InputAnswer,
 } from "@/app/lib/api/types";
 import Button from "@/app/components/ui/button";
-import { QueryDecisionComposer } from "./chat-input";
+import QueryDecisionComposer from "./query-decision-composer";
 import { needsRunNotice } from "@/app/lib/chat/run-state";
 
 const MAX_RUN_NOTICES = 3;
@@ -35,8 +35,8 @@ function InputCard({
       {input.type === "query" ? (
         <QueryDecisionComposer
           input={input}
-          onAnswer={(choice, note) => {
-            void submit({ choice, note });
+          onAnswer={(answer) => {
+            void submit(answer);
           }}
         />
       ) : (
