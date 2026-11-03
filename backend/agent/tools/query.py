@@ -1,92 +1,58 @@
 import json
+from typing import Any
 
 from langchain.tools import ToolRuntime, tool
 from pydantic import Field
 
 from agent.interactions import InteractionContext, ask_user
-from schemas.chat_run import QueryAnswer
-
-from ..base import (
-    InputRequest,
-)
-
-
-class QueryRequest(InputRequest):
-    question: str
-    firstChoice: str
-    firstChoiceDescription: str
-    secondChoice: str
-    secondChoiceDescription: str
-    thirdChoice: str
-    thirdChoiceDescription: str
+from schemas.query import QueryAnswer, QueryOption, QueryRequest, QuerySelectionMode
 
 
 @tool(response_format="content_and_artifact")
 async def query(
     runtime: ToolRuntime[InteractionContext | None],
     question: str = Field(
-        ..., description="The specific question to ask the user before continuing."
-    ),
-    firstChoice: str = Field(
         ...,
-        description="The first,as well as recommended,choice to present to the user.",
+        min_length=1,
+        description="The specific question to ask the user before continuing.",
     ),
-    firstChoiceDescription: str = Field(
+    selection_mode: QuerySelectionMode = Field(
         ...,
-        description="A short user-facing explanation of when to choose the recommended first choice.",
+        description="Explicitly choose single or multiple selection for this question.",
     ),
-    secondChoice: str = Field(
-        ..., description="The second choice to present to the user."
-    ),
-    secondChoiceDescription: str = Field(
+    options: list[QueryOption] = Field(
         ...,
-        description="A short user-facing explanation of when to choose the second choice.",
+        min_length=2,
+        description="At least two concrete options with unique IDs, labels and descriptions. The first is recommended; there is no fixed upper limit.",
     ),
-    thirdChoice: str = Field(
-        ..., description="The third choice to present to the user."
-    ),
-    thirdChoiceDescription: str = Field(
-        ...,
-        description="A short user-facing explanation of when to choose the third choice.",
-    ),
-) -> tuple[str, dict[str, str]]:
-    """
-    Ask the user a specific question and present exactly three concrete options.
+) -> tuple[str, dict[str, Any]]:
+    """Ask a user decision with a dynamic list of options and single/multiple mode.
 
-    Use this only when the next step depends on a user decision that cannot be
-    safely inferred and the user must choose one of three options. The question
-    should be concrete and user-facing. The first choice should be the
-    recommended default. Every choice must include a short, user-facing
-    description explaining when that option is appropriate.
+    Use only when the next step depends on a decision that cannot be inferred.
+    Provide at least two options, each with a unique ID, label, and short
+    explanation. Put the recommended option first. Explicitly choose single
+    for mutually exclusive alternatives or multiple for compatible decisions.
+    Users may instead enter a free-text answer and may add a separate note;
+    multiple mode also allows combining selections and free text.
     """
-
-    ask = runtime.context.ask if runtime.context else ask_user
-    resp = QueryAnswer.model_validate(
-        await ask(
-            QueryRequest(
-                type="query",
-                question=question,
-                firstChoice=firstChoice,
-                firstChoiceDescription=firstChoiceDescription,
-                secondChoice=secondChoice,
-                secondChoiceDescription=secondChoiceDescription,
-                thirdChoice=thirdChoice,
-                thirdChoiceDescription=thirdChoiceDescription,
-            )
-        )
+    request = QueryRequest(
+        question=question, selection_mode=selection_mode, options=options
     )
-
+    ask = runtime.context.ask if runtime.context else ask_user
+    response = QueryAnswer.model_validate(await ask(request.model_dump())).for_request(
+        request
+    )
+    selected = set(response.selected_option_ids)
     content = {
-        "choice": resp.choice,
-        "note": resp.note,
+        "selected_options": [
+            {"id": option.id, "label": option.label}
+            for option in request.options
+            if option.id in selected
+        ],
+        "free_text": response.free_text,
+        "note": response.note,
     }
-    artifact = {
-        "question": question,
-        "firstChoice": firstChoice,
-        "firstChoiceDescription": firstChoiceDescription,
-        "secondChoice": secondChoice,
-        "secondChoiceDescription": secondChoiceDescription,
-        "thirdChoice": thirdChoice,
-        "thirdChoiceDescription": thirdChoiceDescription,
-    }
-    return json.dumps(content, ensure_ascii=False), artifact
+    return (
+        json.dumps(content, ensure_ascii=False),
+        request.model_dump(exclude={"type"}),
+    )

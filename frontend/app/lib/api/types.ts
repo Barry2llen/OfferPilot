@@ -336,21 +336,35 @@ export type ChatRunStatus =
   | "failed"
   | "cancelled"
   | "interrupted";
-export interface PendingInput {
+export interface QueryOption {
+  id: string;
+  label: string;
+  description: string;
+}
+export type QuerySelectionMode = "single" | "multiple";
+export interface QueryAnswer {
+  selected_option_ids: string[];
+  free_text?: string | null;
+  note?: string | null;
+}
+interface PendingInputIdentity {
   request_id: string;
   run_id: string;
   thread_id: string;
   tool_call_id: string | null;
-  type: "query" | "error";
-  message?: string;
-  question?: string;
-  firstChoice?: string;
-  firstChoiceDescription?: string;
-  secondChoice?: string;
-  secondChoiceDescription?: string;
-  thirdChoice?: string;
-  thirdChoiceDescription?: string;
+  source?: string;
 }
+export interface PendingErrorInput extends PendingInputIdentity {
+  type: "error";
+  message?: string | null;
+}
+export interface PendingQueryInput extends PendingInputIdentity {
+  type: "query";
+  question: string;
+  selection_mode: QuerySelectionMode;
+  options: QueryOption[];
+}
+export type PendingInput = PendingQueryInput | PendingErrorInput;
 export interface ChatRun {
   run_id: string;
   thread_id: string;
@@ -368,5 +382,5 @@ export interface ChatRun {
 
 export type ConnectionState = "connected" | "reconnecting" | "idle";
 export type InputAnswer =
-  | { choice: QueryChoice; note?: string | null }
+  | QueryAnswer
   | { type: "retry" };

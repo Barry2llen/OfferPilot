@@ -10,7 +10,7 @@ import { useChatStream } from "./use-chat-stream";
 import { aiChatApi } from "@/app/lib/api/ai";
 import { ApiError } from "@/app/lib/api/client";
 import i18n from "@/app/lib/i18n";
-import type { ChatRun } from "@/app/lib/api/types";
+import type { ChatRun, PendingQueryInput } from "@/app/lib/api/types";
 
 vi.mock("@/app/lib/api/ai", () => ({
   aiChatApi: {
@@ -102,6 +102,39 @@ afterEach(() => {
 });
 
 describe("run subscription lifecycle", () => {
+  it.each(["single", "multiple"] as const)("restores every %s option on reconnect and refresh without creating a run", async (selection_mode) => {
+    const input: PendingQueryInput = {
+      type: "query", request_id: "q", run_id: "r", thread_id: "t", tool_call_id: "call",
+      question: "Choose next steps", selection_mode,
+      options: Array.from({ length: 6 }, (_, i) => ({ id: String(i), label: `Choice ${i}`, description: `Use ${i}` })),
+    };
+    vi.mocked(aiChatApi.listRuns).mockResolvedValue([{ ...run, pending_inputs: [input] }]);
+    let connections = 0;
+    vi.mocked(aiChatApi.runEvents).mockImplementation(async function* (_rid, _after, signal) {
+      connections += 1;
+      if (connections === 1) {
+        yield { event: "input_required", data: { ...input, event_id: 2 } };
+        return;
+      }
+      yield { event: "snapshot", data: {
+        run_id: "r", thread_id: "t", event_id: 3, status: "waiting_input", events: [], pending_inputs: [input],
+      } };
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    });
+    const first = mount();
+    await waitFor(() => expect(connections).toBe(2), { timeout: 3000 });
+    await waitFor(() => expect(first.result.current.chat.pendingInputs).toEqual([input]));
+    first.unmount();
+    const refreshed = mount();
+    await waitFor(() => expect(connections).toBe(3));
+    await waitFor(() => expect(refreshed.result.current.chat.pendingInputs).toEqual([input]));
+    const answer = { selected_option_ids: ["5"], free_text: null, note: "Preserved" };
+    await act(async () => { await refreshed.result.current.chat.answerInput(input, answer); });
+    expect(aiChatApi.answerInput).toHaveBeenCalledWith("r", "q", answer);
+    expect(aiChatApi.createRun).not.toHaveBeenCalled();
+    expect(refreshed.result.current.chat.pendingInputs).toEqual([]);
+  });
+
   it("does not advance the cursor or erase messages for malformed snapshots and input events", async () => {
     vi.mocked(aiChatApi.runEvents).mockImplementation(
       async function* (_rid, _after, signal) {

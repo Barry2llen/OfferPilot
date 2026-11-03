@@ -316,6 +316,7 @@ _RUN_ERROR_KEYS: Mapping[str, str] = {
     "Too many pending input requests.": "pendingInputLimit",
     "This input request is no longer available.": "inputUnavailable",
     "Invalid query answer.": "invalidQueryAnswer",
+    "Invalid query request.": "invalidQueryRequest",
     "Invalid query note.": "invalidQueryNote",
     "Only retry is accepted for this request.": "retryOnly",
     "A different answer was already submitted.": "answerConflict",
@@ -382,8 +383,12 @@ MESSAGES.update(
             "en-US": "This input request is no longer available.",
         },
         "invalidQueryAnswer": {
-            "zh-CN": "答案选项无效。",
-            "en-US": "Invalid query answer.",
+            "zh-CN": "请选择有效选项或填写答案，并遵守单选或多选要求。",
+            "en-US": "Choose valid options or enter an answer, following the single or multiple selection mode.",
+        },
+        "invalidQueryRequest": {
+            "zh-CN": "问题必须包含至少两个有效且标识唯一的选项，并指定单选或多选。",
+            "en-US": "A question must specify single or multiple mode and at least two valid options with unique IDs.",
         },
         "invalidQueryNote": {
             "zh-CN": "补充说明格式无效。",
@@ -642,6 +647,9 @@ def localize_progress_message(message: Any, locale: Locale = DEFAULT_LOCALE) -> 
 def localize_validation_message(message: str, locale: Locale) -> str:
     """Keep field locations/types while translating common Pydantic wording."""
 
+    query_message = message.removeprefix("Value error, ")
+    if query_message in {"Invalid query answer.", "Invalid query request."}:
+        return localize_error(query_message, locale)
     if locale == "en-US":
         return message
     lowered = message.lower()

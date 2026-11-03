@@ -8,9 +8,11 @@ from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from langchain_core.messages import BaseMessage
+from pydantic import ValidationError
 
 from exceptions import ModelCallExecutionError
 from schemas.model_selection import ModelSelection
+from schemas.query import QueryAnswer, QueryRequest
 from utils.i18n import Locale, public_run_error
 
 
@@ -60,6 +62,8 @@ class InteractionBroker:
             )
         if len(self.list_pending(context.run_id)) >= self.limit:
             raise ModelCallExecutionError("Too many pending input requests.")
+        if request.get("type") == "query":
+            request = QueryRequest.model_validate(request).model_dump()
         request_id = uuid4().hex
         data = {
             **request,
@@ -88,17 +92,15 @@ class InteractionBroker:
         if item is None or item.cancelled:
             raise InteractionError("This input request is no longer available.", 410)
         if item.data.get("type") == "query":
-            if set(answer) - {"choice", "note"} or answer.get("choice") not in {
-                "firstChoice",
-                "secondChoice",
-                "thirdChoice",
-                "other",
-            }:
-                raise InteractionError("Invalid query answer.", 422)
-            note = answer.get("note")
-            if note is not None and not isinstance(note, str):
-                raise InteractionError("Invalid query note.", 422)
-            answer = {"choice": answer["choice"], "note": (note or "").strip() or None}
+            request = QueryRequest.model_validate(
+                {key: item.data[key] for key in QueryRequest.model_fields}
+            )
+            try:
+                answer = (
+                    QueryAnswer.model_validate(answer).for_request(request).model_dump()
+                )
+            except (ValidationError, ValueError) as exc:
+                raise InteractionError("Invalid query answer.", 422) from exc
         elif answer != {"type": "retry"}:
             raise InteractionError("Only retry is accepted for this request.", 422)
         # No awaits between the state check and transition: atomic on our event loop.

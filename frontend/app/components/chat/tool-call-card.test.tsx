@@ -9,6 +9,47 @@ import i18n from "@/app/lib/i18n";
 
 afterEach(cleanup);
 
+describe("query answer history", () => {
+  it("renders a free-text-only answer and its separate note", async () => {
+    await i18n.changeLanguage("en-US");
+    render(<ToolCallCard defaultExpanded entry={{
+      name: "query", status: "success", toolCallId: "free-text",
+      output: { question: "Choose next steps", selected_options: [], free_text: "Only free text", note: "Separate note" },
+    }} />);
+    expect(document.body.textContent).toContain("Only free text");
+    expect(document.body.textContent).toContain("Separate note");
+  });
+
+  it.each(["zh-CN", "en-US"])("renders complete dynamic answers in %s", async (locale) => {
+    await i18n.changeLanguage(locale);
+    const history = mapChatHistory([{
+      role: "tool", type: "tool", name: "query", tool_call_id: "decision",
+      content: {
+        question: "Which next steps?", selection_mode: "multiple",
+        options: [{ id: "a", label: "Revise", description: "Revise first" }, { id: "b", label: "Apply", description: "Apply now" }],
+        selected_options: [{ id: "a", label: "Revise" }, { id: "b", label: "Apply" }],
+        free_text: "Another decision", note: "Preserve this note",
+      },
+    }], createChatState());
+    render(<MemoryRouter><ChatMessage message={history.state.messages[0]} /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button"));
+    const text = document.body.textContent;
+    for (const part of ["Which next steps?", "Revise", "Apply", "Another decision", "Preserve this note"]) expect(text).toContain(part);
+    expect(text).not.toContain("selected_options");
+  });
+
+  it.each(["firstChoice", "secondChoice", "thirdChoice", "other"])("keeps legacy %s records readable", async (choice) => {
+    await i18n.changeLanguage("en-US");
+    render(<ToolCallCard defaultExpanded entry={{
+      name: "query", status: "success", toolCallId: "legacy",
+      output: { question: "Old question", firstChoice: "First", secondChoice: "Second", thirdChoice: "Third", choice, note: "Old note" },
+    }} />);
+    expect(document.body.textContent).toContain("Old question");
+    expect(document.body.textContent).toContain("Old note");
+    if (choice !== "other") expect(document.body.textContent).toContain({ firstChoice: "First", secondChoice: "Second", thirdChoice: "Third" }[choice]);
+  });
+});
+
 describe("analysis tool card", () => {
   it("shows a result link before expanding and renders current retry progress", async () => {
     await i18n.changeLanguage("zh-CN");

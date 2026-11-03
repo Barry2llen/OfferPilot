@@ -107,6 +107,16 @@ def summarize_query_tool_output(output: Any) -> dict[str, Any]:
     if not isinstance(output, dict):
         return {"question": "", "choice": "", "note": None}
 
+    if "selected_options" in output:
+        return {
+            "question": output.get("question", ""),
+            "selection_mode": output.get("selection_mode"),
+            "options": output.get("options", []),
+            "selected_options": output["selected_options"],
+            "free_text": output.get("free_text"),
+            "note": output.get("note"),
+        }
+
     question = output.get("question")
     choice = output.get("choice")
     note = output.get("note")

@@ -333,50 +333,54 @@ def test_tool_node_returns_error_message_when_tool_raises() -> None:
     assert "boom: 5" in message.content
 
 
+@pytest.mark.parametrize("count", [2, 4, 6])
+@pytest.mark.parametrize("selection_mode", ["single", "multiple"])
 async def test_query_tool_keeps_display_context_out_of_llm_visible_content(
     monkeypatch: pytest.MonkeyPatch,
+    count: int,
+    selection_mode: str,
 ) -> None:
-    async def fake_interrupt(value: object) -> dict[str, str]:
-        return {"choice": "firstChoice", "note": "Use this."}
+    options = [
+        {"id": str(i), "label": f"Choice {i}", "description": f"Use option {i}."}
+        for i in range(count)
+    ]
+    args = {
+        "question": "Choose next step.",
+        "selection_mode": selection_mode,
+        "options": options,
+    }
+    selected = options if selection_mode == "multiple" else options[:1]
+
+    async def fake_interrupt(value: object) -> dict[str, Any]:
+        assert value == {"type": "query", **args}
+        return {
+            "selected_option_ids": [option["id"] for option in selected],
+            "free_text": "Another answer" if selection_mode == "multiple" else None,
+            "note": "Use this.",
+        }
 
     query_module = importlib.import_module("agent.tools.query")
     monkeypatch.setattr(query_module, "ask_user", fake_interrupt)
-
     result = await query_tool.ainvoke(
         {
             "name": "query",
-            "args": {
-                "question": "Choose next step.",
-                "firstChoice": "first",
-                "firstChoiceDescription": "Use the first option.",
-                "secondChoice": "second",
-                "secondChoiceDescription": "Use the second option.",
-                "thirdChoice": "third",
-                "thirdChoiceDescription": "Use the third option.",
-                "runtime": make_tool_runtime(),
-            },
+            "args": {**args, "runtime": make_tool_runtime()},
             "id": "call-query",
             "type": "tool_call",
         }
     )
-
     assert isinstance(result, ToolMessage)
     assert isinstance(result.content, str)
     assert json.loads(result.content) == {
-        "choice": "firstChoice",
+        "selected_options": [
+            {"id": option["id"], "label": option["label"]} for option in selected
+        ],
+        "free_text": "Another answer" if selection_mode == "multiple" else None,
         "note": "Use this.",
     }
     assert "question" not in result.content
-    assert "Use the first option." not in result.content
-    assert result.artifact == {
-        "question": "Choose next step.",
-        "firstChoice": "first",
-        "firstChoiceDescription": "Use the first option.",
-        "secondChoice": "second",
-        "secondChoiceDescription": "Use the second option.",
-        "thirdChoice": "third",
-        "thirdChoiceDescription": "Use the third option.",
-    }
+    assert "description" not in result.content
+    assert result.artifact == args
 
 
 def test_tool_node_executes_async_tool_calls_and_returns_tool_message() -> None:
@@ -1398,8 +1402,14 @@ async def test_bad_request_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> No
             calls += 1
             raise BadRequest("unsupported reasoning")
 
-    monkeypatch.setattr("agent.graphs.model_call.load_chat_model", lambda _: FailingModel())
-    graph = ModelCallGraph(config=Config(model_call_retry_attempts=3), tools=None).get_compiled_graph()
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model", lambda _: FailingModel()
+    )
+    graph = ModelCallGraph(
+        config=Config(model_call_retry_attempts=3), tools=None
+    ).get_compiled_graph()
     with pytest.raises(ModelRequestConfigurationError, match="unsupported reasoning"):
-        await graph.ainvoke(make_state([HumanMessage(content="hello")], model="test-model"))
+        await graph.ainvoke(
+            make_state([HumanMessage(content="hello")], model="test-model")
+        )
     assert calls == 1

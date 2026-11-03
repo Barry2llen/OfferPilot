@@ -377,13 +377,15 @@ async def until(predicate):
             await asyncio.sleep(0.005)
 
 
-def question():
+def question(selection_mode="single", count=3):
     return {
         "type": "query",
         "question": "Choose",
-        "firstChoice": "A",
-        "secondChoice": "B",
-        "thirdChoice": "C",
+        "selection_mode": selection_mode,
+        "options": [
+            {"id": chr(97 + i), "label": chr(65 + i), "description": f"Use {i + 1}"}
+            for i in range(count)
+        ],
     }
 
 
@@ -392,18 +394,18 @@ async def test_broker_early_answer_and_duplicate_conflict():
 
     async def publish(rid: str, event: str, data: dict[str, Any]) -> None:
         if event == "input_required":
-            await broker.submit(rid, data["request_id"], {"choice": "firstChoice"})
+            await broker.submit(rid, data["request_id"], {"selected_option_ids": ["a"]})
 
     broker = InteractionBroker(publish)
     answer = await broker.ask(InteractionContext(broker, "r", "t"), question())
-    assert answer == {"choice": "firstChoice", "note": None}
+    assert answer == {"selected_option_ids": ["a"], "free_text": None, "note": None}
     request_id = next(iter(broker.items))[1]
-    await broker.submit("r", request_id, {"choice": "firstChoice"})
+    await broker.submit("r", request_id, {"selected_option_ids": ["a"]})
     with pytest.raises(InteractionError) as error:
-        await broker.submit("r", request_id, {"choice": "secondChoice"})
+        await broker.submit("r", request_id, {"selected_option_ids": ["b"]})
     assert error.value.status_code == 409
     with pytest.raises(InteractionError):
-        await broker.submit("other-run", request_id, {"choice": "firstChoice"})
+        await broker.submit("other-run", request_id, {"selected_option_ids": ["a"]})
 
 
 async def test_broker_parallel_reverse_answers_and_sequential_questions():
@@ -428,7 +430,10 @@ async def test_broker_parallel_reverse_answers_and_sequential_questions():
             await broker.submit(
                 "r",
                 item["request_id"],
-                {"choice": "other", "note": item["tool_call_id"] + str(round_index)},
+                {
+                    "free_text": "Continue",
+                    "note": item["tool_call_id"] + str(round_index),
+                },
             )
     results = await asyncio.gather(*tasks)
     assert [[a["note"] for a in answers] for answers in results] == [
@@ -448,7 +453,7 @@ async def test_broker_timeout_and_cancel_leave_no_waiters():
     assert broker.list_pending("r") == []
     request_id = next(iter(broker.items))[1]
     with pytest.raises(InteractionError) as error:
-        await broker.submit("r", request_id, {"choice": "firstChoice"})
+        await broker.submit("r", request_id, {"selected_option_ids": ["a"]})
     assert error.value.status_code == 410
 
 
@@ -528,7 +533,7 @@ async def test_two_threads_and_idempotent_enqueue(manager):
     )
     request = manager.broker.list_pending(second["run_id"])[0]
     await manager.broker.submit(
-        second["run_id"], request["request_id"], {"choice": "firstChoice"}
+        second["run_id"], request["request_id"], {"selected_option_ids": ["a"]}
     )
     await manager.runs[second["run_id"]].done.wait()
     assert (await manager.get(first["run_id"]))["status"] == "waiting_input"
@@ -555,6 +560,32 @@ async def test_disconnect_snapshot_and_expired_replay(manager):
     assert "event: snapshot" in snapshot and "aaaaa" in snapshot
     assert "request_id" in snapshot
     await reconnect.aclose()
+    await manager.shutdown()
+
+
+@pytest.mark.parametrize("count", [2, 4, 6])
+@pytest.mark.parametrize("selection_mode", ["single", "multiple"])
+async def test_query_snapshot_preserves_question_and_request_identity(
+    manager, monkeypatch, count, selection_mode
+):
+    request = question(selection_mode, count)
+    monkeypatch.setattr(f"{__name__}.question", lambda: request)
+    row = await submit(manager)
+    rid = row["run_id"]
+    await until(lambda: manager.broker.list_pending(rid))
+    original = (await manager.get(rid))["pending_inputs"]
+    for after in (0, manager.runs[rid].sequence + 100):
+        stream = manager.stream(rid, after)
+        encoded = await anext(stream)
+        snapshot = json.loads(encoded.split("data: ", 1)[1])
+        assert snapshot["pending_inputs"] == original
+        assert {key: original[0][key] for key in request} == request
+        await stream.aclose()
+    await manager.broker.submit(
+        rid, original[0]["request_id"], {"free_text": "Continue"}
+    )
+    await manager.runs[rid].done.wait()
+    assert (await manager.get(rid))["status"] == "completed"
     await manager.shutdown()
 
 
@@ -810,7 +841,11 @@ def test_sqlite_postgres_run_table_ddl():
         assert "submission JSON" in ddl
 
 
-def test_http_native_answers_queue_and_migration(temporary_app_config, monkeypatch):
+@pytest.mark.parametrize("count", [2, 4, 6])
+@pytest.mark.parametrize("selection_mode", ["single", "multiple"])
+def test_http_native_answers_queue_and_migration(
+    temporary_app_config, monkeypatch, count, selection_mode
+):
     import time
 
     from fastapi.testclient import TestClient
@@ -825,13 +860,9 @@ def test_http_native_answers_queue_and_migration(temporary_app_config, monkeypat
         async def ainvoke(self, messages):
             if isinstance(messages[-1], HumanMessage) and messages[-1].content == "ask":
                 args = {
-                    "question": "Pick",
-                    "firstChoice": "A",
-                    "firstChoiceDescription": "A",
-                    "secondChoice": "B",
-                    "secondChoiceDescription": "B",
-                    "thirdChoice": "C",
-                    "thirdChoiceDescription": "C",
+                    key: value
+                    for key, value in question(selection_mode, count).items()
+                    if key != "type"
                 }
                 return AIMessage(
                     content="",
@@ -897,21 +928,50 @@ def test_http_native_answers_queue_and_migration(temporary_app_config, monkeypat
             "pending_inputs"
         ]
         assert len({item["tool_call_id"] for item in pending}) == 2
+        assert all(item["selection_mode"] == selection_mode for item in pending)
+        assert all(
+            item["options"] == question(selection_mode, count)["options"]
+            for item in pending
+        )
         assert (
             client.get(f"/ai/chat/runs/{second['run_id']}").json()["status"] == "queued"
         )
         for item in reversed(pending):
             url = f"/ai/chat/runs/{rid}/inputs/{item['request_id']}"
-            answer = {"answer": {"choice": "firstChoice"}}
+            for locale, message in (
+                ("zh-CN", "请选择有效选项或填写答案"),
+                ("en-US", "Choose valid options or enter an answer"),
+            ):
+                invalid = client.post(
+                    url,
+                    json={"answer": {"note": "Only a note"}},
+                    headers={"Accept-Language": locale},
+                )
+                assert invalid.status_code == 422
+                assert invalid.headers["Content-Language"] == locale
+                assert message in invalid.text
+            selected = (
+                [option["id"] for option in item["options"]]
+                if selection_mode == "multiple"
+                else ["a"]
+            )
+            answer = {"answer": {"selected_option_ids": selected}}
             assert (
-                client.post(url, json={"answer": {"choice": "invalid"}}).status_code
+                client.post(
+                    url, json={"answer": {"selected_option_ids": ["invalid"]}}
+                ).status_code
                 == 422
             )
             assert client.post(url, json=answer).status_code == 200
-            assert client.post(url, json=answer).status_code == 200
             assert (
                 client.post(
-                    url, json={"answer": {"choice": "secondChoice"}}
+                    url, json={"answer": {"selected_option_ids": selected[::-1]}}
+                ).status_code
+                == 200
+            )
+            assert (
+                client.post(
+                    url, json={"answer": {"free_text": "Different answer"}}
                 ).status_code
                 == 409
             )
@@ -919,7 +979,13 @@ def test_http_native_answers_queue_and_migration(temporary_app_config, monkeypat
         rid = second["run_id"]
         wait_for(lambda value: value["status"] == "completed")
         history = client.get("/ai/chats/http/history").json()["messages"]
-        assert len([m for m in history if m["role"] == "tool"]) == 2
+        tool_messages = [m for m in history if m["role"] == "tool"]
+        assert len(tool_messages) == 2
+        for message in tool_messages:
+            output = message["content"]
+            assert output["selection_mode"] == selection_mode
+            assert output["options"] == question(selection_mode, count)["options"]
+            assert [option["id"] for option in output["selected_options"]] == selected
         assert (
             client.post(
                 "/ai/chat/stream",
@@ -936,6 +1002,11 @@ def test_http_native_answers_queue_and_migration(temporary_app_config, monkeypat
             == 502
         )
         schema = client.get("/openapi.json").json()
+        query_input_schema = schema["components"]["schemas"]["PendingQueryInput"]
+        assert query_input_schema["properties"]["options"]["minItems"] == 2
+        assert "selection_mode" in query_input_schema["required"]
+        answer_fields = schema["components"]["schemas"]["QueryAnswer"]["properties"]
+        assert set(answer_fields) == {"selected_option_ids", "free_text", "note"}
         for path in (
             "/ai/chat/runs",
             "/ai/chat/runs/{run_id}/events",
@@ -955,7 +1026,7 @@ async def test_terminal_eviction_forgets_answers_and_closed_marker(manager):
     while not manager.broker.list_pending(rid):
         await asyncio.sleep(0)
     request_id = manager.broker.list_pending(rid)[0]["request_id"]
-    answer = {"choice": "firstChoice"}
+    answer = {"selected_option_ids": ["a"]}
     await manager.broker.submit(rid, request_id, answer)
     await manager.result(rid)
     await manager.broker.submit(rid, request_id, answer)

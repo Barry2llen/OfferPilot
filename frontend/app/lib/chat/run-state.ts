@@ -68,17 +68,25 @@ export function pendingInput(
     (input.type !== "query" && input.type !== "error")
   )
     return null;
-  for (const key of [
-    "message",
-    "question",
-    "firstChoice",
-    "secondChoice",
-    "thirdChoice",
-    "firstChoiceDescription",
-    "secondChoiceDescription",
-    "thirdChoiceDescription",
-  ]) {
-    if (input[key] != null && typeof input[key] !== "string") return null;
+  if (input.type === "query") {
+    if (
+      typeof input.question !== "string" || !input.question.trim() ||
+      (input.selection_mode !== "single" && input.selection_mode !== "multiple") ||
+      !Array.isArray(input.options) || input.options.length < 2
+    ) return null;
+    const ids = new Set<string>();
+    for (const option of input.options) {
+      if (!option || typeof option !== "object") return null;
+      const item = option as Record<string, unknown>;
+      if (["id", "label", "description"].some(
+        (key) => typeof item[key] !== "string" || !(item[key] as string).trim(),
+      )) return null;
+      const id = item.id as string;
+      if (ids.has(id)) return null;
+      ids.add(id);
+    }
+  } else if (input.message != null && typeof input.message !== "string") {
+    return null;
   }
   return input as unknown as PendingInput;
 }

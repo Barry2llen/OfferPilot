@@ -241,7 +241,10 @@ export function useChatStream() {
               }),
             );
           reset();
-          setPendingInputs(run.pending_inputs);
+          setPendingInputs(run.pending_inputs.flatMap((item) => {
+            const valid = pendingInput(item, run.run_id, tid);
+            return valid ? [valid] : [];
+          }));
           subscribed = true;
           let after = 0;
           let ended = false;

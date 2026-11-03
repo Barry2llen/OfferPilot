@@ -1,18 +1,38 @@
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from schemas.query import QueryAnswer, QueryRequest
 
-class QueryAnswer(BaseModel):
-    model_config = {"extra": "forbid"}
-    choice: Literal["firstChoice", "secondChoice", "thirdChoice", "other"] = Field(
-        description="Selected option or a free-form response.", examples=["firstChoice"]
+
+class PendingInputIdentity(BaseModel):
+    request_id: str = Field(description="Input request ID.", examples=["request-001"])
+    run_id: str = Field(description="Owning run ID.", examples=["run-001"])
+    thread_id: str = Field(description="Conversation ID.", examples=["thread-001"])
+    tool_call_id: str | None = Field(
+        description="Owning tool call, if any.", examples=["call-001", None]
     )
-    note: str | None = Field(
+    source: str = Field(description="Requesting agent.", examples=["supervisor"])
+
+
+class PendingQueryInput(QueryRequest, PendingInputIdentity):
+    pass
+
+
+class PendingErrorInput(PendingInputIdentity):
+    type: Literal["error"] = Field(
+        default="error", description="Retry request after an error.", examples=["error"]
+    )
+    message: str | None = Field(
         default=None,
-        description="Optional additional user text.",
-        examples=["Use the shorter version."],
+        description="Localized error for the user.",
+        examples=["The model call failed. Please retry."],
     )
+
+
+type PendingInput = Annotated[
+    PendingQueryInput | PendingErrorInput, Field(discriminator="type")
+]
 
 
 class RetryAnswer(BaseModel):
@@ -25,8 +45,11 @@ class RetryAnswer(BaseModel):
 
 class InputAnswer(BaseModel):
     answer: QueryAnswer | RetryAnswer = Field(
-        description="Query choice/note or an error retry command.",
-        examples=[{"choice": "firstChoice", "note": None}, {"type": "retry"}],
+        description="Dynamic query selections/free text/note or an error retry command.",
+        examples=[
+            {"selected_option_ids": ["revise"], "free_text": None, "note": None},
+            {"type": "retry"},
+        ],
     )
 
 
@@ -61,9 +84,9 @@ class ChatRunResponse(BaseModel):
         description="Terminal error or cancellation reason.",
         examples=[None],
     )
-    pending_inputs: list[dict[str, Any]] = Field(
+    pending_inputs: list[PendingInput] = Field(
         default_factory=list,
-        description="Outstanding requests identified by request_id and tool_call_id.",
+        description="Outstanding dynamic query or retry requests, identified by request_id and tool_call_id. Query requests preserve selection mode and every option on reconnect.",
         examples=[[]],
     )
     last_event_id: int = Field(
