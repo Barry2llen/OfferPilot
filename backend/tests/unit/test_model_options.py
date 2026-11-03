@@ -329,6 +329,55 @@ def test_bad_request_message_is_localized_and_preserves_provider_detail():
 
 
 @pytest.mark.parametrize(
+    "key",
+    [
+        "apiKey",
+        "OpenAIAPIKey",
+        "accessToken",
+        "ACCESSTOKEN",
+        "ACCESS_TOKEN",
+        "Access-Token",
+        "authToken",
+        "bearer_token",
+        "BearerToken",
+        "password",
+        "PASSWORD",
+        "providerPassword",
+        "passwd",
+        "token",
+        "TOKEN",
+        "providerToken",
+        "clientSecret",
+        "CLIENTSECRET",
+        "vendor.client-secret",
+        "secretKey",
+        "providerCredentials",
+    ],
+)
+@pytest.mark.parametrize("nesting", ["root", "object", "array"])
+def test_advanced_parameters_reject_common_credential_names(key: str, nesting: str):
+    extra: dict[str, Any] = {key: "sensitive-alias-value"}
+    if nesting == "object":
+        extra = {"custom": extra}
+    elif nesting == "array":
+        extra = {"custom": [extra]}
+    with pytest.raises(ValueError, match="Credentials cannot be stored"):
+        selection("Anthropic", extra_params=extra)
+
+
+def test_advanced_parameters_preserve_noncredential_token_controls():
+    extra = {
+        "max_tokens": 4096,
+        "max_completion_tokens": 2048,
+        "maxTokens": 4096,
+        "token_budget": 1024,
+        "token_count": 100,
+        "custom": [{"tokenizer": "example", "top_k": 20}],
+    }
+    assert selection("OpenAI Compatible", extra_params=extra).extra_params == extra
+
+
+@pytest.mark.parametrize(
     "extra_params",
     [
         {"anthropic_api_key": "sensitive-alias-value"},
@@ -342,32 +391,89 @@ def test_advanced_parameters_reject_credential_aliases(extra_params):
         selection("Anthropic", extra_params=extra_params)
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"anthropic_api_key": "sensitive-alias-value"},
+        {"accessToken": "sensitive-alias-value"},
+        {"custom": {"bearer_token": "sensitive-alias-value"}},
+        {"custom": [{"password": "sensitive-alias-value"}]},
+        {"custom": [{"token": "sensitive-alias-value"}]},
+        {"clientSecret": "sensitive-alias-value"},
+    ],
+)
+@pytest.mark.parametrize("locale", ["zh-CN", "en-US"])
 def test_model_options_api_rejects_credential_alias_without_echoing_or_saving(
     temporary_app_config: Config,
+    extra: dict[str, Any],
+    locale: str,
 ):
     with TestClient(create_app(temporary_app_config)) as client:
-        client.post(
-            "/model-providers", json={"name": "test", "provider": "Anthropic"}
-        )
-        payload = {"provider_name": "test", "model_name": "model"}
+        client.post("/model-providers", json={"name": "test", "provider": "Anthropic"})
+        payload = {
+            "provider_name": "test",
+            "model_name": "model",
+            "extra_params": {"top_p": 0.7},
+        }
         created = client.post("/model-selections", json=payload)
         selection_id = created.json()["id"]
-        extra = {"anthropic_api_key": "sensitive-alias-value"}
         rejected_create = client.post(
             "/model-selections",
             json={**payload, "model_name": "other", "extra_params": extra},
+            headers={"Accept-Language": locale},
         )
         rejected_update = client.put(
-            f"/model-selections/{selection_id}", json={"extra_params": extra}
+            f"/model-selections/{selection_id}",
+            json={"extra_params": extra},
+            headers={"Accept-Language": locale},
         )
         for rejected in (rejected_create, rejected_update):
             assert rejected.status_code == 422
+            assert rejected.headers["Content-Language"] == locale
             assert "sensitive-alias-value" not in rejected.text
-            assert "高级参数中不能保存凭据" in rejected.json()["detail"]
+            expected = (
+                "高级参数中不能保存凭据"
+                if locale == "zh-CN"
+                else "Credentials cannot be stored in advanced parameters"
+            )
+            assert expected in rejected.json()["detail"]
         listed = client.get("/model-selections")
         assert listed.status_code == 200
         assert len(listed.json()) == 1
-        assert listed.json()[0]["extra_params"] == {}
+        assert listed.json()[0]["extra_params"] == {"top_p": 0.7}
+        detail = client.get(f"/model-selections/{selection_id}")
+        assert detail.status_code == 200
+        assert detail.json()["extra_params"] == {"top_p": 0.7}
+
+
+def test_model_options_api_preserves_noncredential_token_controls(
+    temporary_app_config: Config,
+):
+    with TestClient(create_app(temporary_app_config)) as client:
+        client.post("/model-providers", json={"name": "test", "provider": "OpenAI"})
+        extra = {"max_tokens": 4096, "custom": [{"token_count": 100}]}
+        created = client.post(
+            "/model-selections",
+            json={
+                "provider_name": "test",
+                "model_name": "model",
+                "extra_params": extra,
+            },
+        )
+        assert created.status_code == 200
+        selection_id = created.json()["id"]
+        assert (
+            client.get(f"/model-selections/{selection_id}").json()["extra_params"]
+            == extra
+        )
+        updated_extra = {"max_completion_tokens": 2048, "token_budget": 0}
+        updated = client.put(
+            f"/model-selections/{selection_id}", json={"extra_params": updated_extra}
+        )
+        assert updated.status_code == 200
+        assert (
+            client.get("/model-selections").json()[0]["extra_params"] == updated_extra
+        )
 
 
 def test_reasoning_blocks_are_not_emitted_as_answer_text():

@@ -37,12 +37,18 @@ The three subprojects keep their dependencies and commands independent:
   or Chat Completions protocol; provider-specific thinking controls and advanced
   request-body parameters are stored per model. A chat can temporarily override
   the thinking value for subsequent runs without changing the saved default.
+  Saving a model with the provider default selected or an empty thinking budget
+  stores `thinking: null`, clearing provider-specific thinking settings. An explicit
+  budget of `0` is preserved for Google models.
   Model and provider capabilities vary; unsupported parameters return the
   provider error. Structured extraction uses temperature 0. Some Anthropic models
   or thinking modes reject that temperature, so structured
   extraction with those combinations will fail until the model's settings are changed.
   Advanced parameters must not contain credentials (including provider-specific
-  API-key aliases at any nesting level) or fields controlled by the application. Existing
+  API-key, token, password, and client-secret aliases at any nesting level,
+  in camelCase or separated forms) or fields controlled by the application.
+  Invalid advanced parameters are rejected with HTTP 422 without saving or
+  returning credential values. Existing
   databases are upgraded at startup. These combinations are not automatically
   verified against live model services.
   Changing a provider's type is rejected with HTTP 422 if any linked model's

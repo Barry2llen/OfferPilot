@@ -423,7 +423,10 @@ async def get_model_selection(
     "/model-selections",
     response_model=ModelSelectionResponse,
     summary="Create a model selection",
-    description="Create a model selection that can be referenced by AI services.",
+    description=(
+        "Create a model selection that can be referenced by AI services. "
+        "Set thinking to null to use the provider default."
+    ),
     response_description="Returns the new model selection with its resolved context window capacity.",
     responses={
         404: _error_response(
@@ -433,6 +436,11 @@ async def get_model_selection(
         409: _error_response(
             "The model name already exists for this provider.",
             example="Model selection already exists: default-openai/gpt-4o-mini",
+        ),
+        422: _error_response(
+            "Model options are invalid or advanced parameters contain credentials "
+            "or application-managed fields.",
+            example="Credentials cannot be stored in advanced parameters",
         ),
     },
 )
@@ -487,7 +495,10 @@ async def create_model_selection(
     "/model-selections/{selection_id}",
     response_model=ModelSelectionResponse,
     summary="Update a model selection",
-    description="Update a model selection. Omitted fields keep their current values.",
+    description=(
+        "Update a model selection. Omitted fields keep their current values. "
+        "Set thinking to null to clear it and use the provider default."
+    ),
     response_description="Returns the updated model selection with its resolved context window capacity.",
     responses={
         404: _error_response(
@@ -497,6 +508,11 @@ async def create_model_selection(
         409: _error_response(
             "The model name already exists for this provider.",
             example="Model selection already exists: default-openai/gpt-4o-mini",
+        ),
+        422: _error_response(
+            "Model options are invalid or advanced parameters contain credentials "
+            "or application-managed fields.",
+            example="Credentials cannot be stored in advanced parameters",
         ),
     },
 )

@@ -256,6 +256,17 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     assert "incompatible" in payload["paths"]["/model-providers/{provider_name}"][
         "put"
     ]["responses"]["422"]["description"]
+    for path, method in (
+        ("/model-selections", "post"),
+        ("/model-selections/{selection_id}", "put"),
+    ):
+        operation = payload["paths"][path][method]
+        assert "credentials" in operation["responses"]["422"]["description"]
+        assert "thinking to null" in operation["description"]
+    for name in ("ModelSelectionCreate", "ModelSelectionUpdate"):
+        properties = payload["components"]["schemas"][name]["properties"]
+        assert "camelCase" in properties["extra_params"]["description"]
+        assert "provider default" in properties["thinking"]["description"]
     assert "DeepSeek" in json.dumps(
         payload["components"]["schemas"]["ModelProviderCreate"],
         ensure_ascii=False,
@@ -273,6 +284,7 @@ def test_model_config_openapi_metadata(temporary_app_config: Config) -> None:
     [
         {"api_mode": "responses"},
         {"thinking": {"type": "effort", "value": "high"}},
+        {"thinking": {"type": "effort", "value": None}},
         {"extra_params": {"logit_bias": {"1": 0.5}}},
     ],
 )
@@ -321,6 +333,34 @@ def test_provider_type_change_preserves_linked_selections_when_incompatible(
         listed = client.get("/model-selections")
         assert listed.status_code == 200
         assert all(row["provider"]["provider"] == "Google" for row in listed.json())
+
+
+@pytest.mark.parametrize("explicit_null", [False, True])
+def test_provider_type_change_preserves_unconfigured_thinking(
+    temporary_app_config: Config,
+    explicit_null: bool,
+) -> None:
+    with TestClient(create_app(temporary_app_config)) as client:
+        client.post("/model-providers", json={"name": "test", "provider": "Anthropic"})
+        created = client.post(
+            "/model-selections",
+            json={
+                "provider_name": "test",
+                "model_name": "model",
+                **({"thinking": None} if explicit_null else {}),
+            },
+        )
+        assert created.status_code == 200
+        selection_url = f"/model-selections/{created.json()['id']}"
+        saved = client.put(selection_url, json={"thinking": None})
+        assert saved.status_code == 200
+        assert saved.json()["thinking"] is None
+        switched = client.put("/model-providers/test", json={"provider": "Google"})
+        assert switched.status_code == 200
+        detail = client.get(selection_url)
+        assert detail.status_code == 200
+        assert detail.json()["provider"]["provider"] == "Google"
+        assert detail.json()["thinking"] is None
 
 
 def test_compatible_provider_type_change_preserves_model_options(

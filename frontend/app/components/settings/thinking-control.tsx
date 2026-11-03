@@ -26,7 +26,7 @@ export default function ThinkingControl({ provider, value, onChange, allowType =
     </select>}
     {value.type === "budget" ? <>
       <input id={allowType ? undefined : "chat-thinking-value"} aria-label={t(allowType ? "settings.thinkingBudget" : "settings.thinking")} className={`${inputClass} w-32`} type="number" min={provider === "Anthropic" ? 1024 : -1} placeholder={t("settings.providerDefault")} value={value.value ?? ""} disabled={disabled} onChange={(e) => onChange({ ...value, value: e.target.value === "" ? null : Number(e.target.value) })} />
-      {allowType && provider === "Anthropic" && <input className={`${inputClass} w-32`} type="number" min={1025} required aria-label={t("settings.maxTokens")} placeholder={t("settings.maxTokens")} value={value.max_tokens ?? ""} disabled={disabled} onChange={(e) => onChange({ ...value, max_tokens: e.target.value === "" ? null : Number(e.target.value) })} />}
+      {allowType && provider === "Anthropic" && <input className={`${inputClass} w-32`} type="number" min={1025} required={value.value !== null} aria-label={t("settings.maxTokens")} placeholder={t("settings.maxTokens")} value={value.max_tokens ?? ""} disabled={disabled} onChange={(e) => onChange({ ...value, max_tokens: e.target.value === "" ? null : Number(e.target.value) })} />}
     </> : <select id={allowType ? undefined : "chat-thinking-value"} aria-label={t(allowType ? "settings.thinkingValue" : "settings.thinking")} className={inputClass} value={value.value ?? ""} disabled={disabled} onChange={(e) => onChange({ ...value, value: e.target.value || null })}>
       <option value="">{t("settings.providerDefault")}</option>
       {values[value.type].map((item) => <option key={item} value={item}>{t(`settings.thinkingValue_${item}`)}</option>)}

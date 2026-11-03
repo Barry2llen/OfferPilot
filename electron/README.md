@@ -98,6 +98,9 @@ in the backend's model configuration database. Existing desktop databases are
 upgraded at startup. Live provider compatibility is not checked by self-check.
 Provider type changes are rejected if linked model selections have incompatible
 saved settings; adjust or remove those selections before changing the type.
+Saving the provider default or clearing a thinking budget clears the saved
+thinking settings. Advanced parameters reject credential aliases, including
+camelCase token and password fields, at every nesting level with HTTP 422.
 Advanced OpenAI-compatible extension fields are forwarded as request body fields.
 For a staged Linux backend, from `electron/`:
 

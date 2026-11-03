@@ -78,7 +78,7 @@ export default function SelectionForm({
       model_name: modelName,
       supports_image_input: supportsImage,
       api_mode: apiMode,
-      thinking: thinkingValue,
+      thinking: thinking === null || thinking.value === null ? null : thinking,
       extra_params: extraParams as Record<string, unknown>,
     });
   };

@@ -1,3 +1,4 @@
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -133,18 +134,22 @@ def validate_model_options(
         "authorization",
         "access_token",
         "auth_token",
+        "bearer_token",
+        "token",
+        "password",
+        "passwd",
         "secret_key",
+        "client_secret",
+        "secret",
         "credentials",
     }
-    credential_suffixes = tuple(f"_{field}" for field in credential_fields)
+    credential_suffixes = tuple(field.replace("_", "") for field in credential_fields)
 
     def check_credentials(value: Any) -> None:
         if isinstance(value, dict):
             for key, item in value.items():
-                normalized_key = key.lower().replace("-", "_")
-                if normalized_key in credential_fields or normalized_key.endswith(
-                    credential_suffixes
-                ):
+                normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
+                if normalized_key.endswith(credential_suffixes):
                     raise ValueError(
                         "Credentials cannot be stored in advanced parameters"
                     )
@@ -233,13 +238,16 @@ class ModelSelectionCreate(BaseModel):
         default="auto", description="OpenAI API protocol.", examples=["responses"]
     )
     thinking: ThinkingSettings | None = Field(
-        default=None, description="Provider-specific default thinking settings."
+        default=None,
+        description="Provider-specific thinking settings; null uses the provider default.",
     )
     extra_params: dict[str, Any] = Field(
         default_factory=dict,
         description=(
             "Additional provider request body parameters, including OpenAI-compatible "
-            "extensions. Credentials and application-managed fields are rejected."
+            "extensions. Credential aliases (including camelCase token, password, "
+            "and API key fields) at any nesting level and application-managed "
+            "fields are rejected."
         ),
     )
 
@@ -277,13 +285,18 @@ class ModelSelectionUpdate(BaseModel):
     )
     thinking: ThinkingSettings | None = Field(
         default=None,
-        description="Provider-specific default thinking settings; null clears them.",
+        description=(
+            "Provider-specific thinking settings; null clears them and uses the "
+            "provider default. The current value is kept when omitted."
+        ),
     )
     extra_params: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Additional provider request body parameters, including OpenAI-compatible "
-            "extensions. Credentials and application-managed fields are rejected."
+            "extensions. Credential aliases (including camelCase token, password, "
+            "and API key fields) at any nesting level and application-managed "
+            "fields are rejected."
         ),
     )
 
@@ -325,7 +338,8 @@ class ModelSelectionResponse(BaseModel):
         default="auto", description="OpenAI API protocol."
     )
     thinking: ThinkingSettings | None = Field(
-        default=None, description="Provider-specific default thinking settings."
+        default=None,
+        description="Provider-specific thinking settings; null uses the provider default.",
     )
     extra_params: dict[str, Any] = Field(
         default_factory=dict,
