@@ -83,7 +83,7 @@ const zhCN = {
     toggle: "切换侧边栏",
     expand: "展开侧边栏",
     collapse: "收起侧边栏",
-    version: "OfferPilot v0.0.6",
+    version: "OfferPilot v0.0.7",
   },
   chat: {
     ready: "就绪",
@@ -554,7 +554,7 @@ const enUS = {
     toggle: "Toggle sidebar",
     expand: "Expand sidebar",
     collapse: "Collapse sidebar",
-    version: "OfferPilot v0.0.6",
+    version: "OfferPilot v0.0.7",
   },
   chat: {
     ready: "Ready",
