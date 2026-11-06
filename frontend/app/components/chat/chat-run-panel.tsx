@@ -10,6 +10,7 @@ import type {
   InputAnswer,
 } from "@/app/lib/api/types";
 import Button from "@/app/components/ui/button";
+import { useToast } from "@/app/components/ui/toast";
 import QueryDecisionComposer from "./query-decision-composer";
 import { needsRunNotice } from "@/app/lib/chat/run-state";
 
@@ -23,6 +24,7 @@ function InputCard({
   onAnswer: (input: PendingInput, answer: InputAnswer) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const { addToast } = useToast();
   const mobile = useMediaQuery("(max-width: 767px)");
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<QueryDraft>({ selectedIds: [], freeText: "", note: "" });
@@ -33,7 +35,8 @@ function InputCard({
     try {
       await onAnswer(input, answer);
       setOpen(false);
-    } catch {
+    } catch (error) {
+      addToast(error instanceof Error && error.message ? error.message : t("errors.submitFailed"), "error");
       setBusy(false);
     }
   };

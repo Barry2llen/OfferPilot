@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import QueryDecisionComposer from "./query-decision-composer";
 import ChatRunPanel from "./chat-run-panel";
+import { ToastProvider } from "@/app/components/ui/toast";
 import type { PendingQueryInput } from "@/app/lib/api/types";
 import i18n from "@/app/lib/i18n";
 
@@ -97,11 +98,12 @@ it("retains the draft for the same request and resets for a new request", () => 
 it("preserves the answer after a failed submission and enables retry", async () => {
   const onAnswer = vi.fn().mockRejectedValueOnce(new Error("Try again")).mockResolvedValueOnce(undefined);
   render(<ChatRunPanel runs={[]} inputs={[question(2, "multiple")]} connectionState="connected"
-    onAnswer={onAnswer} onCancel={vi.fn()} onCancelQueued={vi.fn()} />);
+    onAnswer={onAnswer} onCancel={vi.fn()} onCancelQueued={vi.fn()} />, { wrapper: ToastProvider });
   fireEvent.click(screen.getAllByRole("checkbox")[1]);
   fireEvent.change(screen.getByRole("textbox", { name: "Other answer" }), { target: { value: "Custom" } });
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.getByText("Try again")).toBeTruthy();
   expect((screen.getAllByRole("checkbox")[1] as HTMLInputElement).checked).toBe(true);
   expect((screen.getByRole("textbox", { name: "Other answer" }) as HTMLTextAreaElement).value).toBe("Custom");
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));

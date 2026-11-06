@@ -425,6 +425,20 @@ body:has(dialog[open]) .app-main { overflow: hidden; }
 /* Self-drawn window controls (Electron on Windows/Linux). Height matches the 72px header row. */
 :root[data-window-controls="custom"] { --electron-titlebar-height: 72px; --electron-window-controls-width: 138px; }
 :root { --sticky-top: max(calc(var(--electron-titlebar-height) + 8px), 16px); }
+.window-drag-region { display: none; }
+/* Narrow non-chat pages have no sidebar brand or chat header to drag the desktop window. */
+@media (max-width: 767px) {
+  :root[data-window-controls="custom"] .app-shell:not(:has(.chat-header)) > .window-drag-region {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: var(--electron-window-controls-width);
+    height: var(--electron-titlebar-height);
+    z-index: 60;
+    background: var(--canvas);
+  }
+}
 .window-controls { position: fixed; top: 0; right: 0; z-index: 70; display: flex; height: var(--electron-titlebar-height); background: var(--canvas); }
 .op-modal .window-controls { background: transparent; }
 .window-control { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 100%; color: var(--secondary); transition: background 120ms, color 120ms; }

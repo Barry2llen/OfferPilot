@@ -17,6 +17,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return <MotionConfig reducedMotion="user"><div className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <Sidebar historyRef={setSlot} width={sidebarWidth} onWidthChange={setSidebarWidth} onWidthCommit={writeSidebarWidth} />
     <HistorySlotContext value={slot}><main className="app-main">{children}</main></HistorySlotContext>
+    <div className="window-drag-region app-region-drag" aria-hidden="true" />
     <WindowControls />
   </div></MotionConfig>;
 }
