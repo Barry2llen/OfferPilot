@@ -132,6 +132,7 @@ export default function ResumeUploader({
       }`}
     >
       <ModelSelectionPicker
+        align={isHero ? "end" : "start"}
         models={models}
         loading={modelsLoading}
         value={state.currentModelSelection}

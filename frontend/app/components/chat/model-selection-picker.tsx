@@ -12,6 +12,8 @@ import i18n from "@/app/lib/i18n";
 interface ModelSelectionPickerProps {
   models: ModelSelectionResponse[];
   compact?: boolean;
+  /** Horizontal menu anchor, independent of the trigger's compact styling. */
+  align?: "start" | "end";
   loading: boolean;
   value: number | null;
   disabled?: boolean;
@@ -201,6 +203,7 @@ export default function ModelSelectionPicker({
   value,
   disabled = false,
   compact = false,
+  align = compact ? "end" : "start",
   onChange,
 }: ModelSelectionPickerProps) {
   const { t } = useTranslation();
@@ -307,7 +310,7 @@ export default function ModelSelectionPicker({
       </button>
 
       {open && (
-        <div role="dialog" aria-label={t("chat.chooseModel")} className={`${selectMenuClassName} ${compact ? "right-0" : "left-0"} ${upward ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]"} w-[26rem] max-w-[calc(100vw-2rem)] p-3`}>
+        <div role="dialog" aria-label={t("chat.chooseModel")} className={`${selectMenuClassName} ${align === "end" ? "right-0" : "left-0"} ${upward ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]"} w-[26rem] max-w-[calc(100vw-2rem)] p-3`}>
           {renderPickerContent("mt-4 max-h-[22rem] overflow-y-auto pr-1")}
           <div className="mt-3 flex items-center justify-between border-t border-border-light pt-3">
             <span className="text-xs text-text-muted">

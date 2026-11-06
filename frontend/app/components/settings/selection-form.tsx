@@ -152,7 +152,14 @@ export default function SelectionForm({
         </label>
       </div>
 
-      <details className="rounded-xl border border-border-default p-4" open={jsonError || undefined}>
+      <details
+        className="rounded-xl border border-border-default p-4"
+        open={jsonError || undefined}
+        onInvalidCapture={(event) => {
+          // Reveal synchronously so native validation can focus the invalid field.
+          event.currentTarget.open = true;
+        }}
+      >
         <summary className="text-sm font-semibold">{t("settings.advancedTab")}</summary>
         <div className="mt-5 space-y-5">
       {(selectedProvider === "OpenAI" || selectedProvider === "OpenAI Compatible") && <div>
