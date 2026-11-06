@@ -58,6 +58,8 @@ export default function Home() {
   const [modelContextWindowWarning, setModelContextWindowWarning] =
     useState(false);
   const [thinkingOverride, setThinkingOverride] = useState<ThinkingOverride>();
+  // Bumped by "new chat" so the composer clears its draft and takes focus even on an empty new chat.
+  const [composerResetSignal, setComposerResetSignal] = useState(0);
 
   const currentModel = models.find(
     (model) => model.id === state.currentModelSelection,
@@ -150,6 +152,7 @@ export default function Home() {
     setSidebarOpen(false);
     setModelContextWindowWarning(false);
     setThinkingOverride(undefined);
+    setComposerResetSignal((signal) => signal + 1);
     clearMessages();
     setThreadId(null);
     setThreadRequiresImageInput(false);
@@ -281,6 +284,7 @@ export default function Home() {
           noticeMessage={
             threadModelMismatchMessage ?? modelContextWindowWarningMessage
           }
+          resetSignal={composerResetSignal}
           trailing={
             <ThinkingPicker
               model={currentModel}

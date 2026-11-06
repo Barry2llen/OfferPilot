@@ -44,12 +44,8 @@ export default function ThinkingPicker({ model, override, onChange, disabled = f
         : t(`settings.thinkingValue_${value}`);
   const current = override && override.value !== null ? override.value : null;
   const triggerLabel = current !== null ? valueLabel(current) : savedValue !== null ? valueLabel(savedValue) : t("chat.thinkingDefaultShort");
-  const triggerContent = (
-    <span className="flex min-w-0 items-center gap-1">
-      <span className="hidden text-text-muted sm:inline">{t("chat.thinkingLabel")}</span>
-      <span className="truncate">{triggerLabel}</span>
-    </span>
-  );
+  // The trigger shows only the value; the accessible name and tooltip still say "thinking intensity".
+  const triggerContent = <span className="truncate">{triggerLabel}</span>;
 
   if (type !== "budget") {
     return (

@@ -1,5 +1,5 @@
 import { ArrowUp, FolderOpen, Plus, Square, Upload } from "lucide-react";
-import { useState, useRef, useLayoutEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import FormDrawer from "@/app/components/ui/form-drawer";
 import { useMediaQuery } from "@/app/hooks/use-media-query";
@@ -43,6 +43,8 @@ interface ChatInputProps {
   noticeMessage?: string | null;
   /** Controls rendered before the send button, e.g. the thinking intensity picker. */
   trailing?: ReactNode;
+  /** Changing this value clears the draft and attachments and focuses the input (new chat). */
+  resetSignal?: number;
 }
 
 /** Textarea height (40px) plus slack; anything taller means the draft wrapped. */
@@ -58,6 +60,7 @@ export default function ChatInput({
   submitting = false,
   noticeMessage = null,
   trailing,
+  resetSignal = 0,
 }: ChatInputProps) {
   const mobile = useMediaQuery("(max-width: 767px)");
   const { addToast } = useToast();
@@ -78,6 +81,7 @@ export default function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const uploadIdRef = useRef(0);
+  const lastResetSignal = useRef(resetSignal);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -90,6 +94,19 @@ export default function ChatInput({
   }, [input]);
 
   useDismiss(attachmentMenuRef, attachmentMenuOpen, () => setAttachmentMenuOpen(false));
+
+  useEffect(() => {
+    if (resetSignal === lastResetSignal.current) return;
+    lastResetSignal.current = resetSignal;
+    setInput("");
+    setSelectedLibraryFiles([]);
+    setLocalUploads((current) => {
+      current.forEach((item) => item.previewUrl && URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+    setAttachmentMenuOpen(false);
+    textareaRef.current?.focus();
+  }, [resetSignal]);
 
   const buildDraftAttachments = (): ChatAttachmentItem[] => [
     ...selectedLibraryFiles.map((file) => ({

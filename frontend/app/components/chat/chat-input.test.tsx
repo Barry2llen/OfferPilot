@@ -136,3 +136,27 @@ it("renders trailing controls inside the composer and offers stop and enqueue wh
   fireEvent.click(screen.getByRole("button", { name: i18n.t("chatRuns.stopCurrent") }));
   expect(onStop).toHaveBeenCalledTimes(1);
 });
+
+it("clears the draft and attachments and focuses the input when the reset signal changes", async () => {
+  await i18n.changeLanguage("en-US");
+  const view = (resetSignal: number) => (
+    <ToastProvider>
+      <ChatInput onSend={() => {}} onStop={() => {}} isStreaming={false} disabled={false} resetSignal={resetSignal} />
+    </ToastProvider>
+  );
+  const { container, rerender } = render(view(0));
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "unsent draft" } });
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
+  });
+  expect(screen.getByText("notes.txt")).toBeTruthy();
+
+  rerender(view(0));
+  expect(input.value).toBe("unsent draft");
+
+  rerender(view(1));
+  expect(input.value).toBe("");
+  expect(screen.queryByText("notes.txt")).toBeNull();
+  expect(document.activeElement).toBe(input);
+});
