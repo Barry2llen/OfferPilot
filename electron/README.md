@@ -147,7 +147,8 @@ The workflow remains named `Release` in
 
 1. Dispatch a `bump-patch`, `bump-minor` or `bump-major` from `main`.
 2. Review and merge `release/vX.Y.Z`. Root/frontend/Electron versions and
-   both sidebar labels are synchronized; dependency versions remain locked.
+   both sidebar `nav.version` labels (`vX.Y.Z`, shown beside the brand name)
+   are synchronized; dependency versions remain locked.
 3. The merge is tagged `vX.Y.Z`. Existing tags are never moved; re-running
    the same merge accepts a tag only when it already targets that commit.
 4. Windows and Ubuntu 22.04 build jobs upload artifacts without publishing.

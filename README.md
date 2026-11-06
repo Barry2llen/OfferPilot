@@ -213,7 +213,8 @@ handles both platforms:
    assets and is published with automatically generated notes.
 
 Versions are synchronized across the root, frontend, Electron and both sidebar
-translations. pnpm lockfiles pin dependencies; they have no application-version
+`nav.version` translations, which display `vX.Y.Z` beside the brand name.
+pnpm lockfiles pin dependencies; they have no application-version
 field to bump. The backend package version remains independent.
 
 Published assets are `OfferPilot-Windows-x64-vX.Y.Z.exe`,

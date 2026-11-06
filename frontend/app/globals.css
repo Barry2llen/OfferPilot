@@ -402,7 +402,7 @@ body:has(dialog[open]) .app-main { overflow: hidden; }
 
 .provider-list-row { display: block; width: 100%; padding: 16px; border-bottom: 1px solid var(--line); text-align: left; border-radius: 8px; transition: background 120ms; }
 .provider-list-row:hover, .provider-list-row.is-selected { background: var(--surface); }
-.provider-model-panel { min-width: 0; padding: 8px 0; }
+.provider-model-panel { container: provider-models / inline-size; min-width: 0; padding: 8px 0; }
 .model-table { min-width: 0; }
 .model-table-head { display: none; }
 .model-table-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: center; border-top: 1px solid var(--line); padding: 16px 0; }
@@ -412,7 +412,7 @@ body:has(dialog[open]) .app-main { overflow: hidden; }
 @media (min-width: 1024px) {
   .provider-model-panel { padding: 8px 0 8px 20px; border-left: 1px solid var(--line); }
 }
-@media (min-width: 1200px) {
+@container provider-models (min-width: 600px) {
   /* One shared grid so header labels stay aligned with every row regardless of action width. */
   .model-table { display: grid; grid-template-columns: minmax(140px, 1fr) max-content max-content max-content; column-gap: 24px; }
   .model-table-head, .model-table-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: 24px; }

@@ -134,7 +134,7 @@ Linux 正式产物在 Ubuntu 22.04 构建，并在 Ubuntu 22.04、24.04 验证�
 3. 合并后创建不可变的 `vX.Y.Z` 标签，并行构建 Windows、Linux，在两个 Ubuntu 版本验证 Linux 安装包。
 4. 全部必要检查通过后，将完整资产上传草稿 Release，再公开发布并自动生成说明。
 
-版本升级会同步根项目、前端、Electron 和双语侧边栏版本号。pnpm 锁文件固定依赖，没有需要随应用升级的版本字段；后端包版本独立维护。
+版本升级会同步根项目、前端、Electron 和双语侧边栏的 `nav.version` 字段，侧栏在品牌名旁单独显示 `vX.Y.Z`。pnpm 锁文件固定依赖，没有需要随应用升级的版本字段；后端包版本独立维护。
 
 发布资产为 `OfferPilot-Windows-x64-vX.Y.Z.exe`、`OfferPilot-Linux-x64-vX.Y.Z.AppImage`、`OfferPilot-Linux-x64-vX.Y.Z.deb` 和 Linux 的 `.sha256` 校验文件。使用 `build-windows` 或 `build-linux`，输入不带 `v` 的已有版本号，可替换已公开 Release 的单平台资产；使用 `build-all` 恢复未发布或草稿状态的版本。构建日志、成功产物及失败时已有的安装包在 Actions 中保留 14 天。
 
