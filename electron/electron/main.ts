@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeTheme } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
@@ -173,15 +173,15 @@ function createWindow(targetUrl: string) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 1040,
-    minHeight: 680,
+    minWidth: 640,
+    minHeight: 560,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#f7f7f4',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#121212' : '#ffffff',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#ffffff',
-      symbolColor: '#18181b',
+      color: nativeTheme.shouldUseDarkColors ? '#121212' : '#ffffff',
+      symbolColor: nativeTheme.shouldUseDarkColors ? '#f5f5f5' : '#18181b',
       height: 48,
     },
     icon: path.join(process.env.VITE_PUBLIC || path.join(appRoot, 'public'), 'electron-vite.svg'),
@@ -190,6 +190,15 @@ function createWindow(targetUrl: string) {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  })
+
+  // The renderer's theme-color metadata follows light/dark/system without expanding preload.
+  mainWindow.webContents.on('did-change-theme-color', (_event, color) => {
+    if (!mainWindow || (color !== '#121212' && color !== '#ffffff')) return
+    mainWindow.setBackgroundColor(color)
+    if (process.platform === 'win32' || process.platform === 'linux') {
+      mainWindow.setTitleBarOverlay({ color, symbolColor: color === '#121212' ? '#f5f5f5' : '#18181b' })
+    }
   })
 
   mainWindow.once('ready-to-show', () => {

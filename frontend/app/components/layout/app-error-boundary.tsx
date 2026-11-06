@@ -29,8 +29,8 @@ export default class AppErrorBoundary extends Component<
     }
 
     return (
-      <div className="flex min-h-full items-center justify-center bg-white p-6">
-        <div className="w-full max-w-lg rounded-2xl border border-error-text/20 bg-white p-8 text-center shadow-card">
+      <div className="flex min-h-full items-center justify-center bg-surface-primary p-6">
+        <div className="w-full max-w-lg rounded-2xl border border-error-text/20 bg-surface-primary p-8 text-center shadow-card">
           <h1 className="font-display text-xl font-semibold text-text-primary">
             {i18n.t("app.errorTitle")}
           </h1>
@@ -39,7 +39,7 @@ export default class AppErrorBoundary extends Component<
           </p>
           <button
             type="button"
-            className="mt-6 rounded-lg bg-text-charcoal px-4 py-2 text-sm font-medium text-white transition hover:bg-text-dark"
+            className="mt-6 rounded-lg bg-text-charcoal px-4 py-2 text-sm font-medium text-on-accent transition hover:bg-text-dark"
             onClick={() => window.location.reload()}
           >
             {i18n.t("app.reload")}

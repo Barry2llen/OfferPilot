@@ -19,15 +19,15 @@ export default function MarkdownContent({
     return null;
   }
 
-  const textClass = inverse ? "text-white" : "text-text-primary";
-  const mutedClass = inverse ? "text-white/70" : "text-text-secondary";
+  const textClass = inverse ? "text-on-accent" : "text-text-primary";
+  const mutedClass = inverse ? "text-on-accent/70" : "text-text-secondary";
   const borderClass = inverse ? "border-white/15" : "border-border-default";
   const codeClass = inverse
-    ? "bg-white/10 text-white"
-    : "bg-white text-text-charcoal";
+    ? "bg-surface-primary/10 text-on-accent"
+    : "bg-surface-primary text-text-charcoal";
   const linkClass = inverse
-    ? "text-primary-200 hover:text-white"
-    : "text-primary-600 hover:text-primary-700";
+    ? "text-primary-200 hover:text-on-accent"
+    : "text-brand-blue hover:underline";
 
   const components: Components = {
     p({ children }) {
@@ -138,7 +138,7 @@ function CodeBlockWrapper({ children, codeClass }: { children: React.ReactNode; 
       </pre>
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 p-1.5 rounded-md bg-black/20 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/40 hover:text-white"
+        className="absolute top-2 right-2 p-1.5 rounded-md bg-black/20 text-on-accent/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/40 hover:text-on-accent"
         title={t("chat.copyCode")}
       >
         {copied ? (

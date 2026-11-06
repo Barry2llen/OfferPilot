@@ -18,7 +18,7 @@ export default function ThinkingControl({ provider, value, onChange, allowType =
   const { t } = useTranslation();
   const types = providerThinkingTypes[provider] ?? [];
   if (!types.length) return null;
-  const inputClass = "rounded-lg border border-border-default bg-white px-2 py-1.5 text-sm text-text-primary";
+  const inputClass = "rounded-lg border border-border-default bg-surface-primary px-2 py-1.5 text-sm text-text-primary";
   return <div className="flex flex-wrap items-center gap-2">
     <label className="text-sm text-text-secondary" htmlFor={allowType ? "thinking-type" : "chat-thinking-value"}>{t("settings.thinking")}</label>
     {allowType && <select id="thinking-type" className={inputClass} value={value.type} disabled={disabled} onChange={(e) => onChange({ type: e.target.value as ThinkingType, value: null })}>

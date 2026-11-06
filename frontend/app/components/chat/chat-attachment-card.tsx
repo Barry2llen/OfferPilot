@@ -74,7 +74,7 @@ const KIND_STYLES: Record<AttachmentKind, { label: string; className: string }> 
   image: { label: "IMG", className: "bg-info-bg text-info-text" },
   pdf: { label: "PDF", className: "bg-error-bg text-error-text" },
   word: { label: "DOC", className: "bg-info-bg text-info-text" },
-  code: { label: "CODE", className: "bg-text-charcoal text-white" },
+  code: { label: "CODE", className: "bg-text-charcoal text-on-accent" },
   text: { label: "TXT", className: "bg-surface-secondary text-text-secondary" },
   table: { label: "CSV", className: "bg-success-bg text-success-text" },
   archive: { label: "ZIP", className: "bg-warning-bg text-warning-text" },
@@ -179,7 +179,7 @@ export default function ChatAttachmentCard({
       )}
 
       {variant === "message" && attachment.pending && (
-        <span className="absolute right-2 top-2 rounded-full bg-primary-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+        <span className="absolute right-2 top-2 rounded-full bg-primary-500 px-2 py-0.5 text-xs font-semibold text-on-accent shadow-sm">
           {t("attachments.processing")}
         </span>
       )}
@@ -191,7 +191,7 @@ export default function ChatAttachmentCard({
             event.stopPropagation();
             onRemove();
           }}
-          className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-text-muted shadow-sm transition hover:text-error-text"
+          className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-surface-primary/95 text-text-muted shadow-sm transition hover:text-error-text"
           aria-label={t("attachments.remove", { filename: attachment.originalFilename })}
           title={t("attachments.removeAttachment")}
         >
@@ -206,8 +206,8 @@ export default function ChatAttachmentCard({
   const rootClassName = [
     "relative overflow-hidden border text-left transition",
     variant === "grid" || variant === "picker"
-      ? "h-full rounded-xl bg-white"
-      : "rounded-2xl bg-white",
+      ? "h-full rounded-xl bg-surface-primary"
+      : "rounded-2xl bg-surface-primary",
     variant === "message" ? "chat-message-enter" : "",
     selected
       ? "border-text-charcoal shadow-[0_0_0_2px_rgba(24,30,37,0.10)]"
@@ -246,11 +246,11 @@ function RowContent({
       ? i18n.t("attachments.processing")
       : i18n.t("attachments.pendingUpload")
     : attachment.fileId
-      ? attachment.fileId
+      ? null
       : i18n.t("attachments.notStored");
 
   return (
-    <div className="flex min-h-20 w-full max-w-[18rem] items-center gap-3 p-2.5 pr-8">
+    <div className="flex min-h-20 w-full max-w-full items-center gap-3 p-2.5 pr-8">
       <AttachmentPreview attachment={attachment} className="h-14 w-14 rounded-xl" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-text-primary" title={attachment.originalFilename}>
@@ -276,7 +276,6 @@ function GridContent({
     ? new Date(attachment.createdAt).toLocaleDateString(i18n.language)
     : null;
   const meta = [
-    attachment.fileId,
     sizeLabel,
     typeof attachment.referenceCount === "number"
       ? i18n.t("attachments.references", {
@@ -304,7 +303,7 @@ function GridContent({
         )}
       </div>
       {selected && (
-        <span className="absolute right-2 top-2 rounded-full bg-text-charcoal px-2 py-1 text-[11px] font-semibold text-white shadow-sm">
+        <span className="absolute right-2 top-2 rounded-full bg-text-charcoal px-2 py-1 text-xs font-semibold text-on-accent shadow-sm">
           {i18n.t("attachments.selected")}
         </span>
       )}
@@ -343,7 +342,7 @@ function AttachmentPreview({
       aria-label={style.label}
     >
       <FileIcon kind={kind} className={large ? "h-8 w-8" : "h-5 w-5"} />
-      <span className={large ? "text-xs font-bold" : "text-[10px] font-bold"}>
+      <span className={large ? "text-xs font-bold" : "text-xs font-bold"}>
         {style.label}
       </span>
     </div>

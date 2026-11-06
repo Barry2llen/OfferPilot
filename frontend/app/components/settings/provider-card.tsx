@@ -30,7 +30,7 @@ export default function ProviderCard({
 
   return (
     <Card
-      className={`transition-all duration-1000 ${highlight ? "ring-2 ring-primary-500 bg-primary-50 shadow-brand-glow" : ""}`}
+      className={`transition-all duration-1000 ${highlight ? "ring-2 ring-primary-500 bg-primary-50 shadow-sm" : ""}`}
     >
       <div>
         <div className="flex items-start justify-between gap-4">

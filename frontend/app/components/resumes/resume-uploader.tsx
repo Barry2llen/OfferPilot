@@ -142,7 +142,7 @@ export default function ResumeUploader({
           className={buttonClassName({
             variant: "secondary",
             size: "sm",
-            className: isHero ? "bg-white/90 shadow-sm" : "",
+            className: isHero ? "bg-surface-primary/90 shadow-sm" : "",
           })}
         >
           {t("settings.title")}
@@ -161,14 +161,14 @@ export default function ResumeUploader({
       onDrop={onDrop}
       className={`relative text-center transition-all duration-300 ${
         isHero
-          ? "min-h-[220px] rounded-[20px] border border-dashed border-[#bfc5dc] bg-white px-5 py-10 shadow-brand-glow hover:border-primary-600 sm:min-h-[232px] sm:px-8"
+          ? "min-h-[220px] rounded-[20px] border border-dashed border-border-default bg-surface-primary px-5 py-10 shadow-sm hover:border-primary-600 sm:min-h-[232px] sm:px-8"
           : "overflow-hidden rounded-2xl px-6 py-10"
       } ${dragging ? "border-primary-600 bg-primary-200/20" : ""}`}
     >
       {isHero && modelControls}
       {running && task && (
         <div
-          className={`absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/85 px-6 backdrop-blur-sm transition-all duration-300 ${
+          className={`absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface-primary/85 px-6 backdrop-blur-sm transition-all duration-300 ${
             isHero ? "rounded-[20px]" : "rounded-2xl"
           }`}
         >
@@ -198,7 +198,7 @@ export default function ResumeUploader({
       )}
 
       <div
-        className={`mx-auto mb-6 flex items-center justify-center rounded-full bg-[#dce1ff] text-primary-700 transition-transform duration-300 ${
+        className={`mx-auto mb-6 flex items-center justify-center rounded-full bg-surface-secondary text-primary-700 transition-transform duration-300 ${
           isHero ? "h-12 w-12" : "h-12 w-12"
         } ${dragging ? "scale-110" : ""}`}
       >
@@ -226,7 +226,7 @@ export default function ResumeUploader({
         className="hidden"
       />
       <Button
-        className={isHero ? "mt-6 shadow-brand-glow" : "mt-5"}
+        className={isHero ? "mt-6 shadow-sm" : "mt-5"}
         variant={isHero ? "primary" : "secondary"}
         size="sm"
         pill={isHero}

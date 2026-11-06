@@ -5,19 +5,20 @@ import { buttonClassName } from "@/app/components/ui/button";
 
 interface ChatWelcomeProps {
   hasNoModel: boolean;
+  hasConfiguredModels?: boolean;
   onPrompt: (prompt: string) => void;
 }
 
 
-export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) {
+export default function ChatWelcome({ hasNoModel, hasConfiguredModels, onPrompt }: ChatWelcomeProps) {
   const { t } = useTranslation();
 
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
       <div className="w-full max-w-lg">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-blue/10">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-secondary">
           <svg
-            className="h-8 w-8 text-brand-blue"
+            className="h-8 w-8 text-text-primary"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -41,11 +42,11 @@ export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) 
         {hasNoModel ? (
           <div className="mt-6 rounded-2xl border border-dashed border-border-default p-6 text-center">
             <p className="mb-4 text-sm text-text-secondary">
-              {t("welcome.configureFirst")}
+              {t(hasConfiguredModels ? "appearance.chooseModel" : "welcome.configureFirst")}
             </p>
-            <Link to="/settings/providers" className={buttonClassName()}>
+            {!hasConfiguredModels && <Link to="/settings/providers" className={buttonClassName()}>
               {t("welcome.goToSettings")}
-            </Link>
+            </Link>}
           </div>
         ) : (
           <>
@@ -53,7 +54,7 @@ export default function ChatWelcome({ hasNoModel, onPrompt }: ChatWelcomeProps) 
               <QuickTasks onPrompt={onPrompt} disabled={false} />
             </div>
 
-            <p className="mt-6 text-center text-[11px] text-text-muted">
+            <p className="mt-6 text-center text-xs text-text-muted">
               {t("welcome.comingSoon")}
             </p>
           </>

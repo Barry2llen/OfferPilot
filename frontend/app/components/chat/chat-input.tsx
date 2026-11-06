@@ -1,5 +1,8 @@
+import { Paperclip } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import FormDrawer from "@/app/components/ui/form-drawer";
+import { useMediaQuery } from "@/app/hooks/use-media-query";
 import Button from "@/app/components/ui/button";
 import { useToast } from "@/app/components/ui/toast";
 import ChatAttachmentCard, {
@@ -34,6 +37,7 @@ interface ChatInputProps {
   onStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
+  disabledMessage?: string;
   submitting?: boolean;
   noticeMessage?: string | null;
 }
@@ -43,9 +47,11 @@ export default function ChatInput({
   onStop,
   isStreaming,
   disabled,
+  disabledMessage,
   submitting = false,
   noticeMessage = null,
 }: ChatInputProps) {
+  const mobile = useMediaQuery("(max-width: 767px)");
   const { addToast } = useToast();
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -149,7 +155,7 @@ export default function ChatInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && !e.shiftKey && (!mobile || e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSend();
     }
@@ -246,7 +252,7 @@ export default function ChatInput({
     Boolean(input.trim() || hasDraftAttachments) && !disabled && !submitting;
 
   return (
-    <div className="shrink-0 bg-gradient-to-t from-white via-white to-white/75 px-4 pb-5 pt-3 sm:px-6">
+    <div className="chat-composer shrink-0 px-4 pb-4 pt-3 sm:px-6">
       <input
         ref={fileInputRef}
         type="file"
@@ -291,35 +297,23 @@ export default function ChatInput({
           </div>
         )}
 
-        <div className="rounded-3xl bg-white p-2 shadow-[0_14px_40px_rgba(15,23,42,0.12)] transition-shadow focus-within:shadow-[0_0_0_2px_rgba(20,86,240,0.15),0_14px_40px_rgba(44,30,116,0.16)]">
-          <div className="flex items-end gap-3 rounded-[1.25rem] bg-surface-secondary/80 p-2 pl-4">
+        <div className="composer-surface">
+          <div className="composer-grid">
             <div ref={attachmentMenuRef} className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => setAttachmentMenuOpen((open) => !open)}
                 disabled={disabled}
-                className="rounded-full bg-white p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40"
+                className="inline-flex items-center gap-2 rounded-lg border border-border-default bg-surface-primary p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40"
                 title={t("chat.addAttachment")}
                 aria-label={t("chat.addAttachment")}
                 aria-expanded={attachmentMenuOpen}
               >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 5v14m7-7H5"
-                  />
-                </svg>
+                <Paperclip size={18} /><span className="hidden sm:inline">{t("chat.addAttachment")}</span>
               </button>
 
               {attachmentMenuOpen && (
-                <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-48 overflow-hidden rounded-2xl border border-border-light bg-white p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]">
+                <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-48 overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]">
                   <button
                     type="button"
                     onClick={openLocalFileDialog}
@@ -371,17 +365,18 @@ export default function ChatInput({
               onKeyDown={handleKeyDown}
               placeholder={
                 disabled
-                  ? t("chat.configureModel")
+                  ? disabledMessage ?? t("chat.configureModel")
                   : t("chat.promptPlaceholder")
               }
               disabled={disabled}
               rows={1}
-              className="flex-1 resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:text-text-muted/50"
+              aria-label={t("chat.promptPlaceholder")}
+              className="composer-text resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:text-text-muted/50"
             />
-            <div className="flex items-center gap-1.5">
+            <div className="composer-actions flex items-center gap-1.5">
               {isStreaming && (
-                <Button variant="danger" size="sm" onClick={onStop} pill>
-                  {t("chatRuns.stopCurrent")}
+                <Button variant="secondary" size="sm" onClick={onStop} aria-label={t("chatRuns.stopCurrent")}>
+                  {t("chat.stop")}
                 </Button>
               )}
               <Button
@@ -396,54 +391,18 @@ export default function ChatInput({
             </div>
           </div>
         </div>
-        <p className="mt-2 text-center text-[11px] text-text-muted">
-          {noticeMessage ?? t("chat.shiftEnterSubmit")}
+        <p className="mt-2 text-center text-xs text-text-muted">
+          {noticeMessage ?? t(mobile ? "appearance.mobileKeyboard" : "appearance.keyboard")}
         </p>
       </div>
 
-      {pickerOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-            onClick={() => setPickerOpen(false)}
-          />
-          <div className="relative flex max-h-[80vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
-            <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
-              <div>
-                <h3 className="font-display text-lg font-semibold text-text-primary">
-                  {t("chat.chooseLibraryAttachment")}
-                </h3>
-                <p className="text-xs text-text-muted">
-                  {t("chat.reuseUploadedFiles")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPickerOpen(false)}
-                className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
-              >
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
+      <FormDrawer open={pickerOpen} title={t("chat.chooseLibraryAttachment")} onClose={() => setPickerOpen(false)}>
             <div className="border-b border-border-light px-5 py-4">
               <input
                 value={pickerQuery}
                 onChange={(event) => setPickerQuery(event.target.value)}
                 placeholder={t("files.searchPlaceholder")}
-                className="h-10 w-full rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
+                className="h-10 w-full rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-surface-primary focus:ring-2 focus:ring-primary-500/25"
               />
             </div>
 
@@ -513,9 +472,7 @@ export default function ChatInput({
                 {t("common.done")}
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+      </FormDrawer>
     </div>
   );
 }

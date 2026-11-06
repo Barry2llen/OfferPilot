@@ -207,3 +207,14 @@ before a new log is opened. Invalid external bytes appear as an
 an encoding or inserting replacement characters. Historical text is not
 rewritten. These changes do not change the system code page or GPU settings;
 AMD/Chromium diagnostics remain visible.
+
+
+## Responsive window and appearance
+
+The shared frontend implements desktop, tablet-width and narrow-window layouts.
+The default BrowserWindow size is 1280×820, with a 640×560 minimum. Native window
+controls retain a reserved area so model and navigation controls do not overlap.
+The frontend light/dark/system preference updates its theme-color metadata;
+Electron handles did-change-theme-color to synchronize the background and overlay
+symbol colors. This requires no additional preload API or Node access in the renderer.
+See [the shared UI specification](../frontend/DESIGN.md).

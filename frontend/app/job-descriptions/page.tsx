@@ -1,3 +1,4 @@
+import FormDrawer from "@/app/components/ui/form-drawer";
 import { Link } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -313,7 +314,7 @@ export default function JobDescriptionsPage() {
 
   if (loading) {
     return (
-      <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6 lg:py-8">
+      <div className="electron-titlebar-safe-top mx-auto max-w-6xl p-6 lg:py-8">
         <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
         <Skeleton className="mb-6 h-4 w-72 rounded-lg" />
         <Skeleton className="mb-6 h-80 rounded-[20px]" />
@@ -328,7 +329,7 @@ export default function JobDescriptionsPage() {
 
   if (error) {
     return (
-      <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6">
+      <div className="electron-titlebar-safe-top mx-auto max-w-6xl p-6">
         <div className="py-20 text-center">
           <p className="mb-4 text-sm text-error-text">{error}</p>
           <Button variant="secondary" onClick={refetch}>
@@ -340,7 +341,7 @@ export default function JobDescriptionsPage() {
   }
 
   return (
-    <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6 lg:py-8">
+    <div className="electron-titlebar-safe-top mx-auto max-w-6xl p-6 lg:py-8">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-semibold text-text-primary">
           {t("jobDescription.title")}
@@ -350,7 +351,8 @@ export default function JobDescriptionsPage() {
         </p>
       </div>
 
-      <Card shadow="none" radius="lg" padding="lg" className="mb-6">
+      <div className="jd-workspace">
+      <Card shadow="none" radius="lg" padding="lg" className="jd-composer">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <ModelSelectionPicker
             models={models}
@@ -371,11 +373,12 @@ export default function JobDescriptionsPage() {
 
         <div className="grid gap-4">
           <textarea
+            aria-label={t("jobDescription.textPlaceholder")}
             value={jdText}
             disabled={running}
             onChange={(event) => setJdText(event.target.value)}
             placeholder={t("jobDescription.textPlaceholder")}
-            className="min-h-40 resize-y rounded-2xl border border-border-light bg-white px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            className="min-h-32 resize-y rounded-2xl border border-border-light bg-surface-primary px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           />
           <input
             ref={fileInputRef}
@@ -405,7 +408,7 @@ export default function JobDescriptionsPage() {
             </div>
 
             {localImages.length === 0 && selectedLibraryFiles.length === 0 ? (
-              <p className="mt-4 rounded-xl bg-white px-3 py-4 text-center text-xs text-text-muted">
+              <p className="mt-2 rounded-lg bg-surface-primary px-3 py-1 text-center text-xs text-text-muted">
                 {t("jobDescription.notSelectedImages")}
               </p>
             ) : (
@@ -446,14 +449,15 @@ export default function JobDescriptionsPage() {
           </div>
 
           <input
+            aria-label={t("jobDescription.sourceUrl")}
             value={sourceUrl}
             disabled={running}
             onChange={(event) => setSourceUrl(event.target.value)}
             placeholder={t("jobDescription.sourceUrl")}
-            className="h-11 rounded-2xl border border-border-light bg-white px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            className="h-11 rounded-2xl border border-border-light bg-surface-primary px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           />
 
-          {task && (
+          <div className="jd-progress" aria-live="polite">{task && (
             <div className="rounded-2xl bg-surface-secondary p-4">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-text-primary">
@@ -468,7 +472,7 @@ export default function JobDescriptionsPage() {
                   </Link>
                 )}
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white">
+              <div className="h-2 overflow-hidden rounded-full bg-surface-primary">
                 <div
                   className={`h-full transition-all ${
                     task.status === "error" ? "bg-error-text" : "bg-primary-500"
@@ -483,7 +487,7 @@ export default function JobDescriptionsPage() {
                 <p className="mt-2 text-xs text-error-text">{task.error}</p>
               )}
             </div>
-          )}
+          )}</div>
 
           <div className="flex justify-end">
             <Button disabled={disabled || !hasInput} onClick={handleSubmit}>
@@ -493,6 +497,8 @@ export default function JobDescriptionsPage() {
         </div>
       </Card>
 
+      <section className="min-w-0">
+      <h2 className="mb-4 text-base font-semibold">{t("appearance.savedAnalyses")}</h2>
       {data && data.length === 0 ? (
         <div className="rounded-[20px] border-2 border-dashed border-border-default bg-surface-primary px-4 py-16 text-center">
           <p className="mb-1 text-sm font-medium text-text-primary">{t("jobDescription.noAnalyses")}</p>
@@ -547,7 +553,8 @@ export default function JobDescriptionsPage() {
                     {t("jobDescription.detail")}
                   </Link>
                   <Button
-                    variant="danger"
+                    variant="ghost"
+                    className="text-error-text"
                     size="sm"
                     disabled={deleting === item.id}
                     onClick={() => setConfirmDelete(item)}
@@ -560,6 +567,9 @@ export default function JobDescriptionsPage() {
           ))}
         </div>
       )}
+
+      </section>
+      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}
@@ -576,35 +586,7 @@ export default function JobDescriptionsPage() {
         loading={!!deleting}
       />
 
-      {imagePickerOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-            onClick={() => setImagePickerOpen(false)}
-          />
-          <div className="relative flex max-h-[82vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
-            <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
-              <div>
-                <h3 className="font-display text-lg font-semibold text-text-primary">
-                  {t("jobDescription.pickerTitle")}
-                </h3>
-                <p className="text-xs text-text-muted">
-                  {t("jobDescription.pickerDescription")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setImagePickerOpen(false)}
-                className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
-                aria-label={t("jobDescription.closePicker")}
-                title={t("common.close")}
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
+      <FormDrawer open={imagePickerOpen} title={t("jobDescription.pickerTitle")} onClose={() => setImagePickerOpen(false)}>
             <div className="border-b border-border-light px-5 py-4">
               <div className="flex flex-wrap items-center gap-3">
                 <Button
@@ -619,7 +601,7 @@ export default function JobDescriptionsPage() {
                   value={imagePickerQuery}
                   onChange={(event) => setImagePickerQuery(event.target.value)}
                   placeholder={t("jobDescription.searchLibraryImages")}
-                  className="h-10 min-w-0 flex-1 rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
+                  className="h-10 min-w-0 flex-1 rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-surface-primary focus:ring-2 focus:ring-primary-500/25"
                 />
               </div>
             </div>
@@ -682,9 +664,7 @@ export default function JobDescriptionsPage() {
                 {t("common.done")}
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+      </FormDrawer>
     </div>
   );
 }

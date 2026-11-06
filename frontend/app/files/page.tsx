@@ -74,21 +74,21 @@ export default function FilesPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t("files.searchPlaceholder")}
-          className="h-11 w-full rounded-2xl border border-border-light bg-white px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          className="h-11 w-full rounded-2xl border border-border-light bg-surface-primary px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
         />
       </div>
 
       {filteredFiles.length === 0 ? (
         <div className="rounded-[20px] border-2 border-dashed border-border-default bg-surface-primary px-4 py-16 text-center">
-          <p className="mb-1 text-sm font-medium text-text-primary">{t("files.noFiles")}</p>
-          <p className="text-xs text-text-muted">{t("files.noFilesDescription")}</p>
+          <p className="mb-1 text-sm font-medium text-text-primary">{t(query.trim() ? "appearance.noResults" : "files.noFiles")}</p>
+          <p className="text-xs text-text-muted">{!query.trim() && t("files.noFilesDescription")}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 items-stretch gap-4 md:grid-cols-3 xl:grid-cols-4">
+        <div className="file-library-list">
           {filteredFiles.map((file) => (
             <div
               key={file.id}
-              className="group flex h-full min-h-72 flex-col overflow-hidden rounded-xl border border-border-light bg-white shadow-sm transition hover:border-text-muted hover:shadow-card"
+              className="file-library-row"
             >
               <ChatAttachmentCard
                 attachment={{
@@ -100,10 +100,10 @@ export default function FilesPage() {
                   referenceCount: file.reference_count,
                   createdAt: file.created_at,
                 }}
-                variant="grid"
-                className="flex-1 border-0 shadow-none"
+                variant="message"
+                className="file-library-item border-0 shadow-none"
               />
-              <div className="mt-auto border-t border-border-light p-3">
+              <div className="file-library-action">
                 <a
                   href={chatFilesApi.rawUrl(file.id)}
                   target="_blank"

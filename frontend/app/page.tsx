@@ -1,4 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { useHistorySlot } from "@/app/lib/context/layout-context";
+import { useMediaQuery } from "@/app/hooks/use-media-query";
+import FormDrawer from "@/app/components/ui/form-drawer";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
@@ -16,6 +20,7 @@ import { shouldWarnForSmallerContextWindow } from "@/app/lib/chat/model-context-
 export default function Home() {
   const { t } = useTranslation();
   const { state } = useAppContext();
+  const initialModel = useRef(state.currentModelSelection);
   const {
     setThreadId,
     setThreadRequiresImageInput,
@@ -42,7 +47,9 @@ export default function Home() {
     clearMessages,
   } = useChatStream();
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const desktop = useMediaQuery("(min-width: 1200px)");
+  const historySlot = useHistorySlot();
   const [models, setModels] = useState<ModelSelectionResponse[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -70,6 +77,7 @@ export default function Home() {
       .then((data) => {
         if (!mounted) return;
         setModels(data);
+        if (initialModel.current === null && data.length) setModelSelection(data[0].id);
         setModelsLoaded(true);
       })
       .catch(() => {
@@ -84,7 +92,7 @@ export default function Home() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [setModelSelection]);
 
   useEffect(() => {
     if (
@@ -126,6 +134,7 @@ export default function Home() {
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
+      setSidebarOpen(false);
       if (threadId === state.currentThreadId) return;
       setThinkingOverride(undefined);
       setModelContextWindowWarning(false);
@@ -136,6 +145,7 @@ export default function Home() {
   );
 
   const handleNewChat = useCallback(() => {
+    setSidebarOpen(false);
     setModelContextWindowWarning(false);
     setThinkingOverride(undefined);
     clearMessages();
@@ -197,19 +207,27 @@ export default function Home() {
   const hasNoModel = state.currentModelSelection === null;
 
   return (
-    <div className="flex h-full">
-      {sidebarOpen && (
+    <div className="chat-page flex h-full min-h-0">
+      {desktop && historySlot ? createPortal(
         <ChatSidebar
           onSelectThread={handleSelectThread}
           onNewChat={handleNewChat}
           activeThreadId={state.currentThreadId}
           chatHistoryVersion={state.chatHistoryVersion}
           onClose={handleCloseSidebar}
-        />
-      )}
+        />, historySlot) : <FormDrawer open={sidebarOpen} title={t("appearance.history")} onClose={handleCloseSidebar}>
+        <ChatSidebar
+          onSelectThread={handleSelectThread}
+          onNewChat={handleNewChat}
+          activeThreadId={state.currentThreadId}
+          chatHistoryVersion={state.chatHistoryVersion}
+          onClose={handleCloseSidebar}
+        />      </FormDrawer>}
+
 
       <div className="flex-1 flex flex-col min-w-0">
         <ChatHeader
+          onNewChat={handleNewChat}
           threadId={state.currentThreadId}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={handleToggleSidebar}
@@ -223,6 +241,7 @@ export default function Home() {
         />
 
         <ChatArea
+          activityKey={pendingInputs.map((input) => input.request_id).join(",")}
           messages={messages}
           liveMessages={liveMessages}
           isStreaming={isStreaming}
@@ -232,9 +251,9 @@ export default function Home() {
           modelContextWindowWarning={modelContextWindowWarningMessage}
           threadModelMismatchMessage={threadModelMismatchMessage}
           hasNoModel={hasNoModel}
+          hasConfiguredModels={models.length > 0}
           onPrompt={handleQuickPrompt}
-        />
-
+        >
         <ChatRunPanel
           runs={runs}
           inputs={pendingInputs}
@@ -243,11 +262,14 @@ export default function Home() {
           onCancel={cancelRun}
           onCancelQueued={cancelQueued}
         />
+        </ChatArea>
+
         <ChatInput
           onSend={handleSend}
           onStop={stopStream}
           isStreaming={isStreaming}
           disabled={hasNoModel}
+          disabledMessage={models.length ? t("appearance.chooseModel") : undefined}
           submitting={submitting}
           noticeMessage={
             threadModelMismatchMessage ?? modelContextWindowWarningMessage

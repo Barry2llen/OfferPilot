@@ -1,3 +1,4 @@
+import { FileSearch, PenLine, ListChecks } from "lucide-react";
 interface QuickTasksProps {
   onPrompt: (prompt: string) => void;
   disabled: boolean;
@@ -8,19 +9,19 @@ const tasks = [
     labelKey: "quickTasks.analyze",
     descriptionKey: "quickTasks.analyzeDescription",
     promptKey: "quickTasks.analyzePrompt",
-    icon: "📊",
+    icon: FileSearch,
   },
   {
     labelKey: "quickTasks.improve",
     descriptionKey: "quickTasks.improveDescription",
     promptKey: "quickTasks.improvePrompt",
-    icon: "✨",
+    icon: PenLine,
   },
   {
     labelKey: "quickTasks.check",
     descriptionKey: "quickTasks.checkDescription",
     promptKey: "quickTasks.checkPrompt",
-    icon: "🔍",
+    icon: ListChecks,
   },
 ];
 
@@ -34,10 +35,10 @@ export default function QuickTasks({ onPrompt, disabled }: QuickTasksProps) {
           key={task.labelKey}
           onClick={() => onPrompt(t(task.promptKey))}
           disabled={disabled}
-          className="text-left rounded-2xl bg-surface-secondary p-4 transition-all hover:bg-black/[0.04] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none group border border-transparent hover:border-border-default/50 hover:shadow-sm"
+          className="text-left rounded-xl bg-surface-primary p-4 transition-all hover:bg-black/[0.04] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none group border border-border-default hover:border-border-default/50 hover:shadow-sm"
         >
-          <div className="text-xl leading-none mb-3 group-hover:scale-110 transition-transform origin-bottom-left">
-            {task.icon}
+          <div className="text-text-secondary leading-none mb-3">
+            <task.icon size={20} strokeWidth={1.7} />
           </div>
           <h2 className="text-sm font-semibold text-text-primary group-hover:text-primary-700 transition-colors">
             {t(task.labelKey)}

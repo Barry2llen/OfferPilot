@@ -1,4 +1,6 @@
 import {
+  useEffect,
+  useRef,
   createContext,
   useContext,
   useState,
@@ -22,7 +24,16 @@ const ToastContext = createContext<ToastContextType | null>(null);
 let toastId = 0;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const toastRef = useRef<HTMLDivElement>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  useEffect(() => {
+    const element = toastRef.current;
+    if (!element?.showPopover) return;
+    // Reopen the stack above any dialogs opened since the previous notification.
+    element.hidePopover();
+    if (toasts.length) element.showPopover();
+  }, [toasts]);
 
   const addToast = useCallback(
     (message: string, variant: Toast["variant"] = "info") => {
@@ -43,7 +54,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+      <div ref={toastRef} popover="manual" role="status" aria-live="polite" className="toast-stack fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}

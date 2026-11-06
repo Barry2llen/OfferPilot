@@ -15,6 +15,7 @@ function renderForm(provider: string, initial?: ModelSelectionResponse) {
     <SelectionForm providers={providers} defaultProviderName={provider} initial={initial}
       onSubmit={onSubmit} onCancel={() => {}} submitting={false} />,
   );
+  fireEvent.click(screen.getByText(i18n.t("settings.advancedTab")));
   if (!initial) {
     fireEvent.change(screen.getByPlaceholderText(i18n.t("settings.modelNamePlaceholder")), {
       target: { value: "model" },

@@ -20,6 +20,7 @@ const JobDescriptionDetailPage = lazy(
 const ResumesPage = lazy(() => import("@/app/resumes/page"));
 const ResumeDetailPage = lazy(() => import("@/app/resumes/[id]/page"));
 const SettingsPage = lazy(() => import("@/app/settings/page"));
+const AppearancePage = lazy(() => import("@/app/settings/appearance/page"));
 const ProvidersPage = lazy(() => import("@/app/settings/providers/page"));
 const AdvancedSettingsPage = lazy(
   () => import("@/app/settings/advanced/page"),
@@ -55,6 +56,7 @@ export default function AppRouter() {
                         index
                         element={<Navigate to="providers" replace />}
                       />
+                      <Route path="appearance" element={<AppearancePage />} />
                       <Route path="providers" element={<ProvidersPage />} />
                       <Route
                         path="advanced"
@@ -79,7 +81,7 @@ export default function AppRouter() {
 
 function RouteLoading() {
   return (
-    <div className="flex min-h-full items-center justify-center bg-white p-8">
+    <div className="flex min-h-full items-center justify-center bg-surface-primary p-8">
       <div className="h-8 w-8 animate-spin rounded-full border-2 border-border-default border-t-primary-600" />
     </div>
   );

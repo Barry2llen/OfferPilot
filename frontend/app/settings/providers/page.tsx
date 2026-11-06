@@ -11,7 +11,6 @@ import FormDrawer from "@/app/components/ui/form-drawer";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Badge from "@/app/components/ui/badge";
 import Button from "@/app/components/ui/button";
-import Card from "@/app/components/ui/card";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import { formatLocaleNumber } from "@/app/lib/i18n";
 import type {
@@ -229,7 +228,7 @@ export default function ProvidersPage() {
         <div className="flex justify-end">
           <Skeleton className="h-10 w-28 rounded-xl" />
         </div>
-        <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+        <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
           <Skeleton className="h-72 rounded-[20px]" />
           <Skeleton className="h-72 rounded-[20px]" />
         </div>
@@ -250,10 +249,6 @@ export default function ProvidersPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end">
-        <Button onClick={handleProviderCreate}>{t("settings.addProvider")}</Button>
-      </div>
-
       {providers.length === 0 ? (
         <div className="rounded-[20px] border-2 border-dashed border-border-default px-5 py-16 text-center">
           <p className="mb-3 text-sm text-text-muted">{t("settings.noProviders")}</p>
@@ -262,7 +257,7 @@ export default function ProvidersPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+        <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
           <section aria-labelledby="settings-providers-title" className="min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3 px-1">
               <h2
@@ -277,7 +272,8 @@ export default function ProvidersPage() {
                 })}
               </span>
             </div>
-            <div className="space-y-2">
+            <Button variant="ghost" size="sm" onClick={handleProviderCreate} className="mb-3 w-full justify-start">+ {t("settings.addProvider")}</Button>
+            <div className="space-y-1">
               {providers.map((provider) => (
                 <ProviderListItem
                   key={provider.name}
@@ -286,11 +282,8 @@ export default function ProvidersPage() {
                     selectionsByProvider.get(provider.name)?.length ?? 0
                   }
                   selected={selectedProviderName === provider.name}
-                  deleting={deletingProvider === provider.name}
                   highlight={highlightProvider === provider.name}
                   onSelect={() => setSelectedProviderName(provider.name)}
-                  onEdit={handleProviderEdit}
-                  onDelete={setConfirmProviderDelete}
                 />
               ))}
             </div>
@@ -312,6 +305,7 @@ export default function ProvidersPage() {
       )}
 
       <FormDrawer
+        busy={providerSubmitting}
         open={providerDrawerOpen}
         title={
           editingProvider
@@ -329,6 +323,7 @@ export default function ProvidersPage() {
       </FormDrawer>
 
       <FormDrawer
+        busy={selectionSubmitting}
         open={selectionDrawerOpen}
         title={
           editingSelection
@@ -376,93 +371,27 @@ export default function ProvidersPage() {
   );
 }
 
-function ProviderListItem({
-  provider,
-  modelCount,
-  selected,
-  deleting,
-  highlight,
-  onSelect,
-  onEdit,
-  onDelete,
-}: {
+function ProviderListItem({ provider, modelCount, selected, highlight, onSelect }: {
   provider: ModelProviderResponse;
   modelCount: number;
   selected: boolean;
-  deleting: boolean;
   highlight: boolean;
   onSelect: () => void;
-  onEdit: (provider: ModelProviderResponse) => void;
-  onDelete: (provider: ModelProviderResponse) => void;
 }) {
   const { t } = useTranslation();
-
-  return (
-    <Card
-      padding="sm"
-      shadow="none"
-      className={`transition-all duration-300 ${
-        selected
-          ? "border-primary-500 bg-primary-50/60 ring-1 ring-primary-500/20"
-          : "hover:border-border-default hover:bg-surface-secondary/40"
-      } ${highlight ? "ring-2 ring-primary-500 shadow-brand-glow" : ""}`}
-    >
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-pressed={selected}
-        className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
-      >
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="min-w-0 truncate text-sm font-semibold text-text-primary">
-            {provider.name}
-          </h3>
-          <Badge
-            variant={provider.has_api_key ? "success" : "warning"}
-            size="sm"
-          >
-            {provider.has_api_key
-              ? t("settings.configuredKey")
-              : t("settings.unconfiguredKey")}
-          </Badge>
-        </div>
-        <p className="mt-1 truncate text-xs text-text-secondary">
-          {provider.provider}
-        </p>
-        <p className="mt-2 text-xs text-text-muted">
-          {t("settings.modelCount", {
-            count: formatLocaleNumber(modelCount),
-          })}
-        </p>
-      </button>
-      <div className="mt-3 flex justify-end gap-1 border-t border-border-light pt-2">
-        <Button variant="ghost" size="sm" onClick={() => onEdit(provider)}>
-          {t("settings.edit")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onDelete(provider)}
-          disabled={deleting}
-          className="text-error-text hover:bg-error-bg"
-        >
-          {deleting ? t("settings.deleting") : t("settings.delete")}
-        </Button>
-      </div>
-    </Card>
-  );
+  return <button type="button" onClick={onSelect} aria-pressed={selected}
+    className={`provider-list-row ${selected ? "is-selected" : ""} ${highlight ? "ring-2 ring-primary-500" : ""}`}>
+    <span className="block truncate text-sm font-semibold">{provider.name}</span>
+    <span className="mt-1 block text-sm text-text-secondary">{provider.provider}</span>
+    <span className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+      <span className={`h-1.5 w-1.5 rounded-full ${provider.has_api_key ? "bg-success-text" : "bg-warning-text"}`} />
+      {t(provider.has_api_key ? "settings.configuredKey" : "settings.unconfiguredKey")}
+      <span>· {t("settings.modelCount", { count: formatLocaleNumber(modelCount) })}</span>
+    </span>
+  </button>;
 }
 
-function ProviderModelsPanel({
-  provider,
-  selections,
-  deletingSelection,
-  onAddModel,
-  onEditProvider,
-  onDeleteProvider,
-  onEditSelection,
-  onDeleteSelection,
-}: {
+function ProviderModelsPanel({ provider, selections, deletingSelection, onAddModel, onEditProvider, onDeleteProvider, onEditSelection, onDeleteSelection }: {
   provider: ModelProviderResponse;
   selections: ModelSelectionResponse[];
   deletingSelection: number | null;
@@ -473,127 +402,36 @@ function ProviderModelsPanel({
   onDeleteSelection: (selection: ModelSelectionResponse) => void;
 }) {
   const { t } = useTranslation();
-  const shouldShowBaseUrl =
-    provider.provider === "OpenAI Compatible" && !!provider.base_url;
-
-  return (
-    <Card className="min-w-0" padding="lg">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate font-display text-lg font-semibold text-text-primary">
-              {provider.name}
-            </h2>
-            <Badge
-              variant={provider.has_api_key ? "success" : "warning"}
-              size="sm"
-            >
-              {provider.has_api_key
-                ? t("settings.configuredKey")
-                : t("settings.unconfiguredKey")}
-            </Badge>
-          </div>
-          <p className="mt-1 text-sm text-text-secondary">{provider.provider}</p>
-          {shouldShowBaseUrl ? (
-            <p className="mt-1 truncate font-mono text-xs text-text-muted">
-              {provider.base_url}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          <Button variant="secondary" size="sm" onClick={onAddModel}>
-            {t("settings.addModel")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onEditProvider(provider)}
-          >
-            {t("settings.edit")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onDeleteProvider(provider)}
-            className="text-error-text hover:bg-error-bg"
-          >
-            {t("settings.delete")}
-          </Button>
-        </div>
+  return <section className="provider-model-panel">
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-xl font-semibold">{provider.name}</h2>
+        <p className="mt-1 text-sm text-text-secondary">{provider.provider}</p>
       </div>
-
-      <div className="mt-5 border-t border-border-light pt-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-text-primary">
-            {t("settings.modelSelections")}
-          </h3>
-          <span className="text-xs text-text-muted">
-            {t("settings.modelCount", {
-              count: formatLocaleNumber(selections.length),
-            })}
-          </span>
-        </div>
-
-        {selections.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border-default px-4 py-8 text-center">
-            <p className="mb-3 text-sm text-text-muted">
-              {t("settings.noProviderModels")}
-            </p>
-            <Button variant="secondary" size="sm" onClick={onAddModel}>
-              {t("settings.addModel")}
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {selections.map((selection) => (
-              <div
-                key={selection.id}
-                className="group/model-row rounded-xl border border-border-light bg-surface-secondary/60 px-4 py-3"
-              >
-                <div className="flex min-h-8 flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="break-all text-sm font-medium text-text-primary">
-                        {selection.model_name}
-                      </h4>
-                      <ModelCapabilityIcon
-                        supportsImage={selection.supports_image_input}
-                      />
-                      {selection.provider.has_api_key ? null : (
-                        <Badge variant="warning" size="sm">
-                          {t("settings.missingKey")}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/model-row:opacity-100 sm:group-focus-within/model-row:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEditSelection(selection)}
-                    >
-                      {t("settings.edit")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onDeleteSelection(selection)}
-                      disabled={deletingSelection === selection.id}
-                      className="text-error-text hover:bg-error-bg"
-                    >
-                      {deletingSelection === selection.id
-                        ? t("settings.deleting")
-                        : t("settings.delete")}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="flex flex-wrap gap-1">
+        <Button variant="secondary" size="sm" onClick={() => onEditProvider(provider)}>{t("settings.editProvider")}</Button>
+        <Button size="sm" onClick={onAddModel}>{t("settings.addModel")}</Button>
+        <Button variant="ghost" size="sm" onClick={() => onDeleteProvider(provider)} className="text-error-text">{t("common.delete")}</Button>
       </div>
-    </Card>
-  );
+    </header>
+    {provider.base_url && <p className="my-5 break-all border-y border-border-default py-3 text-sm text-text-secondary">{provider.base_url}</p>}
+    <div className="mt-6">
+      <h3 className="mb-4 text-sm font-semibold">{t("settings.modelSelections")} <span className="ml-2 font-normal text-text-muted">{t("settings.modelCount", { count: formatLocaleNumber(selections.length) })}</span></h3>
+      {selections.length === 0 ? <div className="border-y border-border-default py-8 text-center text-sm text-text-muted">{t("settings.noProviderModels")}</div> : <div className="model-table">
+        <div className="model-table-head" aria-hidden="true"><span>{t("settings.modelName")}</span><span>{t("settings.imageInput")}</span><span>{t("settings.thinking")}</span><span /></div>
+        {selections.map((selection) => {
+          const thinking = selection.thinking?.value;
+          const thinkingLabel = thinking === null || thinking === undefined ? t("settings.providerDefault") : typeof thinking === "number" ? formatLocaleNumber(thinking) : t(`settings.thinkingValue_${thinking}`);
+          return <div key={selection.id} className="model-table-row">
+            <h4 className="model-name min-w-0 break-words text-sm font-medium">{selection.model_name}{!selection.provider.has_api_key && <Badge className="ml-2" variant="warning" size="sm">{t("settings.missingKey")}</Badge>}</h4>
+            <div className="model-capability flex items-center gap-2 text-xs text-text-secondary"><ModelCapabilityIcon supportsImage={selection.supports_image_input} /><span>{t(selection.supports_image_input ? "settings.imageSupported" : "settings.textOnly")}</span></div>
+            <p className="model-thinking text-xs text-text-secondary">{thinkingLabel}</p>
+            <div className="model-actions flex items-center gap-1"><Button variant="ghost" size="sm" onClick={() => onEditSelection(selection)}>{t("common.edit")}</Button><Button variant="ghost" size="sm" disabled={deletingSelection === selection.id} onClick={() => onDeleteSelection(selection)} className="text-error-text">{t(deletingSelection === selection.id ? "settings.deleting" : "common.delete")}</Button></div>
+          </div>;
+        })}
+      </div>}
+    </div>
+  </section>;
 }
 
 function ModelCapabilityIcon({ supportsImage }: { supportsImage: boolean }) {

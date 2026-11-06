@@ -1,3 +1,5 @@
+import ConfirmDialog from "@/app/components/ui/confirm-dialog";
+import { useToast } from "@/app/components/ui/toast";
 import { memo, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
@@ -21,6 +23,8 @@ function ChatSidebar({
   chatHistoryVersion,
   onClose,
 }: ChatSidebarProps) {
+  const { addToast } = useToast();
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [chats, setChats] = useState<AIChatHistorySummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,10 +69,10 @@ function ChatSidebar({
 
   const handleNewChat = () => {
     onNewChat();
+    onClose?.();
   };
 
-  const handleDelete = async (threadId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDelete = async (threadId: string) => {
     setDeleting(threadId);
     try {
       await aiChatApi.deleteChat(threadId);
@@ -76,8 +80,9 @@ function ChatSidebar({
         onNewChat();
       }
       setChats((prev) => prev.filter((c) => c.thread_id !== threadId));
+      setConfirmDelete(null);
     } catch {
-      // ignore
+      addToast(t("errors.deleteFailed"), "error");
     } finally {
       setDeleting(null);
     }
@@ -120,17 +125,9 @@ function ChatSidebar({
 
   return (
     <>
-      {/* Mobile backdrop */}
-      <div 
-        className="fixed inset-0 z-20 bg-black/20 backdrop-blur-sm lg:hidden"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      
-      {/* Sidebar container */}
-      <div className="fixed inset-y-0 left-0 z-30 w-64 shrink-0 border-r border-border-light flex flex-col bg-white transform transition-transform duration-200 lg:relative lg:translate-x-0">
+      <div className="chat-history flex min-h-0 flex-1 flex-col">
         <div className="p-3 border-b border-border-light flex flex-col gap-3">
-          <Button variant="secondary" size="sm" onClick={handleNewChat} className="w-full" pill>
+          <Button variant="primary" size="md" onClick={handleNewChat} className="w-full" pill>
             {t("chat.newChat")}
           </Button>
           <div className="relative">
@@ -139,15 +136,16 @@ function ChatSidebar({
             </svg>
             <input 
               type="text"
+              aria-label={t("chat.searchHistory")}
               placeholder={t("chat.searchHistory")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface-secondary border border-transparent rounded-full focus:bg-white focus:border-border-default focus:ring-1 focus:ring-border-default outline-none transition-all placeholder:text-text-muted"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface-secondary border border-transparent rounded-full focus:bg-surface-primary focus:border-border-default focus:ring-1 focus:ring-border-default outline-none transition-all placeholder:text-text-muted"
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <AnimatePresence initial={false} mode="popLayout">
             {loading ? (
               <motion.div
@@ -212,7 +210,7 @@ function ChatSidebar({
                 {groupedChats.map((group) => (
                   <motion.div layout key={group.labelKey} className="mb-4 last:mb-0">
                     <div className="px-3 py-1">
-                      <span className="text-[10px] font-semibold tracking-wider text-text-muted uppercase">
+                      <span className="text-xs font-semibold tracking-wider text-text-muted uppercase">
                         {t(group.labelKey)}
                       </span>
                     </div>
@@ -229,7 +227,7 @@ function ChatSidebar({
                             exit={{ opacity: 0, y: -4, scale: 0.98 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                             className={`transition-colors group ${
-                              isActive ? "bg-primary-200/30" : "hover:bg-surface-secondary"
+                              isActive ? "bg-surface-secondary" : "hover:bg-surface-secondary"
                             }`}
                           >
                             <div className="flex items-start gap-2 px-3 py-2.5">
@@ -237,6 +235,7 @@ function ChatSidebar({
                                 type="button"
                                 onClick={() => {
                                   onSelectThread(chat.thread_id);
+                                  onClose?.();
                                 }}
                                 className="flex-1 min-w-0 text-left"
                               >
@@ -249,9 +248,9 @@ function ChatSidebar({
                               </button>
                               <button
                                 type="button"
-                                onClick={(e) => handleDelete(chat.thread_id, e)}
+                                onClick={(e) => { e.stopPropagation(); setConfirmDelete(chat.thread_id); }}
                                 disabled={deleting === chat.thread_id}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error-bg transition-all shrink-0 mt-0.5"
+                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:bg-error-bg transition-all shrink-0 mt-0.5"
                                 title={t("chat.deleteConversation")}
                               >
                                 <svg className="w-3.5 h-3.5 text-text-muted hover:text-error-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,6 +269,7 @@ function ChatSidebar({
           </AnimatePresence>
         </div>
       </div>
+      <ConfirmDialog open={confirmDelete !== null} title={t("chat.deleteConversationTitle")} message={t("chat.deleteConversationMessage")} loading={!!deleting} onCancel={() => setConfirmDelete(null)} onConfirm={() => { if (confirmDelete) void handleDelete(confirmDelete); }} />
     </>
   );
 }

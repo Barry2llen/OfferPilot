@@ -59,9 +59,9 @@ function fileIconTone(type: string | null) {
     return "bg-error-bg text-error-text";
   }
   if (type?.includes("docx")) {
-    return "bg-[#dce1ff] text-primary-700";
+    return "bg-surface-secondary text-primary-700";
   }
-  return "bg-[#cee5ff] text-info-text";
+  return "bg-surface-secondary text-info-text";
 }
 
 export default function ResumeCard({
@@ -90,7 +90,7 @@ export default function ResumeCard({
       : mediaLabel(resume.media_type);
 
   return (
-    <article className="group rounded-xl border border-border-light bg-white px-5 py-4 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-elevated">
+    <article className="group rounded-xl border border-border-light bg-surface-primary px-5 py-4 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-elevated">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-4 sm:items-center">
           <div
@@ -134,13 +134,13 @@ export default function ResumeCard({
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               variant={parseVariant(resume.parse_status)}
-              className="rounded-full px-3 py-1 font-mono text-[11px] font-bold"
+              className="rounded-full px-3 py-1 font-mono text-xs font-bold"
             >
               {parseLabel(resume.parse_status)}
             </Badge>
             <Badge
               variant="neutral"
-              className="rounded-full px-3 py-1 font-mono text-[11px] font-bold"
+              className="rounded-full px-3 py-1 font-mono text-xs font-bold"
             >
               {resume.has_file ? mediaLabel(resume.media_type) : t("common.noFile")}
             </Badge>

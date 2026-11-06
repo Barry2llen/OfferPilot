@@ -1,3 +1,6 @@
+import FormDrawer from "@/app/components/ui/form-drawer";
+import { useMediaQuery } from "@/app/hooks/use-media-query";
+import type { QueryDraft } from "./query-decision-composer";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -20,21 +23,27 @@ function InputCard({
   onAnswer: (input: PendingInput, answer: InputAnswer) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const mobile = useMediaQuery("(max-width: 767px)");
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<QueryDraft>({ selectedIds: [], freeText: "", note: "" });
   const [busy, setBusy] = useState(false);
   const submit = async (answer: InputAnswer) => {
     if (busy) return;
     setBusy(true);
     try {
       await onAnswer(input, answer);
+      setOpen(false);
     } catch {
       setBusy(false);
     }
   };
-  return (
+  const form = (
     <fieldset disabled={busy} className="min-w-0">
       {input.type === "query" ? (
         <QueryDecisionComposer
           input={input}
+          draft={draft}
+          onDraftChange={setDraft}
           onAnswer={(answer) => {
             void submit(answer);
           }}
@@ -52,8 +61,17 @@ function InputCard({
           </Button>
         </div>
       )}
-    </fieldset>
-  );
+    </fieldset>);
+  if (!mobile) return form;
+  return <>
+    <div className="rounded-xl border border-border-default bg-surface-secondary p-4">
+      <p className="mb-3 text-sm font-semibold">{input.type === "query" ? input.question : input.message}</p>
+      {input.type === "query" && <p className="mb-4 line-clamp-2 text-sm text-text-secondary">{input.options.map((option) => option.label).join(" · ")}</p>}
+      <Button className="w-full" onClick={() => setOpen(true)}>{t("appearance.answer")}</Button>
+    </div>
+    <FormDrawer busy={busy} open={open} title={t("chatRuns.waitingInput")} onClose={() => setOpen(false)}>{form}</FormDrawer>
+  </>;
+
 }
 
 export default function ChatRunPanel({
@@ -76,7 +94,7 @@ export default function ChatRunPanel({
   const interrupted = runs.filter(needsRunNotice);
   return (
     <div
-      className="max-h-[45vh] overflow-y-auto space-y-3 px-4 sm:px-6"
+      className="run-panel space-y-3 py-3"
       aria-live="polite"
     >
       {connectionState === "reconnecting" && (

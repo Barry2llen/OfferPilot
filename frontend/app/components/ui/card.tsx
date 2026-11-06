@@ -9,15 +9,15 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 const shadowMap: Record<string, string> = {
   card: "shadow-card",
-  brand: "shadow-brand-glow",
+  brand: "shadow-sm",
   elevated: "shadow-elevated",
   none: "",
 };
 
 const radiusMap: Record<string, string> = {
   sm: "rounded-lg",
-  md: "rounded-[13px]",
-  lg: "rounded-[20px]",
+  md: "rounded-xl",
+  lg: "rounded-xl",
 };
 
 const paddingMap: Record<string, string> = {
@@ -36,7 +36,7 @@ export default function Card({
 }: CardProps) {
   return (
     <div
-      className={`bg-white border border-border-light ${shadowMap[shadow]} ${radiusMap[radius]} ${paddingMap[padding]} ${className}`}
+      className={`bg-surface-primary border border-border-light ${shadowMap[shadow]} ${radiusMap[radius]} ${paddingMap[padding]} ${className}`}
       {...props}
     >
       {children}

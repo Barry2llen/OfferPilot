@@ -12,6 +12,7 @@ const apiPaths = [
   "/model-selections",
   "/resumes",
   "/health",
+  "/context-compaction-settings",
 ];
 
 function isSpaNavigationRequest(

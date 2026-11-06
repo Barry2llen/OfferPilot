@@ -8,6 +8,18 @@ It supports resume upload and preview, model-provider and model-selection
 configuration, synchronous and streaming AI conversations, reusable chat
 attachments, LangGraph checkpoint recovery, and Windows/Linux desktop packaging.
 
+## Responsive workspace
+
+The shared web/desktop UI keeps a black-and-white palette and supports light,
+dark, and system appearance in Settings → Appearance. Desktop navigation includes
+conversation history; tablets use an icon rail, and narrow windows use bottom
+navigation. Resume search, status filters, side-by-side document analysis, and
+mobile answer panels share the same API and streaming state.
+
+See [the frontend design specification](frontend/DESIGN.md). Electron opens at
+1280×820, can resize to 640×560, and follows the page theme for native window
+controls without adding preload permissions.
+
 ## Project structure
 
 ```text

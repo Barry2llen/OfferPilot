@@ -72,7 +72,7 @@ export default function ChatMessage({ message, streaming = false }: Props) {
             <div
               className={`max-w-full text-sm leading-relaxed ${
                 isUser
-                  ? "w-fit rounded-2xl rounded-br-md bg-text-charcoal px-4 py-2.5 text-white"
+                  ? "w-fit rounded-2xl rounded-br-md bg-text-charcoal px-4 py-2.5 text-on-accent"
                   : "w-full text-text-primary"
               }`}
             >
@@ -119,7 +119,7 @@ export default function ChatMessage({ message, streaming = false }: Props) {
             <button
               type="button"
               onClick={handleCopy}
-              className="absolute right-full top-1 mr-2 flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-white text-text-muted opacity-0 shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-all group-hover:opacity-100 hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
+              className="absolute right-full top-1 mr-2 flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-surface-primary text-text-muted opacity-0 shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-all group-hover:opacity-100 hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
               title={t("chat.copyText")}
               aria-label={t("chat.copyText")}
             >
@@ -134,7 +134,7 @@ export default function ChatMessage({ message, streaming = false }: Props) {
               <button
                 type="button"
                 onClick={handleCopy}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-white text-text-muted shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-surface-primary text-text-muted shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
                 title={t("chat.copyText")}
                 aria-label={t("chat.copyText")}
               >

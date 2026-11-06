@@ -107,7 +107,7 @@ export default function AdvancedSettingsPage() {
       <label className="mt-6 block text-sm font-medium text-text-primary">
         {t("settings.contextCompactionModel")}
         <select
-          className="mt-2 h-11 w-full rounded-xl border border-border-default bg-white px-3 text-sm text-text-primary outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          className="mt-2 h-11 w-full rounded-xl border border-border-default bg-surface-primary px-3 text-sm text-text-primary outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           value={compactionModelSelectionId ?? ""}
           onChange={handleCompactionModelChange}
           disabled={compactionSettingsSubmitting}

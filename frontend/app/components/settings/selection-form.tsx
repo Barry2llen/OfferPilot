@@ -90,10 +90,12 @@ export default function SelectionForm({
           {t("settings.modelProvider")}
         </label>
         <select
+          aria-label={t("settings.modelProvider")}
+          disabled={submitting}
           value={providerName}
           onChange={(e) => { setProviderName(e.target.value); setThinking(null); setApiMode("auto"); }}
           required
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         >
           <option value="">{t("settings.chooseProvider")}</option>
           {providers.map((p) => (
@@ -110,19 +112,6 @@ export default function SelectionForm({
         )}
       </div>
 
-      {(selectedProvider === "OpenAI" || selectedProvider === "OpenAI Compatible") && <div>
-        <label htmlFor="api-mode" className="block text-sm font-medium mb-1.5">{t("settings.apiMode")}</label>
-        <select id="api-mode" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white" value={apiMode} onChange={(e) => setApiMode(e.target.value as ApiMode)}>
-          <option value="auto">{t("settings.apiAuto")}</option><option value="responses">Responses</option><option value="chat_completions">Chat Completions</option>
-        </select>
-      </div>}
-      <ThinkingControl provider={selectedProvider} value={thinkingValue} onChange={setThinking} disabled={submitting} />
-      <div>
-        <label htmlFor="advanced-params" className="block text-sm font-medium mb-1.5">{t("settings.advancedParams")}</label>
-        <textarea id="advanced-params" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 font-mono text-sm" rows={4} value={extraJson} disabled={submitting} onChange={(e) => setExtraJson(e.target.value)} />
-        <p className="text-xs text-text-muted">{t("settings.advancedHelp")}</p>
-        {jsonError && <p role="alert" className="text-xs text-error-text">{t("settings.invalidJson")}</p>}
-      </div>
 
       <div>
         <label className="block text-sm font-medium text-text-primary mb-1.5">
@@ -130,11 +119,13 @@ export default function SelectionForm({
         </label>
         <input
           type="text"
+          aria-label={t("settings.modelName")}
+          disabled={submitting}
           value={modelName}
           onChange={(e) => setModelName(e.target.value)}
           placeholder={t("settings.modelNamePlaceholder")}
           required
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40"
         />
       </div>
 
@@ -148,7 +139,7 @@ export default function SelectionForm({
               className="sr-only"
             />
             <div className={`w-9 h-5 rounded-full transition-colors ${supportsImage ? "bg-primary-500" : "bg-border-default"}`} />
-            <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${supportsImage ? "translate-x-4" : "translate-x-0"}`} />
+            <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-surface-primary rounded-full shadow-sm transition-transform ${supportsImage ? "translate-x-4" : "translate-x-0"}`} />
           </div>
           <span className="text-sm font-medium text-text-primary">
             {t("settings.imageInput")}
@@ -159,6 +150,24 @@ export default function SelectionForm({
         </label>
       </div>
 
+      <details className="rounded-xl border border-border-default p-4" open={jsonError || undefined}>
+        <summary className="text-sm font-semibold">{t("settings.advancedTab")}</summary>
+        <div className="mt-5 space-y-5">
+      {(selectedProvider === "OpenAI" || selectedProvider === "OpenAI Compatible") && <div>
+        <label htmlFor="api-mode" className="block text-sm font-medium mb-1.5">{t("settings.apiMode")}</label>
+        <select id="api-mode" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary" value={apiMode} onChange={(e) => setApiMode(e.target.value as ApiMode)}>
+          <option value="auto">{t("settings.apiAuto")}</option><option value="responses">Responses</option><option value="chat_completions">Chat Completions</option>
+        </select>
+      </div>}
+      <ThinkingControl provider={selectedProvider} value={thinkingValue} onChange={setThinking} disabled={submitting} />
+      <div>
+        <label htmlFor="advanced-params" className="block text-sm font-medium mb-1.5">{t("settings.advancedParams")}</label>
+        <textarea id="advanced-params" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 font-mono text-sm" rows={4} value={extraJson} disabled={submitting} onChange={(e) => setExtraJson(e.target.value)} />
+        <p className="text-xs text-text-muted">{t("settings.advancedHelp")}</p>
+        {jsonError && <p role="alert" className="text-xs text-error-text">{t("settings.invalidJson")}</p>}
+      </div>
+        </div>
+      </details>
       <div className="flex gap-3 pt-2">
         <Button
           type="submit"

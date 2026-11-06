@@ -7,6 +7,30 @@ export type Locale = (typeof SUPPORTED_LOCALES)[number];
 const LOCALE_STORAGE_KEY = "offerpilot.locale";
 
 const zhCN = {
+  mobileNav: { chat: "对话", resumes: "简历", jd: "JD", files: "文件", settings: "设置" },
+  appearance: {
+    "savedAnalyses": "已保存的岗位",
+    "tab": "外观",
+    "title": "外观与语言",
+    "theme": "主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
+    "description": "选择适合你的工作环境。偏好会自动保存。",
+    "languageHint": "界面语言将在所有页面同步更新。",
+    "answer": "选择并回答",
+    "all": "全部状态",
+    "newest": "最近上传",
+    "name": "按名称",
+    "noResults": "没有匹配结果",
+    "searchResumes": "搜索简历名称",
+    "upload": "上传简历",
+    "keyboard": "Enter 发送 · Shift + Enter 换行",
+    "mobileKeyboard": "Enter 换行 · Ctrl / ⌘ + Enter 发送",
+    "modelOptions": "模型与思考设置",
+    "chooseModel": "请在上方选择一个模型",
+    "history": "历史对话"
+  },
   chatRuns: {
     waitingInput: "等待输入",
     stopCurrent: "停止当前运行",
@@ -205,7 +229,7 @@ const zhCN = {
     description: "基于大模型的 AI 求职助手，帮你分析简历、准备面试",
     configureFirst: "开始前需要先配置一个 AI 模型",
     goToSettings: "前往配置",
-    comingSoon: "更多功能正在开发中：JD 分析 · 模拟面试 · 求职追踪",
+    comingSoon: "从简历与岗位出发，让下一步更清晰。",
   },
   quickTasks: {
     analyze: "分析简历",
@@ -475,6 +499,30 @@ const zhCN = {
 } as const;
 
 const enUS = {
+  mobileNav: { chat: "Chat", resumes: "Resumes", jd: "JD", files: "Files", settings: "Settings" },
+  appearance: {
+    "savedAnalyses": "Saved jobs",
+    "tab": "Appearance",
+    "title": "Appearance & language",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "description": "Choose a comfortable workspace. Preferences are saved automatically.",
+    "languageHint": "Interface language applies across all pages.",
+    "answer": "Choose and answer",
+    "all": "All statuses",
+    "newest": "Recently uploaded",
+    "name": "Name",
+    "noResults": "No matching results",
+    "searchResumes": "Search resume names",
+    "upload": "Upload resume",
+    "keyboard": "Enter to send · Shift + Enter for a new line",
+    "mobileKeyboard": "Enter for a new line · Ctrl / ⌘ + Enter to send",
+    "modelOptions": "Model & thinking settings",
+    "chooseModel": "Choose a model above to get started",
+    "history": "Conversation history"
+  },
   chatRuns: {
     waitingInput: "Waiting for input",
     stopCurrent: "Stop current run",

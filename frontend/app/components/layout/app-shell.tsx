@@ -1,22 +1,18 @@
-import { useState } from "react";
-import Sidebar from "@/app/components/layout/sidebar";
-
+import { useEffect, useState } from "react";
+import { MotionConfig } from "motion/react";
+import Sidebar from "./sidebar";
+import { HistorySlotContext } from "@/app/lib/context/layout-context";
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  return (
-    <div className="flex h-full w-full">
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((collapsed) => !collapsed)}
-      />
-      <div
-        className={`flex flex-col flex-1 min-w-0 transition-[padding] duration-200 ${
-          sidebarCollapsed ? "lg:pl-16" : "lg:pl-60"
-        }`}
-      >
-        <main className="flex-1 overflow-y-auto pt-16 lg:pt-0">{children}</main>
-      </div>
-    </div>
-  );
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const update = () => document.documentElement.style.setProperty("--app-height", `${viewport?.height ?? window.innerHeight}px`);
+    update();
+    viewport?.addEventListener("resize", update);
+    return () => viewport?.removeEventListener("resize", update);
+  }, []);
+  return <MotionConfig reducedMotion="user"><div className="app-shell">
+    <Sidebar historyRef={setSlot} />
+    <HistorySlotContext value={slot}><main className="app-main">{children}</main></HistorySlotContext>
+  </div></MotionConfig>;
 }

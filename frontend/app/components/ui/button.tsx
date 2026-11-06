@@ -18,13 +18,13 @@ const base =
 
 const variants: Record<string, string> = {
   primary:
-    "bg-text-charcoal text-white hover:bg-text-charcoal/90 active:bg-text-charcoal shadow-sm",
+    "bg-text-charcoal text-on-accent hover:bg-text-charcoal/90 active:bg-text-charcoal shadow-sm",
   secondary:
     "bg-surface-secondary text-text-primary hover:bg-border-default active:bg-border-default/80",
   ghost:
     "bg-transparent text-text-secondary hover:bg-black/[0.04] active:bg-black/[0.08]",
   danger:
-    "bg-error-text text-white hover:bg-error-text/90 active:bg-error-text/80",
+    "bg-danger-fill text-white hover:bg-danger-fill/90 active:bg-danger-fill/80",
 };
 
 const sizes: Record<string, string> = {

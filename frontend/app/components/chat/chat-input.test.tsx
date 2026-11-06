@@ -83,3 +83,36 @@ it("removes only sent attachments when a new attachment is added before acceptan
   expect(screen.queryByText("first.txt")).toBeNull();
   expect(screen.getByText("next.txt")).toBeTruthy();
 });
+
+
+it("does not send while an IME composition is being confirmed", async () => {
+  await i18n.changeLanguage("en-US");
+  const onSend = vi.fn();
+  render(<ToastProvider><ChatInput onSend={onSend} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>);
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "优化项目经历" } });
+  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+  fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+  expect(onSend).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(onSend).toHaveBeenCalledTimes(1);
+});
+
+it("uses Enter for a new line on mobile and a modifier to send", async () => {
+  await i18n.changeLanguage("en-US");
+  const original = window.matchMedia;
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query === "(max-width: 767px)", media: query,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  }));
+  try {
+    const onSend = vi.fn();
+    render(<ToastProvider><ChatInput onSend={onSend} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "next step" } });
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(true);
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  } finally { cleanup(); window.matchMedia = original; }
+});

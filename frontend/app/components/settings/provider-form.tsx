@@ -77,9 +77,11 @@ export default function ProviderForm({
           {t("settings.providerType")}
         </label>
         <select
+          aria-label={t("settings.providerType")}
+          disabled={submitting}
           value={provider}
           onChange={(e) => setProvider(e.target.value as Provider)}
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         >
           {providerOptions.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -100,12 +102,13 @@ export default function ProviderForm({
         </label>
         <input
           type="text"
+          aria-label={t("settings.configName")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("settings.configNamePlaceholder")}
-          disabled={isEdit}
+          disabled={submitting || isEdit}
           required
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
         />
         <p className="text-xs text-text-muted mt-1">
           {t("settings.configNameDescription")}
@@ -119,10 +122,12 @@ export default function ProviderForm({
         </label>
         <input
           type="url"
+          aria-label={t("settings.baseUrl")}
+          disabled={submitting}
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
           placeholder="https://api.example.com/v1"
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40"
         />
         <p className="text-xs text-text-muted mt-1">
           {t("settings.baseUrlDescription")}
@@ -138,6 +143,8 @@ export default function ProviderForm({
         </label>
         <input
           type="password"
+          aria-label={t("settings.apiKey")}
+          disabled={submitting}
           value={apiKey}
           onChange={(e) => {
             setApiKey(e.target.value);
@@ -147,7 +154,7 @@ export default function ProviderForm({
           }}
           placeholder={isEdit ? t("settings.apiKeyPlaceholder") : t("settings.apiKeyNewPlaceholder")}
           autoComplete="off"
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40"
         />
         {isEdit && (
           <label className="flex items-center gap-2 mt-2 cursor-pointer">

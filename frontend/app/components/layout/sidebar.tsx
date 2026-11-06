@@ -1,198 +1,31 @@
 import { useTranslation } from "react-i18next";
-import { Link, useLocation } from "react-router";
+import { NavLink } from "react-router";
+import { MessageSquare, FileUser, BriefcaseBusiness, Folder, Settings, Monitor } from "lucide-react";
 import { getCurrentLocale, setLocale, type Locale } from "@/app/lib/i18n";
+import { useTheme, type ThemeMode } from "@/app/lib/theme";
 
-const navItems = [
-  {
-    href: "/",
-    labelKey: "nav.aiChat",
-    icon: ChatIcon,
-    active: true,
-  },
-  {
-    href: "/resumes",
-    labelKey: "nav.resumes",
-    icon: DocIcon,
-    active: true,
-  },
-  {
-    href: "/job-descriptions",
-    labelKey: "nav.jd",
-    icon: BriefcaseIcon,
-    active: true,
-  },
-  {
-    href: "/files",
-    labelKey: "nav.files",
-    icon: FolderIcon,
-    active: true,
-  },
-  {
-    href: "/settings/providers",
-    activePath: "/settings",
-    labelKey: "nav.settings",
-    icon: SettingsIcon,
-    active: true,
-  },
+const items = [
+  { to: "/", label: "nav.aiChat", short: "chat", icon: MessageSquare },
+  { to: "/resumes", label: "nav.resumes", short: "resumes", icon: FileUser },
+  { to: "/job-descriptions", label: "nav.jd", short: "jd", icon: BriefcaseBusiness },
+  { to: "/files", label: "nav.files", short: "files", icon: Folder },
+  { to: "/settings", label: "nav.settings", short: "settings", icon: Settings },
 ];
-
-interface SidebarProps {
-  collapsed: boolean;
-  onToggle: () => void;
-}
-
-export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const { pathname } = useLocation();
+export default function Sidebar({ historyRef }: { historyRef: (node: HTMLDivElement | null) => void }) {
   const { t } = useTranslation();
-  const locale = getCurrentLocale();
-
-  return (
-    <>
-      <button
-        onClick={onToggle}
-        className="app-region-no-drag fixed top-4 left-4 z-50 lg:hidden p-2 rounded-lg bg-white shadow-card border border-border-default"
-        aria-label={t("nav.toggle")}
-        aria-expanded={!collapsed}
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
-
-      <aside
-        className={`fixed top-0 left-0 z-40 h-full bg-white border-r border-border-light flex flex-col transition-all duration-200 ${
-          collapsed ? "-translate-x-full lg:translate-x-0 lg:w-16" : "w-60"
-        }`}
-      >
-        <div className="app-region-drag h-14 flex items-center px-4 border-b border-border-light">
-          <span className="font-display text-lg font-semibold text-text-primary tracking-tight truncate">
-            {collapsed ? "OP" : "OfferPilot"}
-          </span>
-        </div>
-
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-          {navItems.map((item) => {
-            const isActive =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.activePath ?? item.href);
-            return (
-              <Link
-                key={item.href}
-                to={item.active ? item.href : "#"}
-                className={`flex items-center gap-3 px-3 py-2 rounded-full text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-black/5 text-text-dark"
-                    : "text-text-muted hover:text-text-dark hover:bg-black/[0.03]"
-                } ${!item.active ? "opacity-40 pointer-events-none" : ""}`}
-                title={t(item.labelKey)}
-              >
-                <item.icon className="w-4 h-4 shrink-0" />
-                <span
-                  className={`overflow-hidden whitespace-nowrap transition-all duration-200 ${
-                    collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
-                  }`}
-                >
-                  {t(item.labelKey)}
-                </span>
-                {!item.active && (
-                  <span
-                    className={`ml-auto overflow-hidden whitespace-nowrap rounded-full bg-border-light px-1.5 py-0.5 text-[10px] text-text-muted transition-all duration-200 ${
-                      collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
-                    }`}
-                  >
-                    {t("nav.planning")}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-3 border-t border-border-light">
-          <p
-            className={`overflow-hidden text-center text-[10px] text-text-muted transition-all duration-200 ${
-              collapsed ? "h-0 opacity-0" : "h-auto opacity-100"
-            }`}
-          >
-            {t("nav.version")}
-          </p>
-          <label
-            className={`mt-2 flex items-center justify-center gap-1.5 text-[10px] text-text-muted transition-all duration-200 ${
-              collapsed ? "h-0 overflow-hidden opacity-0" : "h-auto opacity-100"
-            }`}
-          >
-            <span>{t("language.label")}</span>
-            <select
-              value={locale}
-              onChange={(event) => void setLocale(event.target.value as Locale)}
-              aria-label={t("language.switchTo")}
-              className="bg-transparent text-[10px] text-text-muted outline-none"
-            >
-              <option value="zh-CN">{t("language.chinese")}</option>
-              <option value="en-US">{t("language.english")}</option>
-            </select>
-          </label>
-          <button
-            onClick={onToggle}
-            className="hidden lg:block w-full mt-1 p-1 rounded-lg hover:bg-black/[0.03] transition-colors"
-            aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
-            aria-expanded={!collapsed}
-          >
-            <svg
-              className={`w-4 h-4 mx-auto text-text-muted transition-transform ${
-                collapsed ? "rotate-180" : ""
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-        </div>
-      </aside>
-    </>
-  );
-}
-
-function ChatIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-    </svg>
-  );
-}
-
-function DocIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  );
-}
-
-function BriefcaseIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6V5a2 2 0 012-2h2a2 2 0 012 2v1m-9 0h10a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2zm0 5h16" />
-    </svg>
-  );
-}
-
-function FolderIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-    </svg>
-  );
-}
-
-function SettingsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  );
+  const [theme, setTheme] = useTheme();
+  return <aside className="app-sidebar">
+    <div className="sidebar-brand app-region-drag"><span className="brand-full">OfferPilot</span><span className="brand-short">OP</span></div>
+    <nav className="primary-nav" aria-label={t("nav.toggle")}>
+      {items.map(({ to, label, short, icon: Icon }) => <NavLink key={to} to={to} end={to === "/"} title={t(label)} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+        <Icon size={20} strokeWidth={1.7} /><span className="nav-full">{t(label)}</span><span className="nav-short">{t(`mobileNav.${short}`)}</span>
+      </NavLink>)}
+    </nav>
+    <div className="sidebar-history" ref={historyRef} />
+    <footer className="sidebar-footer">
+      <label><select aria-label={t("language.switchTo")} value={getCurrentLocale()} onChange={(e) => void setLocale(e.target.value as Locale)}><option value="zh-CN">{t("language.chinese")}</option><option value="en-US">{t("language.english")}</option></select></label>
+      <label><Monitor size={16} /><select aria-label={t("appearance.theme")} value={theme} onChange={(e) => setTheme(e.target.value as ThemeMode)}>{(["light", "dark", "system"] as const).map((mode) => <option key={mode} value={mode}>{t(`appearance.${mode}`)}</option>)}</select></label>
+      <p>{t("nav.version")}</p>
+    </footer>
+  </aside>;
 }

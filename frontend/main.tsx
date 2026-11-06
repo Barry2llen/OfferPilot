@@ -2,13 +2,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import "@fontsource-variable/dm-sans/wght.css";
-import "@fontsource-variable/outfit/wght.css";
-import "@fontsource/roboto/latin-400.css";
-import "@fontsource/roboto/latin-500.css";
-import "@fontsource/roboto/latin-700.css";
+import { initializeTheme } from "@/app/lib/theme";
 import AppRouter from "@/app/router";
 import "@/app/globals.css";
 import i18n from "@/app/lib/i18n";
+
+initializeTheme();
 
 const rootElement = document.getElementById("root");
 

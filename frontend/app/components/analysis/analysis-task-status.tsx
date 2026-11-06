@@ -28,7 +28,7 @@ export default function AnalysisTaskStatus({ task }: AnalysisTaskStatusProps) {
         <span className="shrink-0 font-mono text-text-muted">{progress}%</span>
       </div>
       <div
-        className="h-1.5 overflow-hidden rounded-full bg-white"
+        className="h-1.5 overflow-hidden rounded-full bg-surface-primary"
         role="progressbar"
         aria-label={t("chat.analysisWorking")}
         aria-valuemin={0}

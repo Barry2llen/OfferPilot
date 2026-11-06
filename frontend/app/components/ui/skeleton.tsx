@@ -10,7 +10,7 @@ export function Skeleton({ className = "" }: SkeletonProps) {
 
 export function ResumeCardSkeleton() {
   return (
-    <div className="rounded-[20px] border border-border-light bg-white p-4 shadow-card">
+    <div className="rounded-[20px] border border-border-light bg-surface-primary p-4 shadow-card">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 space-y-2">
           <Skeleton className="h-5 w-48 rounded-lg" />

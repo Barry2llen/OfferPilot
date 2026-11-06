@@ -222,7 +222,7 @@ function BlockCard({ block }: { block: JobDescriptionBlock }) {
           {block.facts.map((fact, index) => (
             <div
               key={`${fact.text}-${index}`}
-              className="rounded-xl border border-border-light bg-white p-3"
+              className="rounded-xl border border-border-light bg-surface-primary p-3"
             >
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Badge variant="info">{factLabel(fact)}</Badge>
@@ -235,7 +235,7 @@ function BlockCard({ block }: { block: JobDescriptionBlock }) {
                   {fact.keywords.map((keyword) => (
                     <span
                       key={keyword}
-                      className="rounded-md bg-surface-secondary px-2 py-0.5 text-[11px] text-text-secondary"
+                      className="rounded-md bg-surface-secondary px-2 py-0.5 text-xs text-text-secondary"
                     >
                       {keyword}
                     </span>
