@@ -70,7 +70,7 @@ pnpm run build
 The Electron project is under `electron/` and uses Electron, Vite, React 18, TypeScript, and Electron Builder.
 
 - `electron/main.ts` owns single-instance behavior, backend/frontend child processes, logging, window lifecycle, and packaged runtime configuration.
-- `electron/preload.ts` exposes only the minimal runtime bridge: `window.offerPilotRuntime.apiBaseUrl`.
+- `electron/preload.ts` exposes only the minimal runtime bridge on `window.offerPilotRuntime`: `apiBaseUrl`, `platform`, and on Windows/Linux the `windowControls` wrappers (`minimize`, `toggleMaximize`, `close`, `isMaximized`, `onMaximizedChange`) for the self-drawn window buttons. Never expose `ipcRenderer` or other Node primitives.
 - Development mode looks for adjacent `../backend` and `../frontend`; use `OFFER_PILOT_BACKEND_DIR` and `OFFER_PILOT_FRONTEND_DIR` when they are elsewhere.
 - Development starts FastAPI and Vite. Production starts only FastAPI and serves the Vite output through `--frontend-dist resources/frontend`.
 - Packaged resources are expected at `resources/backend/offer-pilot-api` and `resources/frontend`, staged by `scripts/prepare-backend.mjs` and `scripts/prepare-frontend.mjs`.

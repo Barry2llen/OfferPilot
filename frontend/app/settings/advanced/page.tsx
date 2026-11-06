@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { contextCompactionSettingsApi } from "@/app/lib/api/context-compaction-settings";
@@ -8,6 +8,7 @@ import { useToast } from "@/app/components/ui/toast";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
 import Card from "@/app/components/ui/card";
+import Select from "@/app/components/ui/select";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import type {
   ContextCompactionSettingsResponse,
@@ -48,11 +49,9 @@ export default function AdvancedSettingsPage() {
     }
   }, [contextCompactionSettings]);
 
-  const handleCompactionModelChange = async (
-    event: ChangeEvent<HTMLSelectElement>,
-  ) => {
+  const handleCompactionModelChange = async (value: string) => {
     const previous = compactionModelSelectionId;
-    const next = event.target.value ? Number(event.target.value) : null;
+    const next = value ? Number(value) : null;
     setCompactionModelSelectionId(next);
     setCompactionSettingsSubmitting(true);
     try {
@@ -104,24 +103,24 @@ export default function AdvancedSettingsPage() {
         </div>
       </div>
 
-      <label className="mt-6 block text-sm font-medium text-text-primary">
+      <label htmlFor="compaction-model" className="mt-6 block text-sm font-medium text-text-primary">
         {t("settings.contextCompactionModel")}
-        <select
-          className="mt-2 h-11 w-full rounded-xl border border-border-default bg-surface-primary px-3 text-sm text-text-primary outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-          value={compactionModelSelectionId ?? ""}
-          onChange={handleCompactionModelChange}
-          disabled={compactionSettingsSubmitting}
-        >
-          <option value="">
-            {t("settings.followCurrentConversationModel")}
-          </option>
-          {selections.map((selection) => (
-            <option key={selection.id} value={selection.id}>
-              {selection.provider.name} / {selection.model_name}
-            </option>
-          ))}
-        </select>
       </label>
+      <Select
+        id="compaction-model"
+        className="mt-2 w-full"
+        triggerClassName="h-11 rounded-xl"
+        value={compactionModelSelectionId === null ? "" : String(compactionModelSelectionId)}
+        onChange={(value) => void handleCompactionModelChange(value)}
+        disabled={compactionSettingsSubmitting}
+        options={[
+          { value: "", label: t("settings.followCurrentConversationModel") },
+          ...selections.map((selection) => ({
+            value: String(selection.id),
+            label: `${selection.provider.name} / ${selection.model_name}`,
+          })),
+        ]}
+      />
 
       {compactionSettingsSubmitting ? (
         <p className="mt-2 text-xs text-text-muted">{t("common.saving")}</p>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
+import Select from "@/app/components/ui/select";
 import ThinkingControl from "@/app/components/settings/thinking-control";
 import { defaultThinkingType } from "@/app/lib/thinking";
 import { modelProvidersApi } from "@/app/lib/api/model-providers";
@@ -89,22 +90,23 @@ export default function SelectionForm({
         <label className="block text-sm font-medium text-text-primary mb-1.5">
           {t("settings.modelProvider")}
         </label>
-        <select
+        <Select
           aria-label={t("settings.modelProvider")}
           disabled={submitting}
           value={providerName}
-          onChange={(e) => { setProviderName(e.target.value); setThinking(null); setApiMode("auto"); }}
-          required
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
-        >
-          <option value="">{t("settings.chooseProvider")}</option>
-          {providers.map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.name} ({p.provider}{" "}
-              {p.has_api_key ? t("settings.providerConfigured") : t("settings.providerNotConfigured")})
-            </option>
-          ))}
-        </select>
+          onChange={(value) => { setProviderName(value); setThinking(null); setApiMode("auto"); }}
+          className="w-full"
+          triggerClassName="h-[42px] rounded-xl px-3.5"
+          placeholder={t("settings.chooseProvider")}
+          options={[
+            { value: "", label: t("settings.chooseProvider") },
+            ...providers.map((p) => ({
+              value: p.name,
+              label: p.name,
+              description: `${p.provider} · ${p.has_api_key ? t("settings.providerConfigured") : t("settings.providerNotConfigured")}`,
+            })),
+          ]}
+        />
         {providers.length === 0 && (
           <p className="text-xs text-warning-text mt-1">
             {t("settings.noAvailableProviders")}
@@ -125,7 +127,7 @@ export default function SelectionForm({
           onChange={(e) => setModelName(e.target.value)}
           placeholder={t("settings.modelNamePlaceholder")}
           required
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary"
         />
       </div>
 
@@ -155,9 +157,8 @@ export default function SelectionForm({
         <div className="mt-5 space-y-5">
       {(selectedProvider === "OpenAI" || selectedProvider === "OpenAI Compatible") && <div>
         <label htmlFor="api-mode" className="block text-sm font-medium mb-1.5">{t("settings.apiMode")}</label>
-        <select id="api-mode" className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary" value={apiMode} onChange={(e) => setApiMode(e.target.value as ApiMode)}>
-          <option value="auto">{t("settings.apiAuto")}</option><option value="responses">Responses</option><option value="chat_completions">Chat Completions</option>
-        </select>
+        <Select<ApiMode> id="api-mode" className="w-full" triggerClassName="h-[42px] rounded-xl px-3.5" value={apiMode} disabled={submitting} onChange={setApiMode}
+          options={[{ value: "auto", label: t("settings.apiAuto") }, { value: "responses", label: "Responses" }, { value: "chat_completions", label: "Chat Completions" }]} />
       </div>}
       <ThinkingControl provider={selectedProvider} value={thinkingValue} onChange={setThinking} disabled={submitting} />
       <div>

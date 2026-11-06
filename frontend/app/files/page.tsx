@@ -76,7 +76,7 @@ export default function FilesPage() {
           onChange={(event) => setQuery(event.target.value)}
           aria-label={t("files.searchPlaceholder")}
           placeholder={t("files.searchPlaceholder")}
-          className="h-10 w-full rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition focus:border-text-muted"
+          className="h-10 w-full rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition"
         />
       </div>
 

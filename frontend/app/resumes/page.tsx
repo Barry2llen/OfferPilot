@@ -9,6 +9,7 @@ import ResumeCard from "@/app/components/resumes/resume-card";
 import ResumeUploader from "@/app/components/resumes/resume-uploader";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Button from "@/app/components/ui/button";
+import Select from "@/app/components/ui/select";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import type { ResumeListItem } from "@/app/lib/api/types";
 import { useAppContext } from "@/app/lib/context/app-context";
@@ -128,10 +129,17 @@ export default function ResumesPage() {
           <h2 className="sr-only">{t("resume.recentUploads")}</h2>
           <div className="resource-toolbar">
             <input type="search" aria-label={t("appearance.searchResumes")} placeholder={t("appearance.searchResumes")} value={query} onChange={(e) => setQuery(e.target.value)} />
-            <select aria-label={t("resume.filter")} value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="all">{t("appearance.all")}</option><option value="parsed">{t("resume.parsed")}</option><option value="processing">{t("resume.parsing")}</option><option value="failed">{t("resume.parseFailed")}</option><option value="unparsed">{t("resume.unparsed")}</option>
-            </select>
-            <select aria-label={t("resume.sort")} value={sort} onChange={(e) => setSort(e.target.value)}><option value="newest">{t("appearance.newest")}</option><option value="name">{t("appearance.name")}</option></select>
+            <Select aria-label={t("resume.filter")} className="resource-select" value={status} onChange={setStatus} options={[
+              { value: "all", label: t("appearance.all") },
+              { value: "parsed", label: t("resume.parsed") },
+              { value: "processing", label: t("resume.parsing") },
+              { value: "failed", label: t("resume.parseFailed") },
+              { value: "unparsed", label: t("resume.unparsed") },
+            ]} />
+            <Select aria-label={t("resume.sort")} className="resource-select" align="end" value={sort} onChange={setSort} options={[
+              { value: "newest", label: t("appearance.newest") },
+              { value: "name", label: t("appearance.name") },
+            ]} />
           </div>
             <div className="space-y-3">
               {filtered.length === 0 && <EmptyState title={t("appearance.noResults")} />}

@@ -1,10 +1,6 @@
-import { useState } from "react";
-import { Plus, SlidersHorizontal } from "lucide-react";
-import FormDrawer from "@/app/components/ui/form-drawer";
+import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ModelSelectionPicker from "@/app/components/chat/model-selection-picker";
-import ThinkingControl from "@/app/components/settings/thinking-control";
-import { defaultThinkingType } from "@/app/lib/thinking";
 import type { ModelSelectionResponse, AgentStatus } from "@/app/lib/api/types";
 import { useAppContext } from "@/app/lib/context/app-context";
 
@@ -40,8 +36,6 @@ interface ChatHeaderProps {
   currentModelSelection: number | null;
   isStreaming: boolean;
   onModelChange: (id: number | null) => void;
-  thinkingOverride?: { value: string | number | null };
-  onThinkingChange?: (value: { value: string | number | null }) => void;
 }
 
 export default function ChatHeader({
@@ -55,17 +49,12 @@ export default function ChatHeader({
   currentModelSelection,
   isStreaming,
   onModelChange,
-  thinkingOverride,
-  onThinkingChange,
 }: ChatHeaderProps) {
-  const [optionsOpen, setOptionsOpen] = useState(false);
   const { state } = useAppContext();
   const { t } = useTranslation();
-  const selected = models.find((model) => model.id === currentModelSelection);
-  const thinking = selected?.thinking ?? (selected ? { type: defaultThinkingType(selected.provider.provider), value: null } : null);
 
   return (
-    <div className="app-region-drag electron-titlebar-safe-right chat-header shrink-0 border-b border-border-light bg-surface-primary px-4 py-2">
+    <div className="app-region-drag electron-titlebar-safe-right chat-header shrink-0 border-b border-border-light bg-surface-primary">
       <div className="chat-header-row">
         <button
           type="button"
@@ -118,15 +107,7 @@ export default function ChatHeader({
             {t(statusLabelKeys[state.agentStatus])}
           </span>
         </div>
-
-          <button type="button" className="icon-button" aria-label={t("appearance.modelOptions")} title={t("appearance.modelOptions")} onClick={() => setOptionsOpen(true)}><SlidersHorizontal size={18} /></button>
         </div>
-        <FormDrawer open={optionsOpen} title={t("appearance.modelOptions")} onClose={() => setOptionsOpen(false)}>
-          <div className="space-y-6">
-            <ModelSelectionPicker models={models} loading={modelsLoading} value={currentModelSelection} disabled={isStreaming} onChange={onModelChange} />
-            {selected && thinking && onThinkingChange && <ThinkingControl provider={selected.provider.provider} value={{ ...thinking, value: thinkingOverride ? thinkingOverride.value : thinking.value }} allowType={false} disabled={isStreaming} onChange={(value) => onThinkingChange({ value: value.value })} />}
-          </div>
-        </FormDrawer>
       </div>
     </div>
   );

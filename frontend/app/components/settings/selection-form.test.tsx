@@ -5,6 +5,12 @@ import type { ModelProviderResponse, ModelSelectionResponse, ThinkingSettings } 
 import i18n from "@/app/lib/i18n";
 import SelectionForm from "./selection-form";
 
+/** Opens a custom Select and picks the option whose label matches exactly. */
+function chooseOption(combobox: HTMLElement, label: string) {
+  fireEvent.click(combobox);
+  fireEvent.click(screen.getByText(label, { selector: '[role="option"] span' }));
+}
+
 const providers: ModelProviderResponse[] = [
   "OpenAI", "OpenAI Compatible", "Google", "DeepSeek", "Anthropic",
 ].map((provider) => ({ provider, name: provider, base_url: null, has_api_key: false }));
@@ -69,9 +75,9 @@ describe.each(["en-US", "zh-CN"])("nullable thinking settings in %s", (locale) =
   it("saves a selected effort and clears it when returning to the provider default", async () => {
     const { submit } = renderForm("OpenAI");
     const input = screen.getByRole("combobox", { name: i18n.t("settings.thinkingValue") });
-    fireEvent.change(input, { target: { value: "high" } });
+    chooseOption(input, i18n.t("settings.thinkingValue_high"));
     expect((await submit()).thinking).toEqual({ type: "effort", value: "high" });
-    fireEvent.change(input, { target: { value: "" } });
+    chooseOption(input, i18n.t("settings.providerDefault"));
     expect((await submit()).thinking).toBeNull();
   });
 
@@ -88,15 +94,13 @@ describe.each(["en-US", "zh-CN"])("nullable thinking settings in %s", (locale) =
     const initial = selection("OpenAI", { type: "effort", value: "high" });
     initial.api_mode = "responses";
     const { submit } = renderForm("OpenAI", initial);
-    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "Anthropic" } });
+    chooseOption(screen.getAllByRole("combobox")[0], "Anthropic");
     expect((await submit())).toMatchObject({ provider_name: "Anthropic", api_mode: "auto", thinking: null });
   });
 
   it("keeps the budget draft visible without requiring max tokens until a budget is entered", async () => {
     const { submit, form } = renderForm("Anthropic");
-    fireEvent.change(screen.getByRole("combobox", { name: i18n.t("settings.thinking") }), {
-      target: { value: "budget" },
-    });
+    chooseOption(screen.getByRole("combobox", { name: i18n.t("settings.thinking") }), i18n.t("settings.thinkingType_budget"));
     const budget = screen.getByRole("spinbutton", { name: i18n.t("settings.thinkingBudget") });
     const maxTokens = screen.getByRole("spinbutton", { name: i18n.t("settings.maxTokens") }) as HTMLInputElement;
     expect(maxTokens.required).toBe(false);
@@ -112,9 +116,7 @@ describe.each(["en-US", "zh-CN"])("nullable thinking settings in %s", (locale) =
 
   it.each([0, -1, 1024])("preserves the Google budget %s", async (value) => {
     const { submit } = renderForm("Google");
-    fireEvent.change(screen.getByRole("combobox", { name: i18n.t("settings.thinking") }), {
-      target: { value: "budget" },
-    });
+    chooseOption(screen.getByRole("combobox", { name: i18n.t("settings.thinking") }), i18n.t("settings.thinkingType_budget"));
     fireEvent.change(screen.getByRole("spinbutton", { name: i18n.t("settings.thinkingBudget") }), {
       target: { value: String(value) },
     });

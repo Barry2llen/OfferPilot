@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
@@ -28,6 +28,8 @@ interface RuntimeServices {
 }
 
 let mainWindow: BrowserWindow | null = null
+// Windows/Linux draw their own window buttons in the renderer; macOS keeps the native traffic lights.
+const customWindowControls = process.platform === 'win32' || process.platform === 'linux'
 let managedProcesses: ManagedProcess[] = []
 let shuttingDown = false
 let shutdownComplete = false
@@ -87,6 +89,7 @@ app.on('activate', () => {
 async function startApplication() {
   try {
     configureApplicationMenu()
+    registerWindowControls()
 
     const services = app.isPackaged
       ? await startProductionServices()
@@ -179,11 +182,13 @@ function createWindow(targetUrl: string) {
     autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#121212' : '#ffffff',
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: nativeTheme.shouldUseDarkColors ? '#121212' : '#ffffff',
-      symbolColor: nativeTheme.shouldUseDarkColors ? '#f5f5f5' : '#18181b',
-      height: 48,
-    },
+    ...(customWindowControls ? {} : {
+      titleBarOverlay: {
+        color: nativeTheme.shouldUseDarkColors ? '#121212' : '#ffffff',
+        symbolColor: nativeTheme.shouldUseDarkColors ? '#f5f5f5' : '#18181b',
+        height: 48,
+      },
+    }),
     icon: path.join(process.env.VITE_PUBLIC || path.join(appRoot, 'public'), 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -192,14 +197,20 @@ function createWindow(targetUrl: string) {
     },
   })
 
-  // The renderer's theme-color metadata follows light/dark/system without expanding preload.
+  // The renderer's theme-color metadata follows light/dark/system; the self-drawn window buttons theme themselves.
   mainWindow.webContents.on('did-change-theme-color', (_event, color) => {
     if (!mainWindow || (color !== '#121212' && color !== '#ffffff')) return
     mainWindow.setBackgroundColor(color)
-    if (process.platform === 'win32' || process.platform === 'linux') {
-      mainWindow.setTitleBarOverlay({ color, symbolColor: color === '#121212' ? '#f5f5f5' : '#18181b' })
-    }
   })
+
+  const publishMaximized = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('window-controls:maximized-changed', mainWindow.isMaximized())
+  }
+  mainWindow.on('maximize', publishMaximized)
+  mainWindow.on('unmaximize', publishMaximized)
+  mainWindow.on('enter-full-screen', publishMaximized)
+  mainWindow.on('leave-full-screen', publishMaximized)
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
@@ -212,6 +223,32 @@ function createWindow(targetUrl: string) {
   mainWindow.loadURL(targetUrl).catch((error: unknown) => {
     showStartupFailure(error)
   })
+}
+
+/** Only the main window may drive the window-control channels. */
+function senderWindow(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | null {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  return window && window === mainWindow && !window.isDestroyed() ? window : null
+}
+
+let windowControlsRegistered = false
+
+function registerWindowControls() {
+  if (windowControlsRegistered || !customWindowControls) return
+  windowControlsRegistered = true
+  ipcMain.on('window-controls:minimize', (event) => {
+    senderWindow(event)?.minimize()
+  })
+  ipcMain.on('window-controls:toggle-maximize', (event) => {
+    const window = senderWindow(event)
+    if (!window) return
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+  })
+  ipcMain.on('window-controls:close', (event) => {
+    senderWindow(event)?.close()
+  })
+  ipcMain.handle('window-controls:is-maximized', (event) => senderWindow(event)?.isMaximized() ?? false)
 }
 
 function configureApplicationMenu() {

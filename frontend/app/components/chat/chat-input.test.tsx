@@ -116,3 +116,23 @@ it("uses Enter for a new line on mobile and a modifier to send", async () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   } finally { cleanup(); window.matchMedia = original; }
 });
+
+it("renders trailing controls inside the composer and offers stop and enqueue while streaming", async () => {
+  await i18n.changeLanguage("en-US");
+  const onStop = vi.fn();
+  render(
+    <ToastProvider>
+      <ChatInput
+        onSend={() => {}}
+        onStop={onStop}
+        isStreaming
+        disabled={false}
+        trailing={<button type="button">Thinking picker</button>}
+      />
+    </ToastProvider>,
+  );
+  expect(screen.getByRole("button", { name: "Thinking picker" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: i18n.t("chatRuns.enqueue") })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: i18n.t("chatRuns.stopCurrent") }));
+  expect(onStop).toHaveBeenCalledTimes(1);
+});

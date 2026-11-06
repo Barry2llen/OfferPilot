@@ -4,6 +4,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import i18n from "@/app/lib/i18n";
 import ThinkingControl from "./thinking-control";
 
+/** Opens a custom Select and picks the option whose label matches exactly. */
+function chooseOption(combobox: HTMLElement, label: string) {
+  fireEvent.click(combobox);
+  fireEvent.click(screen.getByText(label, { selector: '[role="option"] span' }));
+}
+
 afterEach(cleanup);
 
 it("offers provider-specific thinking controls and submits a selected value", async () => {
@@ -11,7 +17,7 @@ it("offers provider-specific thinking controls and submits a selected value", as
   const onChange = vi.fn();
   render(<ThinkingControl provider="Google" value={{ type: "level", value: null }} onChange={onChange} />);
   expect(screen.getByRole("combobox", { name: "Thinking value" })).toBeTruthy();
-  fireEvent.change(screen.getByRole("combobox", { name: "Thinking" }), { target: { value: "budget" } });
+  chooseOption(screen.getByRole("combobox", { name: "Thinking" }), i18n.t("settings.thinkingType_budget"));
   expect(onChange).toHaveBeenCalledWith({ type: "budget", value: null });
 });
 

@@ -98,7 +98,7 @@ function DecisionForm({ input, onAnswer, draft, onDraftChange }: Props) {
             onKeyDown={onKeyDown}
             rows={1}
             placeholder={t("chat.queryFreeTextPlaceholder")}
-            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary-500/25"
+            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none"
           />
         </label>
         <label className="block text-xs text-text-secondary">
@@ -109,7 +109,7 @@ function DecisionForm({ input, onAnswer, draft, onDraftChange }: Props) {
             onKeyDown={onKeyDown}
             rows={1}
             placeholder={t("chat.queryNoteOnlyPlaceholder")}
-            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary-500/25"
+            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none"
           />
         </label>
         <div className="flex justify-end">

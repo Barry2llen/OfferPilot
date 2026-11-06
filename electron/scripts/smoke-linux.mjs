@@ -93,6 +93,8 @@ try {
   assert.equal(health.status, 200)
   assert.deepEqual(await health.json(), { message: 'Hello World!' })
   assert.equal(await window.evaluate(() => window.offerPilotRuntime.apiBaseUrl), apiBaseUrl)
+  assert.equal(await window.evaluate(() => typeof window.offerPilotRuntime.windowControls?.minimize), 'function')
+  await window.locator('.window-controls button').first().waitFor({ state: 'visible' })
   await window.screenshot({ path: path.join(output, 'home.png') })
 
   await window.locator('a[href="/resumes"]').first().click()

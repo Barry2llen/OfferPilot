@@ -155,7 +155,7 @@ Linux 正式产物在 Ubuntu 22.04 构建，并在 Ubuntu 22.04、24.04 验证�
 
 - `VITE_API_URL`：构建期指定后端 API 基础地址；不设置时使用同源相对路径。
 - `VITE_API_PROXY_TARGET`：Vite 开发服务器的 API 代理目标，默认 `http://127.0.0.1:8080`。
-- `window.offerPilotRuntime.apiBaseUrl`：Electron preload 注入的运行时覆盖地址。
+- `window.offerPilotRuntime.apiBaseUrl`：Electron preload 注入的运行时覆盖地址；同一桥接还提供 `platform`，以及 Windows/Linux 上用于自绘窗口按钮的 `windowControls`。
 - `OFFER_PILOT_FRONTEND_DIST`：FastAPI 前端目录覆盖路径，默认查找仓库中的 `frontend/dist`；Electron 生产版通过 `--frontend-dist` 传入 `resources/frontend`。
 
 Electron 打包后会从 `~/.offerpilot/config.yaml` 读取后端配置；首次启动时如果该文件不存在，会在 `~/.offerpilot` 下创建默认配置、SQLite 数据库目录、简历上传目录和后端运行时日志目录。托管进程 stdout/stderr 日志仍写入 Electron `userData/logs`。
@@ -230,6 +230,6 @@ PDF、DOCX、PNG、JPG、JPEG 文件复制为新简历；岗位分析接受 JD �
 简历库支持搜索、状态筛选和排序；宽屏详情可并排查看原件与解析，
 手机待回答问题使用独立面板并保留草稿。
 
-Electron 默认窗口为 1280×820，最小为 640×560，原生窗口控件随页面主题更新；
-preload 权限、后端 API、SSE 协议及打包目标保持兼容。
+Electron 默认窗口为 1280×820，最小为 640×560；Windows/Linux 上由前端自绘随主题变化的窗口按钮，
+preload 仅新增窄口径的 `windowControls` 包装函数，后端 API、SSE 协议及打包目标保持兼容。
 参见 [前端设计规范](frontend/DESIGN.md)。

@@ -17,8 +17,8 @@ navigation. Resume search, status filters, side-by-side document analysis, and
 mobile answer panels share the same API and streaming state.
 
 See [the frontend design specification](frontend/DESIGN.md). Electron opens at
-1280×820, can resize to 640×560, and follows the page theme for native window
-controls without adding preload permissions.
+1280×820, can resize to 640×560, and draws its own theme-aware window buttons
+on Windows/Linux through a narrow preload `windowControls` bridge.
 
 ## Project structure
 
@@ -252,7 +252,8 @@ Frontend and static-hosting runtime settings:
 - `VITE_API_PROXY_TARGET`: Vite development API proxy target, defaulting to
   `http://127.0.0.1:8080`.
 - `window.offerPilotRuntime.apiBaseUrl`: runtime override injected by the
-  Electron preload bridge.
+  Electron preload bridge. The same bridge also exposes `platform` and, on
+  Windows/Linux, `windowControls` for the self-drawn window buttons.
 - `OFFER_PILOT_FRONTEND_DIST`: FastAPI frontend directory override. It
   defaults to the repository's `frontend/dist`; Electron production passes
   `resources/frontend` with `--frontend-dist`.

@@ -141,7 +141,7 @@ function ChatSidebar({
               placeholder={t("chat.searchHistory")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface-secondary border border-transparent rounded-full focus:bg-surface-primary focus:border-border-default focus:ring-1 focus:ring-border-default outline-none transition-all placeholder:text-text-muted"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface-secondary border border-transparent rounded-full outline-none transition-all placeholder:text-text-muted"
             />
           </div>
         </div>

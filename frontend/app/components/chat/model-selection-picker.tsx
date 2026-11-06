@@ -1,8 +1,11 @@
+import { ChevronDown } from "lucide-react";
 import { useMediaQuery } from "@/app/hooks/use-media-query";
+import { shouldOpenUpward, useDismiss } from "@/app/hooks/use-dismiss";
 import FormDrawer from "@/app/components/ui/form-drawer";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
+import { selectMenuClassName, selectTriggerClassName } from "@/app/components/ui/select-styles";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
 import i18n from "@/app/lib/i18n";
 
@@ -205,7 +208,9 @@ export default function ModelSelectionPicker({
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
+  const [upward, setUpward] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const selected = useMemo(
     () => models.find((model) => model.id === value) ?? null,
@@ -214,30 +219,11 @@ export default function ModelSelectionPicker({
   const groups = useMemo(() => groupModels(models, query), [models, query]);
   const isDisabled = disabled || loading || models.length === 0;
 
-  useEffect(() => {
-    if (!open && !expanded) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (open && !rootRef.current?.contains(event.target as Node)) {
-        setQuery("");
-        setOpen(false);
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setQuery("");
-        setOpen(false);
-        setExpanded(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [expanded, open]);
+  // The drawer handles its own Escape; outside clicks only close the inline popover.
+  useDismiss(rootRef, open, () => {
+    setQuery("");
+    setOpen(false);
+  });
 
   const handleSelect = (id: number | null) => {
     onChange(id);
@@ -267,7 +253,7 @@ export default function ModelSelectionPicker({
           onChange={(event) => setQuery(event.target.value)}
           aria-label={t("chat.searchModels")}
           placeholder={t("chat.searchModels")}
-          className="h-10 w-full rounded-xl bg-surface-secondary pl-9 pr-3 text-sm text-text-primary outline-none transition focus:bg-surface-primary focus:ring-2 focus:ring-primary-500/25"
+          className="h-10 w-full rounded-xl bg-surface-secondary pl-9 pr-3 text-sm text-text-primary outline-none transition"
         />
       </div>
       <div className={listClassName}>
@@ -286,19 +272,23 @@ export default function ModelSelectionPicker({
     <div ref={rootRef} className="relative flex min-w-0 items-center gap-2">
       {!compact && <span className="shrink-0 text-xs text-text-muted">{t("chat.modelLabel")}</span>}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => {
           if (!isDisabled) {
             if (mobile) { setExpanded(true); return; }
             if (open) setQuery("");
+            else setUpward(shouldOpenUpward(triggerRef.current, 480));
             setOpen(!open);
           }
         }}
         disabled={isDisabled}
+        data-open={open}
+        aria-haspopup="dialog"
         aria-expanded={open || expanded}
         aria-label={t("chat.chooseModel")}
-        title={disabled ? t("chat.modelSwitchDisabled") : undefined}
-        className="flex h-9 w-52 max-w-[48vw] items-center gap-2 rounded-lg border border-border-default bg-surface-primary px-3 text-left text-sm text-text-primary shadow-sm outline-none transition hover:bg-border-light focus-visible:bg-surface-primary focus-visible:ring-2 focus-visible:ring-primary-500/25 disabled:cursor-not-allowed disabled:text-text-muted disabled:shadow-none"
+        title={disabled ? t("chat.modelSwitchDisabled") : selected ? modelLabel(selected) : undefined}
+        className={`${selectTriggerClassName("md", "outline")} h-9 w-auto min-w-40 max-w-72`}
       >
         <span className="min-w-0 flex-1 truncate">
           {loading
@@ -309,23 +299,15 @@ export default function ModelSelectionPicker({
                 ? t("chat.noModels")
                 : t("chat.noSelection")}
         </span>
-        <svg
-          className={`h-4 w-4 shrink-0 text-text-muted transition ${open ? "rotate-180" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+        <ChevronDown
+          aria-hidden="true"
+          size={16}
+          className={`shrink-0 text-text-muted transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open && (
-        <div className={`absolute ${compact ? "right-0" : "left-0"} top-[calc(100%+0.5rem)] z-50 w-[26rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border-default bg-surface-primary p-3 shadow-elevated`}>
+        <div role="dialog" aria-label={t("chat.chooseModel")} className={`${selectMenuClassName} ${compact ? "right-0" : "left-0"} ${upward ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]"} w-[26rem] max-w-[calc(100vw-2rem)] p-3`}>
           {renderPickerContent("mt-4 max-h-[22rem] overflow-y-auto pr-1")}
           <div className="mt-3 flex items-center justify-between border-t border-border-light pt-3">
             <span className="text-xs text-text-muted">

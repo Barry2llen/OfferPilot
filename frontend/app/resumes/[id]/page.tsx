@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Link, useNavigate, useParams } from "react-router";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { useToast } from "@/app/components/ui/toast";
@@ -20,8 +21,6 @@ import type {
 } from "@/app/lib/api/types";
 import i18n, { formatLocaleList } from "@/app/lib/i18n";
 import { analysisLabel } from "@/app/lib/analysis-labels";
-
-type DetailTab = "analysis" | "source";
 
 export default function ResumeDetailPage() {
   const { t } = useTranslation();
@@ -42,7 +41,8 @@ export default function ResumeDetailPage() {
     if (analysisEventVersions.resume > 0) refresh();
   }, [analysisEventVersions.resume, refresh]);
 
-  const [activeTab, setActiveTab] = useState<DetailTab>("analysis");
+  // The original file is hidden by default; showing it splits the page into two columns on wide screens.
+  const [showSource, setShowSource] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [operating, setOperating] = useState(false);
@@ -54,7 +54,7 @@ export default function ResumeDetailPage() {
 
   const handleReplace = useCallback(async () => {
     setReplaceOpen(false);
-    setActiveTab("analysis");
+    setShowSource(false);
     refetch();
     addToast(t("resume.fileReplaced"), "success");
   }, [refetch, addToast, t]);
@@ -86,7 +86,7 @@ export default function ResumeDetailPage() {
   const toggleReplace = () => {
     setReplaceOpen((open) => {
       const next = !open;
-      if (next) setActiveTab("source");
+      if (next) setShowSource(true);
       return next;
     });
   };
@@ -125,7 +125,7 @@ export default function ResumeDetailPage() {
   if (!resume || !derived) return null;
 
   return (
-    <PageCanvas>
+    <PageCanvas wide={showSource}>
       <header className="mb-4 flex items-center justify-between gap-4">
         <Link
           to="/resumes"
@@ -148,14 +148,22 @@ export default function ResumeDetailPage() {
             </p>
           </div>
 
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center lg:shrink-0">
+          <div className="flex flex-wrap items-center gap-3 lg:shrink-0">
             <Badge
               variant={parseVariant(resume.parse_status)}
               className="rounded-full px-2.5"
             >
               {parseLabel(resume.parse_status)}
             </Badge>
-            <div className="resume-tabs"><TabSwitch activeTab={activeTab} onChange={setActiveTab} /></div>
+            <Button
+              variant={showSource ? "primary" : "secondary"}
+              size="sm"
+              aria-pressed={showSource}
+              onClick={() => setShowSource((shown) => !shown)}
+            >
+              {showSource ? <PanelRightClose size={16} aria-hidden="true" /> : <PanelRightOpen size={16} aria-hidden="true" />}
+              {t(showSource ? "resume.hideOriginal" : "resume.showOriginal")}
+            </Button>
           </div>
         </div>
 
@@ -163,11 +171,11 @@ export default function ResumeDetailPage() {
           task={analysisTasks[analysisTaskKey("resume", resume.id)]}
         />
 
-        <div className="resume-detail-panes flex-1">
-          <div className={`resume-analysis ${activeTab === "analysis" ? "is-active" : ""}`}>
+        <div className="resume-detail-panes flex-1" data-source={showSource ? "shown" : "hidden"}>
+          <div className="resume-analysis">
             <AnalysisContent resume={resume} derived={derived} />
           </div>
-          <div className={`resume-source ${activeTab === "source" ? "is-active" : ""}`}>
+          <div className="resume-source">
             <SourceContent
               resume={resume}
               replaceOpen={replaceOpen}
@@ -224,49 +232,12 @@ export default function ResumeDetailPage() {
   );
 }
 
-function PageCanvas({ children }: { children: ReactNode }) {
+function PageCanvas({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="electron-titlebar-safe-top min-h-full bg-surface-primary">
-      <div className="mx-auto max-w-[1080px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6">
+      <div className={`mx-auto px-5 py-4 transition-[max-width] duration-200 sm:px-8 lg:px-10 lg:py-6 ${wide ? "max-w-[1440px]" : "max-w-[1080px]"}`}>
         {children}
       </div>
-    </div>
-  );
-}
-
-function TabSwitch({
-  activeTab,
-  onChange,
-}: {
-  activeTab: DetailTab;
-  onChange: (tab: DetailTab) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="relative grid w-full grid-cols-2 rounded-full border border-border-default bg-surface-primary p-0.5 shadow-[0_1px_8px_rgba(24,24,24,0.06)] sm:w-[188px]">
-      <span
-        className={`absolute bottom-0.5 top-0.5 w-[calc(50%-2px)] rounded-full bg-text-charcoal shadow-sm transition-transform duration-200 ${
-          activeTab === "source" ? "translate-x-full" : "translate-x-0"
-        }`}
-      />
-      <button
-        type="button"
-        onClick={() => onChange("analysis")}
-        className={`relative z-10 h-8 rounded-full px-3 text-xs font-semibold transition-colors ${
-          activeTab === "analysis" ? "text-on-accent" : "text-text-secondary"
-        }`}
-      >
-        {t("resume.aiAnalysis")}
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("source")}
-        className={`relative z-10 h-8 rounded-full px-3 text-xs font-semibold transition-colors ${
-          activeTab === "source" ? "text-on-accent" : "text-text-secondary"
-        }`}
-      >
-        {t("resume.originalResume")}
-      </button>
     </div>
   );
 }
@@ -362,7 +333,7 @@ function SourceContent({
   uploadFile: typeof resumesApi.upload;
 }) {
   return (
-    <div className="py-5">
+    <div className="py-7">
       {replaceOpen ? (
         <div className="mx-auto max-w-xl py-6">
           <ResumeUploader onUploaded={onUploaded} uploadFile={uploadFile} />
@@ -419,10 +390,10 @@ function ResumePreview({ resume }: { resume: ResumeDetail }) {
 
   if (resume.media_type?.includes("pdf")) {
     return (
-      <div className="mx-auto min-h-[620px] max-w-[820px] overflow-hidden bg-surface-primary">
+      <div className="mx-auto max-w-[820px] overflow-hidden rounded-xl border border-border-light bg-surface-primary">
         <iframe
           src={resumesApi.previewUrl(resume.id)}
-          className="h-[620px] w-full"
+          className="resume-preview-frame block w-full"
           title={t("resume.previewTitle")}
         />
       </div>

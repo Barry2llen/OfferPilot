@@ -5,8 +5,8 @@ export default function SettingsPage() {
   const { t } = useTranslation();
 
   return (
-    <div className="electron-titlebar-safe-top min-h-full bg-surface-primary">
-      <div className="mx-auto max-w-[1280px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6">
+    <div className="electron-titlebar-safe-top flex min-h-full flex-col bg-surface-primary">
+      <div className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col px-5 py-4 sm:px-8 lg:px-10 lg:py-6">
         <header>
           <h1 className="font-display text-2xl font-semibold text-text-primary">
             {t("settings.title")}
@@ -24,7 +24,8 @@ export default function SettingsPage() {
           </div>
         </nav>
 
-        <div className="mt-6">
+        {/* Stretches so tab pages (e.g. providers) can fill the remaining height. */}
+        <div className="mt-6 flex flex-1 flex-col">
           <Outlet />
         </div>
       </div>

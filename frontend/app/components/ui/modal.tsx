@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "re
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
+import WindowControls from "@/app/components/layout/window-controls";
 
 function trapFocus(event: KeyboardEvent<HTMLDialogElement>) {
   const dialog = event.currentTarget;
@@ -66,5 +67,7 @@ export default function Modal({ open, title, onClose, children, drawer = false, 
         <div className="modal-content"><AnimatePresence initial={false}>{open && <motion.div key="content" exit={{ opacity: 0 }} transition={{ duration: 0.22 }}>{children}</motion.div>}</AnimatePresence></div>
         {footer && <footer className="modal-footer">{footer}</footer>}
       </div>
+      {/* The modal sits in the top layer, so the window buttons are repeated here to stay reachable. */}
+      <WindowControls />
     </dialog>, document.body);
 }

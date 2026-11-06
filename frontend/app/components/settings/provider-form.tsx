@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
+import Select from "@/app/components/ui/select";
 import type {
   Provider,
   ModelProviderCreate,
@@ -76,19 +77,15 @@ export default function ProviderForm({
         <label className="block text-sm font-medium text-text-primary mb-1.5">
           {t("settings.providerType")}
         </label>
-        <select
+        <Select<Provider>
           aria-label={t("settings.providerType")}
           disabled={submitting}
           value={provider}
-          onChange={(e) => setProvider(e.target.value as Provider)}
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
-        >
-          {providerOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          onChange={setProvider}
+          className="w-full"
+          triggerClassName="h-[42px] rounded-xl px-3.5"
+          options={providerOptions}
+        />
         {isEdit && (
           <p className="text-xs text-text-muted mt-1">
             {t("settings.providerTypeCompatibility")}
@@ -108,7 +105,7 @@ export default function ProviderForm({
           placeholder={t("settings.configNamePlaceholder")}
           disabled={submitting || isEdit}
           required
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50 disabled:bg-surface-secondary"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary disabled:opacity-50 disabled:bg-surface-secondary"
         />
         <p className="text-xs text-text-muted mt-1">
           {t("settings.configNameDescription")}
@@ -127,7 +124,7 @@ export default function ProviderForm({
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
           placeholder="https://api.example.com/v1"
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary"
         />
         <p className="text-xs text-text-muted mt-1">
           {t("settings.baseUrlDescription")}
@@ -154,7 +151,7 @@ export default function ProviderForm({
           }}
           placeholder={isEdit ? t("settings.apiKeyPlaceholder") : t("settings.apiKeyNewPlaceholder")}
           autoComplete="off"
-          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+          className="w-full rounded-xl border border-border-default px-3.5 py-2.5 text-sm bg-surface-primary"
         />
         {isEdit && (
           <label className="flex items-center gap-2 mt-2 cursor-pointer">

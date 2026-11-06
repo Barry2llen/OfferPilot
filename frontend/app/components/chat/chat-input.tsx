@@ -1,8 +1,9 @@
-import { Paperclip } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { ArrowUp, FolderOpen, Plus, Square, Upload } from "lucide-react";
+import { useState, useRef, useLayoutEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import FormDrawer from "@/app/components/ui/form-drawer";
 import { useMediaQuery } from "@/app/hooks/use-media-query";
+import { useDismiss } from "@/app/hooks/use-dismiss";
 import Button from "@/app/components/ui/button";
 import { useToast } from "@/app/components/ui/toast";
 import ChatAttachmentCard, {
@@ -40,7 +41,13 @@ interface ChatInputProps {
   disabledMessage?: string;
   submitting?: boolean;
   noticeMessage?: string | null;
+  /** Controls rendered before the send button, e.g. the thinking intensity picker. */
+  trailing?: ReactNode;
 }
+
+/** Textarea height (40px) plus slack; anything taller means the draft wrapped. */
+const SINGLE_LINE_MAX_HEIGHT = 44;
+const TEXTAREA_MAX_HEIGHT = 200;
 
 export default function ChatInput({
   onSend,
@@ -50,6 +57,7 @@ export default function ChatInput({
   disabledMessage,
   submitting = false,
   noticeMessage = null,
+  trailing,
 }: ChatInputProps) {
   const mobile = useMediaQuery("(max-width: 767px)");
   const { addToast } = useToast();
@@ -65,41 +73,23 @@ export default function ChatInput({
   >([]);
   const [localUploads, setLocalUploads] = useState<LocalUploadItem[]>([]);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [wrapped, setWrapped] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const uploadIdRef = useRef(0);
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height =
-        Math.min(textareaRef.current.scrollHeight, 160) + "px";
-    }
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    const height = Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT);
+    textarea.style.height = `${height}px`;
+    // Once a draft wraps it keeps the two-row layout until cleared, so the width change cannot flip it back and forth.
+    setWrapped((current) => (input ? current || height > SINGLE_LINE_MAX_HEIGHT : false));
   }, [input]);
 
-  useEffect(() => {
-    if (!attachmentMenuOpen) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!attachmentMenuRef.current?.contains(event.target as Node)) {
-        setAttachmentMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setAttachmentMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [attachmentMenuOpen]);
+  useDismiss(attachmentMenuRef, attachmentMenuOpen, () => setAttachmentMenuOpen(false));
 
   const buildDraftAttachments = (): ChatAttachmentItem[] => [
     ...selectedLibraryFiles.map((file) => ({
@@ -251,6 +241,8 @@ export default function ChatInput({
   const canSend =
     Boolean(input.trim() || hasDraftAttachments) && !disabled && !submitting;
 
+  const multiline = wrapped || hasDraftAttachments || input.includes("\n");
+
   return (
     <div className="chat-composer shrink-0 px-4 pb-4 pt-3 sm:px-6">
       <input
@@ -263,95 +255,74 @@ export default function ChatInput({
       />
 
       <div className="mx-auto w-full max-w-3xl">
-        {(selectedLibraryFiles.length > 0 || localUploads.length > 0) && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {selectedLibraryFiles.map((file) => (
-              <ChatAttachmentCard
-                key={file.id}
-                attachment={{
-                  fileId: file.id,
-                  originalFilename: file.original_filename,
-                  mediaType: file.media_type,
-                  rawUrl: chatFilesApi.rawUrl(file.id),
-                  sizeBytes: file.size_bytes,
-                }}
-                variant="composer"
-                onRemove={() => removeLibraryFile(file.id)}
-              />
-            ))}
-            {localUploads.map((item) => (
-              <ChatAttachmentCard
-                key={item.key}
-                attachment={{
-                  fileId: null,
-                  originalFilename: item.file.name,
-                  mediaType: item.file.type || null,
-                  pending: true,
-                  previewUrl: item.previewUrl,
-                  sizeBytes: item.file.size,
-                }}
-                variant="composer"
-                onRemove={() => removeLocalUpload(item.key)}
-              />
-            ))}
-          </div>
-        )}
+        <div className={`composer-surface ${multiline ? "is-multiline" : ""}`}>
+          {hasDraftAttachments && (
+            <div className="composer-attachments">
+              {selectedLibraryFiles.map((file) => (
+                <ChatAttachmentCard
+                  key={file.id}
+                  attachment={{
+                    fileId: file.id,
+                    originalFilename: file.original_filename,
+                    mediaType: file.media_type,
+                    rawUrl: chatFilesApi.rawUrl(file.id),
+                    sizeBytes: file.size_bytes,
+                  }}
+                  variant="composer"
+                  onRemove={() => removeLibraryFile(file.id)}
+                />
+              ))}
+              {localUploads.map((item) => (
+                <ChatAttachmentCard
+                  key={item.key}
+                  attachment={{
+                    fileId: null,
+                    originalFilename: item.file.name,
+                    mediaType: item.file.type || null,
+                    pending: true,
+                    previewUrl: item.previewUrl,
+                    sizeBytes: item.file.size,
+                  }}
+                  variant="composer"
+                  onRemove={() => removeLocalUpload(item.key)}
+                />
+              ))}
+            </div>
+          )}
 
-        <div className="composer-surface">
-          <div className="composer-grid">
-            <div ref={attachmentMenuRef} className="relative shrink-0">
+          <div className="composer-row">
+            <div ref={attachmentMenuRef} className="composer-leading">
               <button
                 type="button"
                 onClick={() => setAttachmentMenuOpen((open) => !open)}
                 disabled={disabled}
-                className="inline-flex items-center gap-2 rounded-lg border border-border-default bg-surface-primary p-2 text-text-secondary shadow-sm transition hover:text-text-primary disabled:opacity-40"
+                className="composer-icon-button"
                 title={t("chat.addAttachment")}
                 aria-label={t("chat.addAttachment")}
+                aria-haspopup="menu"
                 aria-expanded={attachmentMenuOpen}
               >
-                <Paperclip size={18} /><span className="hidden sm:inline">{t("chat.addAttachment")}</span>
+                <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
               </button>
 
               {attachmentMenuOpen && (
-                <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-48 overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-1.5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]">
+                <div role="menu" className="select-menu absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-52 rounded-xl border border-border-light bg-surface-primary p-1 shadow-elevated">
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={openLocalFileDialog}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
                   >
-                    <svg
-                      className="h-4 w-4 text-text-muted"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 16V4m0 0l-4 4m4-4l4 4M4 16.5A2.5 2.5 0 006.5 19h11a2.5 2.5 0 002.5-2.5"
-                      />
-                    </svg>
+                    <Upload size={16} className="text-text-muted" aria-hidden="true" />
                     <span>{t("chat.uploadFile")}</span>
                   </button>
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={openPicker}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-text-primary transition hover:bg-surface-secondary"
                   >
-                    <svg
-                      className="h-4 w-4 text-text-muted"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"
-                      />
-                    </svg>
+                    <FolderOpen size={16} className="text-text-muted" aria-hidden="true" />
                     <span>{t("chat.chooseFromLibrary")}</span>
                   </button>
                 </div>
@@ -371,27 +342,36 @@ export default function ChatInput({
               disabled={disabled}
               rows={1}
               aria-label={t("chat.promptPlaceholder")}
-              className="composer-text resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:text-text-muted/50"
+              className="composer-text disabled:opacity-60"
             />
-            <div className="composer-actions flex items-center gap-1.5">
+
+            <div className="composer-trailing">
+              {trailing}
               {isStreaming && (
-                <Button variant="secondary" size="sm" onClick={onStop} aria-label={t("chatRuns.stopCurrent")}>
-                  {t("chat.stop")}
-                </Button>
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="composer-icon-button"
+                  aria-label={t("chatRuns.stopCurrent")}
+                  title={t("chatRuns.stopCurrent")}
+                >
+                  <Square size={14} fill="currentColor" aria-hidden="true" />
+                </button>
               )}
-              <Button
-                variant="primary"
-                size="sm"
+              <button
+                type="button"
                 onClick={handleSend}
                 disabled={!canSend}
-                pill
+                className="composer-send"
+                aria-label={t(isStreaming ? "chatRuns.enqueue" : "chatRuns.send")}
+                title={t(isStreaming ? "chatRuns.enqueue" : "chatRuns.send")}
               >
-                {t(isStreaming ? "chatRuns.enqueue" : "chatRuns.send")}
-              </Button>
+                <ArrowUp size={18} strokeWidth={2.2} aria-hidden="true" />
+              </button>
             </div>
           </div>
         </div>
-        <p className="mt-2 text-center text-xs text-text-muted">
+        <p className="composer-hint">
           {noticeMessage ?? t(mobile ? "appearance.mobileKeyboard" : "appearance.keyboard")}
         </p>
       </div>
@@ -407,7 +387,7 @@ export default function ChatInput({
             onChange={(event) => setPickerQuery(event.target.value)}
             aria-label={t("files.searchPlaceholder")}
             placeholder={t("files.searchPlaceholder")}
-            className="h-9 w-full rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition focus:border-text-muted"
+            className="h-9 w-full rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition"
           />
         }
         footer={

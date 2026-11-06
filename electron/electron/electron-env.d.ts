@@ -29,5 +29,14 @@ declare namespace NodeJS {
 interface Window {
   offerPilotRuntime?: {
     apiBaseUrl?: string
+    platform?: string
+    /** Present on Windows/Linux, where the renderer draws its own window buttons. */
+    windowControls?: {
+      minimize: () => void
+      toggleMaximize: () => void
+      close: () => void
+      isMaximized: () => Promise<boolean>
+      onMaximizedChange: (listener: (maximized: boolean) => void) => () => void
+    }
   }
 }

@@ -248,7 +248,7 @@ export default function ProvidersPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-1 flex-col gap-5">
       {providers.length === 0 ? (
         <div className="rounded-[20px] border-2 border-dashed border-border-default px-5 py-16 text-center">
           <p className="mb-3 text-sm text-text-muted">{t("settings.noProviders")}</p>
@@ -257,7 +257,7 @@ export default function ProvidersPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="grid flex-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
           <section aria-labelledby="settings-providers-title" className="min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3 px-1">
               <h2

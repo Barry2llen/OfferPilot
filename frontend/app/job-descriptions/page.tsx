@@ -1,10 +1,10 @@
 import FormDrawer from "@/app/components/ui/form-drawer";
 import { Link } from "react-router";
+import { BriefcaseBusiness, ImagePlus, Link2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
-import Card from "@/app/components/ui/card";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import AnalysisTaskStatus from "@/app/components/analysis/analysis-task-status";
 import ChatAttachmentCard from "@/app/components/chat/chat-attachment-card";
@@ -26,7 +26,7 @@ import {
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppActions, useAppContext } from "@/app/lib/context/app-context";
 import { useToast } from "@/app/components/ui/toast";
-import i18n from "@/app/lib/i18n";
+import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
 import type {
   ChatFileListItem,
   JobDescriptionAnalysisListItem,
@@ -314,105 +314,87 @@ export default function JobDescriptionsPage() {
 
   if (loading) {
     return (
-      <div className="electron-titlebar-safe-top mx-auto max-w-6xl p-6 lg:py-8">
+      <div className="electron-titlebar-safe-top min-h-full bg-surface-primary"><div className="mx-auto max-w-[1280px] px-5 pb-10 sm:px-8 lg:px-10">
         <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
         <Skeleton className="mb-6 h-4 w-72 rounded-lg" />
-        <Skeleton className="mb-6 h-80 rounded-[20px]" />
-        <div className="space-y-3">
-          {[1, 2, 3].map((item) => (
-            <Skeleton key={item} className="h-32 rounded-[20px]" />
-          ))}
+        <div className="jd-workspace">
+          <Skeleton className="h-96 rounded-2xl" />
+          <div className="space-y-2">
+            {[1, 2, 3].map((item) => (
+              <Skeleton key={item} className="h-28 rounded-xl" />
+            ))}
+          </div>
         </div>
-      </div>
+      </div></div>
     );
   }
 
   if (error) {
     return (
-      <div className="electron-titlebar-safe-top mx-auto max-w-6xl p-6">
+      <div className="electron-titlebar-safe-top min-h-full bg-surface-primary"><div className="mx-auto max-w-[1280px] px-5 pb-10 sm:px-8 lg:px-10">
         <div className="py-20 text-center">
           <p className="mb-4 text-sm text-error-text">{error}</p>
           <Button variant="secondary" onClick={refetch}>
             {t("common.retry")}
           </Button>
         </div>
-      </div>
+      </div></div>
     );
   }
 
+  const imageCount = localImages.length + selectedLibraryFiles.length;
+
   return (
-    <div className="electron-titlebar-safe-top mx-auto max-w-6xl p-6 lg:py-8">
-      <div className="mb-6">
+    <div className="electron-titlebar-safe-top min-h-full bg-surface-primary"><div className="mx-auto max-w-[1280px] px-5 pb-10 sm:px-8 lg:px-10">
+      <header className="mb-6">
         <h1 className="font-display text-2xl font-semibold text-text-primary">
           {t("jobDescription.title")}
         </h1>
         <p className="mt-1 text-sm text-text-muted">
           {t("jobDescription.description")}
         </p>
-      </div>
+      </header>
 
       <div className="jd-workspace">
-      <Card shadow="none" radius="lg" padding="lg" className="jd-composer">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <ModelSelectionPicker
-            models={models}
-            loading={modelsLoading}
-            value={state.currentModelSelection}
-            disabled={running}
-            onChange={setModelSelection}
-          />
-          {hasNoModel && (
-            <Link
-              to="/settings/providers"
-              className={buttonClassName({ variant: "secondary", size: "sm" })}
-            >
-              {t("settings.title")}
-            </Link>
-          )}
-        </div>
-
-        <div className="grid gap-4">
-          <textarea
-            aria-label={t("jobDescription.textPlaceholder")}
-            value={jdText}
-            disabled={running}
-            onChange={(event) => setJdText(event.target.value)}
-            placeholder={t("jobDescription.textPlaceholder")}
-            className="min-h-32 resize-y rounded-xl border border-border-light bg-surface-primary px-4 py-3 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-text-muted"
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={JD_IMAGE_ACCEPT}
-            onChange={handleFileChange}
-            className="hidden"
-          />
-
-          <div className="rounded-xl border border-dashed border-border-default bg-surface-primary p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-text-primary">{t("jobDescription.chooseImages")}</p>
-                <p className="mt-1 text-xs text-text-muted">
-                  {t("jobDescription.imageDescription")}
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
+        <div className="min-w-0 space-y-4">
+          <section className="jd-composer" aria-label={t("jobDescription.title")}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-light px-4 py-3">
+              <ModelSelectionPicker
+                models={models}
+                loading={modelsLoading}
+                value={state.currentModelSelection}
                 disabled={running}
-                onClick={() => setImagePickerOpen(true)}
-              >
-                {t("jobDescription.chooseImages")}
-              </Button>
+                onChange={setModelSelection}
+              />
+              {hasNoModel && (
+                <Link
+                  to="/settings/providers"
+                  className={buttonClassName({ variant: "secondary", size: "sm" })}
+                >
+                  {t("settings.title")}
+                </Link>
+              )}
             </div>
 
-            {localImages.length === 0 && selectedLibraryFiles.length === 0 ? (
-              <p className="mt-3 text-xs text-text-muted">
-                {t("jobDescription.notSelectedImages")}
-              </p>
-            ) : (
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <textarea
+              aria-label={t("jobDescription.textPlaceholder")}
+              value={jdText}
+              disabled={running}
+              onChange={(event) => setJdText(event.target.value)}
+              placeholder={t("jobDescription.textPlaceholder")}
+              className="block min-h-64 w-full resize-y bg-transparent px-5 py-4 text-[15px] leading-7 text-text-primary placeholder:text-text-muted disabled:opacity-60"
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={JD_IMAGE_ACCEPT}
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
+            {imageCount > 0 && (
+              <div className="grid grid-cols-1 gap-2 px-4 pb-4 sm:grid-cols-2">
                 {localImages.map((item) => (
                   <ChatAttachmentCard
                     key={item.key}
@@ -446,19 +428,49 @@ export default function JobDescriptionsPage() {
                 ))}
               </div>
             )}
-          </div>
 
-          <input
-            aria-label={t("jobDescription.sourceUrl")}
-            value={sourceUrl}
-            disabled={running}
-            onChange={(event) => setSourceUrl(event.target.value)}
-            placeholder={t("jobDescription.sourceUrl")}
-            className="h-11 rounded-xl border border-border-light bg-surface-primary px-4 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-text-muted"
-          />
+            <label className="flex items-center gap-2.5 border-t border-border-light px-5">
+              <Link2 size={16} className="shrink-0 text-text-muted" aria-hidden="true" />
+              <input
+                type="url"
+                aria-label={t("jobDescription.sourceUrl")}
+                value={sourceUrl}
+                disabled={running}
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder={t("jobDescription.sourceUrl")}
+                className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted disabled:opacity-60"
+              />
+            </label>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-light px-3 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={running}
+                  onClick={() => setImagePickerOpen(true)}
+                  title={t("jobDescription.imageDescription")}
+                >
+                  <ImagePlus size={16} aria-hidden="true" />
+                  {t("jobDescription.chooseImages")}
+                  {imageCount > 0 && (
+                    <span className="rounded-full bg-surface-secondary px-1.5 text-xs tabular-nums text-text-primary">
+                      {formatLocaleNumber(imageCount)}
+                    </span>
+                  )}
+                </Button>
+                <span className="hidden min-w-0 truncate text-xs text-text-muted md:inline">
+                  {imageCount > 0 ? t("jobDescription.imageDescription") : t("jobDescription.notSelectedImages")}
+                </span>
+              </div>
+              <Button size="sm" pill className="px-5" disabled={disabled || !hasInput} onClick={handleSubmit}>
+                {running ? t("jobDescription.analyzing") : t("jobDescription.start")}
+              </Button>
+            </div>
+          </section>
 
           <div className="jd-progress" aria-live="polite">{task && (
-            <div className="rounded-xl bg-surface-secondary p-4">
+            <div className="rounded-xl border border-border-light bg-surface-secondary p-4">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-text-primary">
                   {task.message}
@@ -472,7 +484,7 @@ export default function JobDescriptionsPage() {
                   </Link>
                 )}
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-surface-primary">
+              <div className="h-1.5 overflow-hidden rounded-full bg-surface-primary">
                 <div
                   className={`h-full transition-all ${
                     task.status === "error" ? "bg-error-text" : "bg-primary-500"
@@ -488,49 +500,51 @@ export default function JobDescriptionsPage() {
               )}
             </div>
           )}</div>
+        </div>
 
-          <div className="flex justify-end">
-            <Button disabled={disabled || !hasInput} onClick={handleSubmit}>
-              {running ? t("jobDescription.analyzing") : t("jobDescription.start")}
-            </Button>
+        <section className="jd-saved min-w-0" aria-labelledby="jd-saved-title">
+          <div className="mb-3 flex items-baseline justify-between gap-2 px-1">
+            <h2 id="jd-saved-title" className="text-sm font-semibold text-text-primary">
+              {t("appearance.savedAnalyses")}
+            </h2>
+            {data && data.length > 0 && (
+              <span className="text-xs tabular-nums text-text-muted">{formatLocaleNumber(data.length)}</span>
+            )}
           </div>
-        </div>
-      </Card>
-
-      <section className="min-w-0">
-      <h2 className="mb-4 text-base font-semibold">{t("appearance.savedAnalyses")}</h2>
-      {data && data.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border-default bg-surface-primary px-4 py-14 text-center">
-          <p className="mb-1 text-sm font-medium text-text-primary">{t("jobDescription.noAnalyses")}</p>
-          <p className="text-xs text-text-muted">{t("jobDescription.noAnalysesDescription")}</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {data?.map((item) => (
-            <Card key={item.id} shadow="none" radius="lg" padding="md">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <h3 className="min-w-0 truncate text-base font-semibold text-text-primary">
-                      {item.job_title || `JD #${item.id}`}
+          {data && data.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border-default px-4 py-12 text-center">
+              <BriefcaseBusiness size={22} strokeWidth={1.6} className="mx-auto mb-3 text-text-muted" aria-hidden="true" />
+              <p className="mb-1 text-sm font-medium text-text-primary">{t("jobDescription.noAnalyses")}</p>
+              <p className="text-xs text-text-muted">{t("jobDescription.noAnalysesDescription")}</p>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {data?.map((item) => (
+                <li key={item.id} className="jd-saved-card relative rounded-xl border border-border-light p-4 transition-colors">
+                  <div className="flex items-start gap-2">
+                    <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
+                      {/* Stretched link: the whole card opens the detail page. */}
+                      <Link to={`/job-descriptions/${item.id}`} className="jd-card-link after:absolute after:inset-0 after:rounded-xl">
+                        {item.job_title || `JD #${item.id}`}
+                      </Link>
                     </h3>
                     <Badge variant={statusVariant(item.status)} size="sm">
                       {statusLabel(item.status)}
                     </Badge>
                   </div>
-                  <p className="text-sm text-text-secondary">
+                  <p className="mt-1 truncate text-xs text-text-secondary">
                     {[item.company_name, item.primary_location]
                       .filter(Boolean)
                       .join(" · ") || t("jobDescription.unidentifiedCompany")}
                   </p>
                   {item.summary && (
-                    <p className="mt-2 line-clamp-2 text-sm text-text-muted">
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-text-muted">
                       {item.summary}
                     </p>
                   )}
                   {item.error_message && (
                     <p
-                      className="mt-2 line-clamp-2 break-words text-sm text-error-text"
+                      className="mt-2 line-clamp-2 break-words text-xs text-error-text"
                       title={item.error_message}
                     >
                       {item.error_message}
@@ -543,39 +557,31 @@ export default function JobDescriptionsPage() {
                       ]
                     }
                   />
-                  <p className="mt-2 text-xs tabular-nums text-text-muted">
-                    {formatTime(item.created_at)}
-                    {item.status === "parsed" &&
-                      ` · ${t("jobDescription.blockCount", { count: item.block_count })} · ${t(
-                        "jobDescription.factCount",
-                        { count: item.fact_count },
-                      )}`}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Link
-                    to={`/job-descriptions/${item.id}`}
-                    className={buttonClassName({ variant: "secondary", size: "sm" })}
-                  >
-                    {t("jobDescription.detail")}
-                  </Link>
-                  <Button
-                    variant="ghost"
-                    className="text-error-text"
-                    size="sm"
-                    disabled={deleting === item.id}
-                    onClick={() => setConfirmDelete(item)}
-                  >
-                    {deleting === item.id ? t("jobDescription.deleteInProgress") : t("common.delete")}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      </section>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs tabular-nums text-text-muted">
+                      {formatTime(item.created_at)}
+                      {item.status === "parsed" &&
+                        ` · ${t("jobDescription.blockCount", { count: item.block_count })} · ${t(
+                          "jobDescription.factCount",
+                          { count: item.fact_count },
+                        )}`}
+                    </p>
+                    <button
+                      type="button"
+                      className="jd-delete relative z-10 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted transition hover:bg-error-bg hover:text-error-text disabled:opacity-40"
+                      aria-label={deleting === item.id ? t("jobDescription.deleteInProgress") : t("common.delete")}
+                      title={deleting === item.id ? t("jobDescription.deleteInProgress") : t("common.delete")}
+                      disabled={deleting === item.id}
+                      onClick={() => setConfirmDelete(item)}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
 
       <ConfirmDialog
@@ -613,7 +619,7 @@ export default function JobDescriptionsPage() {
               onChange={(event) => setImagePickerQuery(event.target.value)}
               aria-label={t("jobDescription.searchLibraryImages")}
               placeholder={t("jobDescription.searchLibraryImages")}
-              className="h-9 min-w-0 flex-1 rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition focus:border-text-muted"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition"
             />
           </div>
         }
@@ -674,6 +680,6 @@ export default function JobDescriptionsPage() {
           </div>
         )}
       </FormDrawer>
-    </div>
+    </div></div>
   );
 }

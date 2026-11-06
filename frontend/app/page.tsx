@@ -13,6 +13,7 @@ import ChatInput, {
   type ChatComposerPayload,
 } from "@/app/components/chat/chat-input";
 import ChatRunPanel from "@/app/components/chat/chat-run-panel";
+import ThinkingPicker, { type ThinkingOverride } from "@/app/components/chat/thinking-picker";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
 import { shouldWarnForSmallerContextWindow } from "@/app/lib/chat/model-context-warning";
@@ -56,7 +57,7 @@ export default function Home() {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [modelContextWindowWarning, setModelContextWindowWarning] =
     useState(false);
-  const [thinkingOverride, setThinkingOverride] = useState<{ value: string | number | null }>();
+  const [thinkingOverride, setThinkingOverride] = useState<ThinkingOverride>();
 
   const currentModel = models.find(
     (model) => model.id === state.currentModelSelection,
@@ -244,8 +245,6 @@ export default function Home() {
           currentModelSelection={state.currentModelSelection}
           isStreaming={isStreaming}
           onModelChange={handleModelChange}
-          thinkingOverride={thinkingOverride}
-          onThinkingChange={setThinkingOverride}
         />
 
         <ChatArea
@@ -281,6 +280,14 @@ export default function Home() {
           submitting={submitting}
           noticeMessage={
             threadModelMismatchMessage ?? modelContextWindowWarningMessage
+          }
+          trailing={
+            <ThinkingPicker
+              model={currentModel}
+              override={thinkingOverride}
+              onChange={setThinkingOverride}
+              disabled={isStreaming}
+            />
           }
         />
       </div>
