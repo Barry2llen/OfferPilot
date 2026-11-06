@@ -76,3 +76,37 @@ export function isSupportedFile(file: File): boolean {
     SUPPORTED_TYPES.includes(file.type)
   );
 }
+
+const WORD_MEDIA_TYPES = ["wordprocessingml", "msword"];
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+
+/**
+ * Short, human-readable format label. MIME types such as
+ * `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+ * must never be rendered verbatim because they break compact layouts.
+ */
+export function resumeMediaLabel(
+  type: string | null,
+  filename?: string | null,
+): string {
+  const mediaType = type?.toLowerCase() ?? "";
+  const extension = filename?.includes(".")
+    ? filename.split(".").pop()?.toLowerCase() ?? ""
+    : "";
+  if (mediaType.includes("pdf") || extension === "pdf") return "PDF";
+  if (
+    WORD_MEDIA_TYPES.some((token) => mediaType.includes(token)) ||
+    extension === "docx" ||
+    extension === "doc"
+  ) {
+    return extension === "doc" ? "DOC" : "DOCX";
+  }
+  if (mediaType.startsWith("image/") || IMAGE_EXTENSIONS.has(extension)) {
+    return i18n.t("attachments.image");
+  }
+  if (extension && extension.length <= 5) return extension.toUpperCase();
+  const subtype = mediaType.split("/").pop()?.split(/[.+;]/)[0];
+  return subtype && subtype.length <= 8
+    ? subtype.toUpperCase()
+    : i18n.t("common.unknown");
+}

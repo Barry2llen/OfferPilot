@@ -126,7 +126,9 @@ export default function ResumeUploader({
   const modelControls = (
     <div
       className={`flex flex-wrap items-center justify-between gap-3 ${
-        isHero ? "absolute right-5 top-5 z-20" : "mb-5"
+        isHero
+          ? "relative z-20 mb-6 justify-center sm:absolute sm:right-5 sm:top-5 sm:mb-0"
+          : "mb-5"
       }`}
     >
       <ModelSelectionPicker
@@ -161,15 +163,15 @@ export default function ResumeUploader({
       onDrop={onDrop}
       className={`relative text-center transition-all duration-300 ${
         isHero
-          ? "min-h-[220px] rounded-[20px] border border-dashed border-border-default bg-surface-primary px-5 py-10 shadow-sm hover:border-primary-600 sm:min-h-[232px] sm:px-8"
+          ? "min-h-[220px] rounded-2xl border border-dashed border-border-default bg-surface-primary px-5 py-8 hover:border-text-muted sm:min-h-[232px] sm:px-8 sm:py-12"
           : "overflow-hidden rounded-2xl px-6 py-10"
-      } ${dragging ? "border-primary-600 bg-primary-200/20" : ""}`}
+      } ${dragging ? "border-text-primary bg-surface-secondary" : ""}`}
     >
       {isHero && modelControls}
       {running && task && (
         <div
           className={`absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface-primary/85 px-6 backdrop-blur-sm transition-all duration-300 ${
-            isHero ? "rounded-[20px]" : "rounded-2xl"
+            "rounded-2xl"
           }`}
         >
           <p className="mb-4 text-sm font-medium text-text-primary">

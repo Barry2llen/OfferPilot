@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router";
 import type { AnalysisToolProgress, ToolCallEntry } from "@/app/lib/chat/types";
 import { analysisDetailPath } from "@/app/lib/analysis-events/links";
-import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
+import i18n from "@/app/lib/i18n";
 
 type ToolStatus = ToolCallEntry["status"];
 
@@ -430,10 +430,10 @@ function buildSummary(
   if (searchResults.length > 0) {
     return isFetchTool(entry.name)
       ? i18n.t("chat.webResults", {
-          count: formatLocaleNumber(searchResults.length),
+          count: searchResults.length,
         })
       : i18n.t("chat.searchResults", {
-          count: formatLocaleNumber(searchResults.length),
+          count: searchResults.length,
         });
   }
   if (showSearchEmpty) {

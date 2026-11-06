@@ -13,7 +13,7 @@ import {
   CHAT_ATTACHMENT_ACCEPT,
   isSupportedChatAttachment,
 } from "@/app/lib/api/chat-files";
-import { formatLocaleNumber } from "@/app/lib/i18n";
+
 import type {
   ChatFileListItem,
 } from "@/app/lib/api/types";
@@ -396,82 +396,86 @@ export default function ChatInput({
         </p>
       </div>
 
-      <FormDrawer open={pickerOpen} title={t("chat.chooseLibraryAttachment")} onClose={() => setPickerOpen(false)}>
-            <div className="border-b border-border-light px-5 py-4">
-              <input
-                value={pickerQuery}
-                onChange={(event) => setPickerQuery(event.target.value)}
-                placeholder={t("files.searchPlaceholder")}
-                className="h-10 w-full rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-surface-primary focus:ring-2 focus:ring-primary-500/25"
-              />
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {pickerLoading ? (
-                <p className="py-8 text-center text-sm text-text-muted">
-                  {t("chat.loadingLibrary")}
-                </p>
-              ) : pickerError ? (
-                <div className="py-8 text-center">
-                  <p className="mb-3 text-sm text-error-text">{pickerError}</p>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={loadLibraryFiles}
-                  >
-                    {t("chat.retry")}
-                  </Button>
-                </div>
-              ) : filteredLibraryFiles.length === 0 ? (
-                <p className="py-8 text-center text-sm text-text-muted">
-                  {t("chat.noAvailableFiles")}
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {filteredLibraryFiles.map((file) => {
-                    const selected = selectedLibraryIds.has(file.id);
-                    return (
-                      <ChatAttachmentCard
-                        key={file.id}
-                        onClick={() =>
-                          setSelectedLibraryFiles((prev) =>
-                            selected
-                              ? prev.filter((item) => item.id !== file.id)
-                              : [...prev, file],
-                          )
-                        }
-                        selected={selected}
-                        variant="picker"
-                        attachment={{
-                          fileId: file.id,
-                          originalFilename: file.original_filename,
-                          mediaType: file.media_type,
-                          rawUrl: chatFilesApi.rawUrl(file.id),
-                          sizeBytes: file.size_bytes,
-                          referenceCount: file.reference_count,
-                          createdAt: file.created_at,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between border-t border-border-light px-5 py-4">
-              <span className="text-xs text-text-muted">
-                {t("chat.selectedFiles", {
-                  count: formatLocaleNumber(selectedLibraryFiles.length),
-                })}
-              </span>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setPickerOpen(false)}
-              >
-                {t("common.done")}
-              </Button>
-            </div>
+      <FormDrawer
+        open={pickerOpen}
+        title={t("chat.chooseLibraryAttachment")}
+        onClose={() => setPickerOpen(false)}
+        toolbar={
+          <input
+            type="search"
+            value={pickerQuery}
+            onChange={(event) => setPickerQuery(event.target.value)}
+            aria-label={t("files.searchPlaceholder")}
+            placeholder={t("files.searchPlaceholder")}
+            className="h-9 w-full rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition focus:border-text-muted"
+          />
+        }
+        footer={
+          <>
+            <span className="text-xs text-text-muted">
+              {t("chat.selectedFiles", {
+                count: selectedLibraryFiles.length,
+              })}
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setPickerOpen(false)}
+            >
+              {t("common.done")}
+            </Button>
+          </>
+        }
+      >
+        {pickerLoading ? (
+          <p className="py-8 text-center text-sm text-text-muted">
+            {t("chat.loadingLibrary")}
+          </p>
+        ) : pickerError ? (
+          <div className="py-8 text-center">
+            <p className="mb-3 text-sm text-error-text">{pickerError}</p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={loadLibraryFiles}
+            >
+              {t("chat.retry")}
+            </Button>
+          </div>
+        ) : filteredLibraryFiles.length === 0 ? (
+          <p className="py-8 text-center text-sm text-text-muted">
+            {t("chat.noAvailableFiles")}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {filteredLibraryFiles.map((file) => {
+              const selected = selectedLibraryIds.has(file.id);
+              return (
+                <ChatAttachmentCard
+                  key={file.id}
+                  onClick={() =>
+                    setSelectedLibraryFiles((prev) =>
+                      selected
+                        ? prev.filter((item) => item.id !== file.id)
+                        : [...prev, file],
+                    )
+                  }
+                  selected={selected}
+                  variant="picker"
+                  attachment={{
+                    fileId: file.id,
+                    originalFilename: file.original_filename,
+                    mediaType: file.media_type,
+                    rawUrl: chatFilesApi.rawUrl(file.id),
+                    sizeBytes: file.size_bytes,
+                    referenceCount: file.reference_count,
+                    createdAt: file.created_at,
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
       </FormDrawer>
     </div>
   );

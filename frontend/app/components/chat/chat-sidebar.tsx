@@ -7,6 +7,7 @@ import { aiChatApi } from "@/app/lib/api/ai";
 import Button from "@/app/components/ui/button";
 import Spinner from "@/app/components/ui/spinner";
 import type { AIChatHistorySummary } from "@/app/lib/api/types";
+import { plainPreview } from "@/app/lib/chat/preview";
 
 interface ChatSidebarProps {
   onSelectThread: (threadId: string) => void;
@@ -209,8 +210,8 @@ function ChatSidebar({
               >
                 {groupedChats.map((group) => (
                   <motion.div layout key={group.labelKey} className="mb-4 last:mb-0">
-                    <div className="px-3 py-1">
-                      <span className="text-xs font-semibold tracking-wider text-text-muted uppercase">
+                    <div className="px-2.5 pb-1 pt-1">
+                      <span className="text-xs font-medium text-text-muted">
                         {t(group.labelKey)}
                       </span>
                     </div>
@@ -226,34 +227,38 @@ function ChatSidebar({
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: -4, scale: 0.98 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
-                            className={`transition-colors group ${
-                              isActive ? "bg-surface-secondary" : "hover:bg-surface-secondary"
+                            className={`group mb-0.5 rounded-lg transition-colors ${
+                              isActive
+                                ? "bg-text-primary/[0.07]"
+                                : "hover:bg-text-primary/[0.04]"
                             }`}
                           >
-                            <div className="flex items-start gap-2 px-3 py-2.5">
+                            <div className="flex items-start gap-1.5 py-2 pl-2.5 pr-1.5">
                               <button
                                 type="button"
                                 onClick={() => {
                                   onSelectThread(chat.thread_id);
                                   onClose?.();
                                 }}
+                                aria-current={isActive ? "true" : undefined}
                                 className="flex-1 min-w-0 text-left"
                               >
-                                <p className="text-sm font-medium text-text-primary truncate">
+                                <p className={`truncate text-sm text-text-primary ${isActive ? "font-semibold" : "font-medium"}`}>
                                   {chat.title || t("chat.newConversation")}
                                 </p>
                                 <p className="text-xs text-text-muted truncate mt-0.5">
-                                  {chat.last_message_preview || t("chat.noMessage")}
+                                  {plainPreview(chat.last_message_preview) || t("chat.noMessage")}
                                 </p>
                               </button>
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setConfirmDelete(chat.thread_id); }}
                                 disabled={deleting === chat.thread_id}
-                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:bg-error-bg transition-all shrink-0 mt-0.5"
+                                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-all hover:bg-error-bg hover:text-error-text focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                                 title={t("chat.deleteConversation")}
+                                aria-label={`${t("chat.deleteConversation")} ${chat.title || t("chat.newConversation")}`}
                               >
-                                <svg className="w-3.5 h-3.5 text-text-muted hover:text-error-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                               </button>

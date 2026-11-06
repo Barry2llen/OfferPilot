@@ -25,7 +25,7 @@ type AttachmentKind =
   | "archive"
   | "file";
 
-type AttachmentCardVariant = "composer" | "message" | "grid" | "picker";
+type AttachmentCardVariant = "composer" | "message" | "grid" | "picker" | "list";
 
 interface ChatAttachmentCardProps {
   attachment: ChatAttachmentDisplayItem;
@@ -203,15 +203,20 @@ export default function ChatAttachmentCard({
     </>
   );
 
+  const isList = variant === "list";
   const rootClassName = [
-    "relative overflow-hidden border text-left transition",
-    variant === "grid" || variant === "picker"
-      ? "h-full rounded-xl bg-surface-primary"
-      : "rounded-2xl bg-surface-primary",
+    "relative overflow-hidden text-left transition",
+    isList
+      ? "min-w-0"
+      : variant === "grid" || variant === "picker"
+        ? "h-full rounded-xl border bg-surface-primary"
+        : "rounded-2xl border bg-surface-primary",
     variant === "message" ? "chat-message-enter" : "",
-    selected
-      ? "border-text-charcoal shadow-[0_0_0_2px_rgba(24,30,37,0.10)]"
-      : "border-border-light shadow-sm",
+    isList
+      ? ""
+      : selected
+        ? "border-text-charcoal ring-2 ring-text-charcoal/10"
+        : "border-border-light shadow-sm",
     variant === "message" && attachment.pending
       ? "chat-attachment-pending border-primary-200"
       : "",
@@ -239,25 +244,45 @@ function RowContent({
   attachment: ChatAttachmentDisplayItem;
   variant: AttachmentCardVariant;
 }) {
+  const isList = variant === "list";
   const sizeLabel = formatFileSize(attachment.sizeBytes);
   const modeLabel = formatInjectionMode(attachment.injectionMode);
   const statusLabel = attachment.pending
     ? variant === "message"
       ? i18n.t("attachments.processing")
       : i18n.t("attachments.pendingUpload")
-    : attachment.fileId
+    : attachment.fileId || isList
       ? null
       : i18n.t("attachments.notStored");
+  const referenceLabel =
+    isList && typeof attachment.referenceCount === "number"
+      ? i18n.t("attachments.references", {
+          count: attachment.referenceCount,
+        })
+      : null;
+  const createdAtLabel =
+    isList && attachment.createdAt
+      ? new Date(attachment.createdAt).toLocaleDateString(i18n.language)
+      : null;
 
   return (
-    <div className="flex min-h-20 w-full max-w-full items-center gap-3 p-2.5 pr-8">
-      <AttachmentPreview attachment={attachment} className="h-14 w-14 rounded-xl" />
+    <div
+      className={`flex w-full max-w-full items-center gap-3 ${
+        isList ? "" : "min-h-20 p-2.5 pr-8"
+      }`}
+    >
+      <AttachmentPreview
+        attachment={attachment}
+        className={isList ? "h-11 w-11 rounded-lg" : "h-14 w-14 rounded-xl"}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-text-primary" title={attachment.originalFilename}>
           {attachment.originalFilename}
         </p>
-        <p className="mt-1 truncate text-xs text-text-muted">
-          {[statusLabel, modeLabel, sizeLabel].filter(Boolean).join(" · ")}
+        <p className="mt-1 truncate text-xs tabular-nums text-text-muted">
+          {[statusLabel, modeLabel, sizeLabel, referenceLabel, createdAtLabel]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       </div>
     </div>
@@ -279,7 +304,7 @@ function GridContent({
     sizeLabel,
     typeof attachment.referenceCount === "number"
       ? i18n.t("attachments.references", {
-          count: formatLocaleNumber(attachment.referenceCount),
+          count: attachment.referenceCount,
         })
       : null,
     createdAtLabel,

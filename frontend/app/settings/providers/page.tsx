@@ -268,7 +268,7 @@ export default function ProvidersPage() {
               </h2>
               <span className="text-xs text-text-muted">
                 {t("settings.providerCount", {
-                  count: formatLocaleNumber(providers.length),
+                  count: providers.length,
                 })}
               </span>
             </div>
@@ -386,7 +386,7 @@ function ProviderListItem({ provider, modelCount, selected, highlight, onSelect 
     <span className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
       <span className={`h-1.5 w-1.5 rounded-full ${provider.has_api_key ? "bg-success-text" : "bg-warning-text"}`} />
       {t(provider.has_api_key ? "settings.configuredKey" : "settings.unconfiguredKey")}
-      <span>· {t("settings.modelCount", { count: formatLocaleNumber(modelCount) })}</span>
+      <span>· {t("settings.modelCount", { count: modelCount })}</span>
     </span>
   </button>;
 }
@@ -416,7 +416,7 @@ function ProviderModelsPanel({ provider, selections, deletingSelection, onAddMod
     </header>
     {provider.base_url && <p className="my-5 break-all border-y border-border-default py-3 text-sm text-text-secondary">{provider.base_url}</p>}
     <div className="mt-6">
-      <h3 className="mb-4 text-sm font-semibold">{t("settings.modelSelections")} <span className="ml-2 font-normal text-text-muted">{t("settings.modelCount", { count: formatLocaleNumber(selections.length) })}</span></h3>
+      <h3 className="mb-4 text-sm font-semibold">{t("settings.modelSelections")} <span className="ml-2 font-normal text-text-muted">{t("settings.modelCount", { count: selections.length })}</span></h3>
       {selections.length === 0 ? <div className="border-y border-border-default py-8 text-center text-sm text-text-muted">{t("settings.noProviderModels")}</div> : <div className="model-table">
         <div className="model-table-head" aria-hidden="true"><span>{t("settings.modelName")}</span><span>{t("settings.imageInput")}</span><span>{t("settings.thinking")}</span><span /></div>
         {selections.map((selection) => {

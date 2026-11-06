@@ -26,7 +26,7 @@ import {
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppActions, useAppContext } from "@/app/lib/context/app-context";
 import { useToast } from "@/app/components/ui/toast";
-import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
+import i18n from "@/app/lib/i18n";
 import type {
   ChatFileListItem,
   JobDescriptionAnalysisListItem,
@@ -378,7 +378,7 @@ export default function JobDescriptionsPage() {
             disabled={running}
             onChange={(event) => setJdText(event.target.value)}
             placeholder={t("jobDescription.textPlaceholder")}
-            className="min-h-32 resize-y rounded-2xl border border-border-light bg-surface-primary px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            className="min-h-32 resize-y rounded-xl border border-border-light bg-surface-primary px-4 py-3 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-text-muted"
           />
           <input
             ref={fileInputRef}
@@ -389,7 +389,7 @@ export default function JobDescriptionsPage() {
             className="hidden"
           />
 
-          <div className="rounded-2xl border border-dashed border-border-default bg-surface-primary p-4">
+          <div className="rounded-xl border border-dashed border-border-default bg-surface-primary p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-text-primary">{t("jobDescription.chooseImages")}</p>
@@ -408,7 +408,7 @@ export default function JobDescriptionsPage() {
             </div>
 
             {localImages.length === 0 && selectedLibraryFiles.length === 0 ? (
-              <p className="mt-2 rounded-lg bg-surface-primary px-3 py-1 text-center text-xs text-text-muted">
+              <p className="mt-3 text-xs text-text-muted">
                 {t("jobDescription.notSelectedImages")}
               </p>
             ) : (
@@ -454,11 +454,11 @@ export default function JobDescriptionsPage() {
             disabled={running}
             onChange={(event) => setSourceUrl(event.target.value)}
             placeholder={t("jobDescription.sourceUrl")}
-            className="h-11 rounded-2xl border border-border-light bg-surface-primary px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            className="h-11 rounded-xl border border-border-light bg-surface-primary px-4 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-text-muted"
           />
 
           <div className="jd-progress" aria-live="polite">{task && (
-            <div className="rounded-2xl bg-surface-secondary p-4">
+            <div className="rounded-xl bg-surface-secondary p-4">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-text-primary">
                   {task.message}
@@ -500,7 +500,7 @@ export default function JobDescriptionsPage() {
       <section className="min-w-0">
       <h2 className="mb-4 text-base font-semibold">{t("appearance.savedAnalyses")}</h2>
       {data && data.length === 0 ? (
-        <div className="rounded-[20px] border-2 border-dashed border-border-default bg-surface-primary px-4 py-16 text-center">
+        <div className="rounded-xl border border-dashed border-border-default bg-surface-primary px-4 py-14 text-center">
           <p className="mb-1 text-sm font-medium text-text-primary">{t("jobDescription.noAnalyses")}</p>
           <p className="text-xs text-text-muted">{t("jobDescription.noAnalysesDescription")}</p>
         </div>
@@ -511,9 +511,9 @@ export default function JobDescriptionsPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-base font-semibold text-text-primary">
+                    <h3 className="min-w-0 truncate text-base font-semibold text-text-primary">
                       {item.job_title || `JD #${item.id}`}
-                    </h2>
+                    </h3>
                     <Badge variant={statusVariant(item.status)} size="sm">
                       {statusLabel(item.status)}
                     </Badge>
@@ -529,7 +529,12 @@ export default function JobDescriptionsPage() {
                     </p>
                   )}
                   {item.error_message && (
-                    <p className="mt-2 text-sm text-error-text">{item.error_message}</p>
+                    <p
+                      className="mt-2 line-clamp-2 break-words text-sm text-error-text"
+                      title={item.error_message}
+                    >
+                      {item.error_message}
+                    </p>
                   )}
                   <AnalysisTaskStatus
                     task={
@@ -538,11 +543,13 @@ export default function JobDescriptionsPage() {
                       ]
                     }
                   />
-                  <p className="mt-2 text-xs text-text-muted">
-                    {formatTime(item.created_at)} · {t("jobDescription.countBlocksFacts", {
-                      blocks: formatLocaleNumber(item.block_count),
-                      facts: formatLocaleNumber(item.fact_count),
-                    })}
+                  <p className="mt-2 text-xs tabular-nums text-text-muted">
+                    {formatTime(item.created_at)}
+                    {item.status === "parsed" &&
+                      ` · ${t("jobDescription.blockCount", { count: item.block_count })} · ${t(
+                        "jobDescription.factCount",
+                        { count: item.fact_count },
+                      )}`}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -586,84 +593,86 @@ export default function JobDescriptionsPage() {
         loading={!!deleting}
       />
 
-      <FormDrawer open={imagePickerOpen} title={t("jobDescription.pickerTitle")} onClose={() => setImagePickerOpen(false)}>
-            <div className="border-b border-border-light px-5 py-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={running}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {t("jobDescription.uploadLocalImage")}
-                </Button>
-                <input
-                  value={imagePickerQuery}
-                  onChange={(event) => setImagePickerQuery(event.target.value)}
-                  placeholder={t("jobDescription.searchLibraryImages")}
-                  className="h-10 min-w-0 flex-1 rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-surface-primary focus:ring-2 focus:ring-primary-500/25"
+      <FormDrawer
+        open={imagePickerOpen}
+        title={t("jobDescription.pickerTitle")}
+        onClose={() => setImagePickerOpen(false)}
+        toolbar={
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={running}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {t("jobDescription.uploadLocalImage")}
+            </Button>
+            <input
+              type="search"
+              value={imagePickerQuery}
+              onChange={(event) => setImagePickerQuery(event.target.value)}
+              aria-label={t("jobDescription.searchLibraryImages")}
+              placeholder={t("jobDescription.searchLibraryImages")}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition focus:border-text-muted"
+            />
+          </div>
+        }
+        footer={
+          <>
+            <span className="text-xs text-text-muted">
+              {t("jobDescription.selectedImages", {
+                count: localImages.length + selectedFileIds.length,
+              })}
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setImagePickerOpen(false)}
+            >
+              {t("common.done")}
+            </Button>
+          </>
+        }
+      >
+        {libraryFiles.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border-default px-4 py-10 text-center">
+            <p className="text-sm font-medium text-text-primary">
+              {t("jobDescription.libraryNoImages")}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              {t("jobDescription.libraryNoImagesDescription")}
+            </p>
+          </div>
+        ) : filteredLibraryFiles.length === 0 ? (
+          <p className="py-8 text-center text-sm text-text-muted">
+            {t("jobDescription.noMatchingImages")}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {filteredLibraryFiles.map((file) => {
+              const selected = selectedFileIdSet.has(file.id);
+              return (
+                <ChatAttachmentCard
+                  key={file.id}
+                  onClick={() => {
+                    if (!running) toggleLibraryFile(file.id);
+                  }}
+                  selected={selected}
+                  variant="picker"
+                  attachment={{
+                    fileId: file.id,
+                    originalFilename: file.original_filename,
+                    mediaType: file.media_type,
+                    rawUrl: chatFilesApi.rawUrl(file.id),
+                    sizeBytes: file.size_bytes,
+                    referenceCount: file.reference_count,
+                    createdAt: file.created_at,
+                  }}
                 />
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {libraryFiles.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border-default px-4 py-10 text-center">
-                  <p className="text-sm font-medium text-text-primary">
-                    {t("jobDescription.libraryNoImages")}
-                  </p>
-                  <p className="mt-1 text-xs text-text-muted">
-                    {t("jobDescription.libraryNoImagesDescription")}
-                  </p>
-                </div>
-              ) : filteredLibraryFiles.length === 0 ? (
-                <p className="py-8 text-center text-sm text-text-muted">
-                  {t("jobDescription.noMatchingImages")}
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {filteredLibraryFiles.map((file) => {
-                    const selected = selectedFileIdSet.has(file.id);
-                    return (
-                      <ChatAttachmentCard
-                        key={file.id}
-                        onClick={() => {
-                          if (!running) toggleLibraryFile(file.id);
-                        }}
-                        selected={selected}
-                        variant="picker"
-                        attachment={{
-                          fileId: file.id,
-                          originalFilename: file.original_filename,
-                          mediaType: file.media_type,
-                          rawUrl: chatFilesApi.rawUrl(file.id),
-                          sizeBytes: file.size_bytes,
-                          referenceCount: file.reference_count,
-                          createdAt: file.created_at,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between border-t border-border-light px-5 py-4">
-              <span className="text-xs text-text-muted">
-                {t("jobDescription.selectedImages", {
-                  count: formatLocaleNumber(
-                    localImages.length + selectedFileIds.length
-                  ),
-                })}
-              </span>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setImagePickerOpen(false)}
-              >
-                {t("common.done")}
-              </Button>
-            </div>
+              );
+            })}
+          </div>
+        )}
       </FormDrawer>
     </div>
   );

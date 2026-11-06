@@ -21,10 +21,10 @@ export default function MarkdownContent({
 
   const textClass = inverse ? "text-on-accent" : "text-text-primary";
   const mutedClass = inverse ? "text-on-accent/70" : "text-text-secondary";
-  const borderClass = inverse ? "border-white/15" : "border-border-default";
+  const borderClass = inverse ? "border-on-accent/20" : "border-border-default";
   const codeClass = inverse
-    ? "bg-surface-primary/10 text-on-accent"
-    : "bg-surface-primary text-text-charcoal";
+    ? "bg-on-accent/10 text-on-accent"
+    : "bg-surface-secondary text-text-charcoal";
   const linkClass = inverse
     ? "text-primary-200 hover:text-on-accent"
     : "text-brand-blue hover:underline";
@@ -62,19 +62,22 @@ export default function MarkdownContent({
       );
     },
     h1({ children }) {
-      return <h1 className="mb-2 text-lg font-semibold leading-tight">{children}</h1>;
+      return <h1 className="mb-2 mt-4 text-xl font-semibold leading-snug first:mt-0">{children}</h1>;
     },
     h2({ children }) {
-      return <h2 className="mb-2 text-base font-semibold leading-tight">{children}</h2>;
+      return <h2 className="mb-2 mt-4 text-lg font-semibold leading-snug first:mt-0">{children}</h2>;
     },
     h3({ children }) {
-      return <h3 className="mb-1.5 text-sm font-semibold leading-tight">{children}</h3>;
+      return <h3 className="mb-1.5 mt-3 text-base font-semibold leading-snug first:mt-0">{children}</h3>;
+    },
+    h4({ children }) {
+      return <h4 className="mb-1.5 mt-3 font-semibold leading-snug first:mt-0">{children}</h4>;
     },
     hr() {
       return <hr className={`my-3 border-0 border-t ${borderClass}`} />;
     },
     pre({ children }) {
-      return <CodeBlockWrapper codeClass={codeClass}>{children}</CodeBlockWrapper>;
+      return <CodeBlockWrapper codeClass={codeClass} borderClass={borderClass}>{children}</CodeBlockWrapper>;
     },
     code({ children, className }) {
       return (
@@ -88,7 +91,7 @@ export default function MarkdownContent({
     table({ children }) {
       return (
         <div className="my-2 max-w-full overflow-x-auto">
-          <table className={`w-full border-collapse text-xs ${textClass}`}>
+          <table className={`w-full border-collapse text-[13px] leading-normal ${textClass}`}>
             {children}
           </table>
         </div>
@@ -96,13 +99,13 @@ export default function MarkdownContent({
     },
     th({ children }) {
       return (
-        <th className={`border ${borderClass} px-2 py-1 text-left font-semibold`}>
+        <th className={`border ${borderClass} ${inverse ? "" : "bg-surface-secondary"} px-2.5 py-1.5 text-left font-semibold`}>
           {children}
         </th>
       );
     },
     td({ children }) {
-      return <td className={`border ${borderClass} px-2 py-1`}>{children}</td>;
+      return <td className={`border ${borderClass} px-2.5 py-1.5 align-top`}>{children}</td>;
     },
   };
 
@@ -115,31 +118,36 @@ export default function MarkdownContent({
   );
 }
 
-function CodeBlockWrapper({ children, codeClass }: { children: React.ReactNode; codeClass: string }) {
+function CodeBlockWrapper({ children, codeClass, borderClass }: { children: React.ReactNode; codeClass: string; borderClass: string }) {
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
   const { t } = useTranslation();
 
   const handleCopy = () => {
-    if (preRef.current) {
-      navigator.clipboard.writeText(preRef.current.innerText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    if (!preRef.current) return;
+    void navigator.clipboard
+      .writeText(preRef.current.innerText)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => setCopied(false));
   };
 
   return (
     <div className="relative group my-2">
       <pre
         ref={preRef}
-        className={`max-w-full overflow-x-auto rounded-lg ${codeClass} p-3 text-xs leading-relaxed`}
+        className={`max-w-full overflow-x-auto rounded-lg border ${borderClass} ${codeClass} p-3 pr-11 text-[13px] leading-relaxed [&>code]:rounded-none [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[1em]`}
       >
         {children}
       </pre>
       <button
+        type="button"
         onClick={handleCopy}
-        className="absolute top-2 right-2 p-1.5 rounded-md bg-black/20 text-on-accent/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/40 hover:text-on-accent"
-        title={t("chat.copyCode")}
+        className="absolute right-2 top-2 rounded-md border border-border-light bg-surface-primary p-1.5 text-text-muted opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+        title={copied ? t("common.copySuccess") : t("chat.copyCode")}
+        aria-label={copied ? t("common.copySuccess") : t("chat.copyCode")}
       >
         {copied ? (
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

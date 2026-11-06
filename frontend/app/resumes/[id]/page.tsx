@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";
@@ -18,11 +19,12 @@ import type {
   ResumeSection,
 } from "@/app/lib/api/types";
 import i18n, { formatLocaleList } from "@/app/lib/i18n";
+import { analysisLabel } from "@/app/lib/analysis-labels";
 
 type DetailTab = "analysis" | "source";
 
 export default function ResumeDetailPage() {
-  const { t, i18n: translation } = useTranslation();
+  const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const navigate = useNavigate();
   const id = Number(params.id);
@@ -47,8 +49,8 @@ export default function ResumeDetailPage() {
 
   const derived = useMemo(() => {
     if (!resume) return null;
-    return deriveResumeView(resume, translation.language);
-  }, [resume, translation.language]);
+    return deriveResumeView(resume, t);
+  }, [resume, t]);
 
   const handleReplace = useCallback(async () => {
     setReplaceOpen(false);
@@ -149,7 +151,7 @@ export default function ResumeDetailPage() {
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center lg:shrink-0">
             <Badge
               variant={parseVariant(resume.parse_status)}
-              className="rounded-full px-3 py-1 font-mono text-xs font-bold"
+              className="rounded-full px-2.5"
             >
               {parseLabel(resume.parse_status)}
             </Badge>
@@ -300,7 +302,7 @@ function AnalysisContent({
             {derived.keywords.map((keyword) => (
               <span
                 key={keyword}
-                className="rounded-full border border-border-default bg-surface-primary px-3 py-1 font-mono text-xs font-bold text-text-secondary"
+                className="rounded-full border border-border-default bg-surface-primary px-3 py-1 text-xs font-medium text-text-secondary"
               >
                 {keyword}
               </span>
@@ -372,8 +374,8 @@ function SourceContent({
   );
 }
 
-function deriveResumeView(resume: ResumeDetail, locale: string) {
-  const title = (resume.original_filename || i18n.t("resume.defaultTitle", { id: resume.id })).replace(
+function deriveResumeView(resume: ResumeDetail, translate: TFunction) {
+  const title = (resume.original_filename || translate("resume.defaultTitle", { id: resume.id })).replace(
     /\.[^/.]+$/,
     ""
   );
@@ -383,15 +385,15 @@ function deriveResumeView(resume: ResumeDetail, locale: string) {
   ).slice(0, 10);
   const subtitle =
     resume.parse_status === "parsed"
-      ? i18n.t("resume.sectionsFacts", {
-          sections: new Intl.NumberFormat(locale).format(resume.section_count),
-          facts: new Intl.NumberFormat(locale).format(resume.fact_count),
-        })
+      ? `${translate("resume.sectionCount", { count: resume.section_count })} · ${translate(
+          "resume.factCount",
+          { count: resume.fact_count },
+        )}`
       : resume.parse_status === "processing"
-        ? i18n.t("resume.processingDescription")
+        ? translate("resume.processingDescription")
         : resume.parse_status === "failed"
-          ? i18n.t("resume.failedDescription")
-          : i18n.t("resume.waitingDescription");
+          ? translate("resume.failedDescription")
+          : translate("resume.waitingDescription");
   return {
     title,
     subtitle,
@@ -399,8 +401,8 @@ function deriveResumeView(resume: ResumeDetail, locale: string) {
     summary:
       resume.summary ||
       (resume.parse_status === "parsed"
-        ? i18n.t("resume.parsedDescription")
-        : i18n.t("resume.uploadDescription")),
+        ? translate("resume.parsedDescription")
+        : translate("resume.uploadDescription")),
   };
 }
 
@@ -497,9 +499,8 @@ function TimelineSection({
   return (
     <section className="relative">
       <span
-        className={`absolute -left-[33px] top-1 h-4 w-4 rounded-full border-2 bg-surface-primary ${
-          index === 0 ? "border-border-default" : "border-border-default"
-        }`}
+        aria-hidden="true"
+        className="absolute -left-[29px] top-1 h-4 w-4 rounded-full border-2 border-border-default bg-surface-primary"
       />
       <h3 className="font-display text-base font-medium text-text-primary">
         {section.title || t("resume.chapter", { index: index + 1 })}
@@ -521,19 +522,19 @@ function TimelineSection({
 function FactLine({ fact }: { fact: ResumeFact }) {
   return (
     <div className="rounded-xl border border-border-default bg-surface-secondary px-3 py-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-start gap-2">
         <Badge
           variant="neutral"
-          className="rounded-full border border-border-default bg-surface-primary font-mono text-xs text-text-secondary"
+          className="mt-0.5 shrink-0 whitespace-nowrap rounded-full border border-border-default bg-surface-primary text-text-secondary"
         >
-          {fact.fact_type}
+          {analysisLabel("factType", fact.fact_type)}
         </Badge>
-        <span className="text-[13px] leading-6 text-text-primary">
+        <span className="min-w-0 flex-1 text-[13px] leading-6 text-text-primary">
           {fact.text}
         </span>
       </div>
       {fact.keywords.length > 0 && (
-        <p className="mt-1 font-mono text-[13px] text-text-muted">
+        <p className="mt-1 text-xs leading-5 text-text-muted">
           {formatLocaleList(fact.keywords)}
         </p>
       )}

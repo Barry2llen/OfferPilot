@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import Modal from "./modal";
-export default function FormDrawer(props: { busy?: boolean; open: boolean; title: string; children: ReactNode; onClose: () => void }) {
+import Modal, { type ModalProps } from "./modal";
+export default function FormDrawer(props: Omit<ModalProps, "drawer">) {
   return <Modal {...props} drawer />;
 }

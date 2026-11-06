@@ -35,10 +35,10 @@ export default function FilesPage() {
           <Skeleton className="mb-2 h-8 w-28 rounded-lg" />
           <Skeleton className="h-4 w-56 rounded-lg" />
         </div>
-        <Skeleton className="mb-6 h-12 rounded-2xl" />
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((item) => (
-            <Skeleton key={item} className="h-60 rounded-xl" />
+        <Skeleton className="mb-6 h-10 rounded-lg" />
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map((item) => (
+            <Skeleton key={item} className="h-[72px] rounded-xl" />
           ))}
         </div>
       </div>
@@ -71,17 +71,19 @@ export default function FilesPage() {
 
       <div className="mb-6">
         <input
+          type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label={t("files.searchPlaceholder")}
           placeholder={t("files.searchPlaceholder")}
-          className="h-11 w-full rounded-2xl border border-border-light bg-surface-primary px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          className="h-10 w-full rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition focus:border-text-muted"
         />
       </div>
 
       {filteredFiles.length === 0 ? (
-        <div className="rounded-[20px] border-2 border-dashed border-border-default bg-surface-primary px-4 py-16 text-center">
-          <p className="mb-1 text-sm font-medium text-text-primary">{t(query.trim() ? "appearance.noResults" : "files.noFiles")}</p>
-          <p className="text-xs text-text-muted">{!query.trim() && t("files.noFilesDescription")}</p>
+        <div className="rounded-xl border border-dashed border-border-default bg-surface-primary px-4 py-14 text-center">
+          <p className="text-sm font-medium text-text-primary">{t(query.trim() ? "appearance.noResults" : "files.noFiles")}</p>
+          {!query.trim() && <p className="mt-1 text-xs text-text-muted">{t("files.noFilesDescription")}</p>}
         </div>
       ) : (
         <div className="file-library-list">
@@ -100,8 +102,8 @@ export default function FilesPage() {
                   referenceCount: file.reference_count,
                   createdAt: file.created_at,
                 }}
-                variant="message"
-                className="file-library-item border-0 shadow-none"
+                variant="list"
+                className="file-library-item"
               />
               <div className="file-library-action">
                 <a

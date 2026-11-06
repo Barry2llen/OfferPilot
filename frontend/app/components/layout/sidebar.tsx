@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router";
-import { MessageSquare, FileUser, BriefcaseBusiness, Folder, Settings, Monitor } from "lucide-react";
+import { MessageSquare, FileUser, BriefcaseBusiness, Folder, Settings, Monitor, Sun, Moon, Languages } from "lucide-react";
 import { getCurrentLocale, setLocale, type Locale } from "@/app/lib/i18n";
 import { useTheme, type ThemeMode } from "@/app/lib/theme";
 
@@ -14,6 +14,7 @@ const items = [
 export default function Sidebar({ historyRef }: { historyRef: (node: HTMLDivElement | null) => void }) {
   const { t } = useTranslation();
   const [theme, setTheme] = useTheme();
+  const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
   return <aside className="app-sidebar">
     <div className="sidebar-brand app-region-drag"><span className="brand-full">OfferPilot</span><span className="brand-short">OP</span></div>
     <nav className="primary-nav" aria-label={t("nav.toggle")}>
@@ -23,8 +24,8 @@ export default function Sidebar({ historyRef }: { historyRef: (node: HTMLDivElem
     </nav>
     <div className="sidebar-history" ref={historyRef} />
     <footer className="sidebar-footer">
-      <label><select aria-label={t("language.switchTo")} value={getCurrentLocale()} onChange={(e) => void setLocale(e.target.value as Locale)}><option value="zh-CN">{t("language.chinese")}</option><option value="en-US">{t("language.english")}</option></select></label>
-      <label><Monitor size={16} /><select aria-label={t("appearance.theme")} value={theme} onChange={(e) => setTheme(e.target.value as ThemeMode)}>{(["light", "dark", "system"] as const).map((mode) => <option key={mode} value={mode}>{t(`appearance.${mode}`)}</option>)}</select></label>
+      <label><Languages size={16} aria-hidden="true" /><select aria-label={t("language.switchTo")} value={getCurrentLocale()} onChange={(e) => void setLocale(e.target.value as Locale)}><option value="zh-CN">{t("language.chinese")}</option><option value="en-US">{t("language.english")}</option></select></label>
+      <label><ThemeIcon size={16} aria-hidden="true" /><select aria-label={t("appearance.theme")} value={theme} onChange={(e) => setTheme(e.target.value as ThemeMode)}>{(["light", "dark", "system"] as const).map((mode) => <option key={mode} value={mode}>{t(`appearance.${mode}`)}</option>)}</select></label>
       <p>{t("nav.version")}</p>
     </footer>
   </aside>;

@@ -22,7 +22,7 @@ const variants: Record<string, string> = {
   secondary:
     "bg-surface-secondary text-text-primary hover:bg-border-default active:bg-border-default/80",
   ghost:
-    "bg-transparent text-text-secondary hover:bg-black/[0.04] active:bg-black/[0.08]",
+    "bg-transparent text-text-secondary hover:bg-text-primary/[0.06] active:bg-text-primary/[0.1]",
   danger:
     "bg-danger-fill text-white hover:bg-danger-fill/90 active:bg-danger-fill/80",
 };

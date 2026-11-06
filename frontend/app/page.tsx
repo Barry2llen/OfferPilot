@@ -2,7 +2,7 @@ import { createPortal } from "react-dom";
 import { useHistorySlot } from "@/app/lib/context/layout-context";
 import { useMediaQuery } from "@/app/hooks/use-media-query";
 import FormDrawer from "@/app/components/ui/form-drawer";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { modelSelectionsApi } from "@/app/lib/api/model-selections";
 import { useAppContext, useAppActions } from "@/app/lib/context/app-context";
@@ -16,6 +16,7 @@ import ChatRunPanel from "@/app/components/chat/chat-run-panel";
 import ChatSidebar from "@/app/components/chat/chat-sidebar";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
 import { shouldWarnForSmallerContextWindow } from "@/app/lib/chat/model-context-warning";
+import { plainPreview } from "@/app/lib/chat/preview";
 
 export default function Home() {
   const { t } = useTranslation();
@@ -205,6 +206,12 @@ export default function Home() {
   );
 
   const hasNoModel = state.currentModelSelection === null;
+  const threadTitle = useMemo(() => {
+    const firstPrompt = messages.find(
+      (message) => message.role === "user" && message.content.trim(),
+    )?.content;
+    return firstPrompt ? plainPreview(firstPrompt).slice(0, 80) || null : null;
+  }, [messages]);
 
   return (
     <div className="chat-page flex h-full min-h-0">
@@ -222,13 +229,14 @@ export default function Home() {
           activeThreadId={state.currentThreadId}
           chatHistoryVersion={state.chatHistoryVersion}
           onClose={handleCloseSidebar}
-        />      </FormDrawer>}
-
+        />
+      </FormDrawer>}
 
       <div className="flex-1 flex flex-col min-w-0">
         <ChatHeader
           onNewChat={handleNewChat}
           threadId={state.currentThreadId}
+          threadTitle={threadTitle}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={handleToggleSidebar}
           models={models}

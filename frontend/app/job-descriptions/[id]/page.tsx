@@ -9,6 +9,7 @@ import { Skeleton } from "@/app/components/ui/skeleton";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { jobDescriptionsApi } from "@/app/lib/api/job-descriptions";
 import i18n from "@/app/lib/i18n";
+import { analysisLabel, humanizeToken } from "@/app/lib/analysis-labels";
 import { useAppContext } from "@/app/lib/context/app-context";
 import { analysisTaskKey } from "@/app/lib/analysis-events/types";
 import type {
@@ -35,7 +36,9 @@ function statusVariant(status: JobDescriptionAnalysisDetail["status"]) {
 }
 
 function factLabel(fact: JobDescriptionFact): string {
-  return fact.custom_fact_type || fact.fact_type;
+  return fact.custom_fact_type
+    ? humanizeToken(fact.custom_fact_type)
+    : analysisLabel("factType", fact.fact_type);
 }
 
 export default function JobDescriptionDetailPage() {
@@ -212,7 +215,7 @@ function BlockCard({ block }: { block: JobDescriptionBlock }) {
     <Card shadow="none" radius="lg" padding="lg">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 className="text-base font-semibold text-text-primary">{block.title}</h2>
-        <Badge variant="neutral">{block.block_type}</Badge>
+        <Badge variant="neutral">{analysisLabel("blockType", block.block_type)}</Badge>
       </div>
       <p className="mb-4 whitespace-pre-wrap text-sm leading-6 text-text-secondary">
         {block.content}
@@ -226,7 +229,9 @@ function BlockCard({ block }: { block: JobDescriptionBlock }) {
             >
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Badge variant="info">{factLabel(fact)}</Badge>
-                <Badge variant="neutral">{fact.importance}</Badge>
+                <Badge variant={fact.importance === "must_have" ? "warning" : "neutral"}>
+                  {analysisLabel("importance", fact.importance)}
+                </Badge>
               </div>
               <p className="text-sm font-medium text-text-primary">{fact.text}</p>
               <p className="mt-1 text-xs text-text-muted">{fact.evidence}</p>

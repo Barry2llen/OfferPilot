@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
-import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
+import i18n from "@/app/lib/i18n";
 
 interface ModelSelectionPickerProps {
   models: ModelSelectionResponse[];
@@ -135,7 +135,7 @@ function SelectionList({
               </span>
               <span className="text-xs text-text-muted">
                 {t("chat.modelsCount", {
-                  count: formatLocaleNumber(group.items.length),
+                  count: group.items.length,
                 })}
               </span>
             </div>
@@ -265,6 +265,7 @@ export default function ModelSelectionPicker({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label={t("chat.searchModels")}
           placeholder={t("chat.searchModels")}
           className="h-10 w-full rounded-xl bg-surface-secondary pl-9 pr-3 text-sm text-text-primary outline-none transition focus:bg-surface-primary focus:ring-2 focus:ring-primary-500/25"
         />
@@ -329,7 +330,7 @@ export default function ModelSelectionPicker({
           <div className="mt-3 flex items-center justify-between border-t border-border-light pt-3">
             <span className="text-xs text-text-muted">
               {t("chat.modelsCount", {
-                count: formatLocaleNumber(models.length),
+                count: models.length,
               })}
             </span>
             <Button
@@ -347,9 +348,7 @@ export default function ModelSelectionPicker({
       )}
 
       <FormDrawer open={expanded} title={t("chat.chooseModel")} onClose={() => { setQuery(""); setExpanded(false); }}>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {renderPickerContent("mt-4 pr-1")}
-            </div>
+        {renderPickerContent("mt-4")}
       </FormDrawer>
     </div>
   );

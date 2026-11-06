@@ -31,6 +31,8 @@ const statusColors: Record<AgentStatus, string> = {
 interface ChatHeaderProps {
   onNewChat: () => void;
   threadId: string | null;
+  /** Short label for the open conversation, derived from its first prompt. */
+  threadTitle?: string | null;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   models: ModelSelectionResponse[];
@@ -45,6 +47,7 @@ interface ChatHeaderProps {
 export default function ChatHeader({
   onNewChat,
   threadId,
+  threadTitle,
   sidebarOpen,
   onToggleSidebar,
   models,
@@ -87,11 +90,14 @@ export default function ChatHeader({
           </svg>
         </button>
 
-        <h2 className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-text-primary">
-          {threadId ? t("chat.chatTitle") : t("chat.newChat")}
+        <h2
+          className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-text-primary"
+          title={threadId && threadTitle ? threadTitle : undefined}
+        >
+          {threadId ? threadTitle || t("chat.chatTitle") : t("chat.newChat")}
         </h2>
 
-        <button className="icon-button app-region-no-drag" aria-label={t("chat.newChat")} onClick={onNewChat}><Plus size={20} /></button>
+        <button type="button" className="icon-button app-region-no-drag" aria-label={t("chat.newChat")} title={t("chat.newChat")} onClick={onNewChat}><Plus size={20} /></button>
         <div className="chat-model-controls app-region-no-drag">
 
         <div className="app-region-no-drag">
@@ -113,7 +119,7 @@ export default function ChatHeader({
           </span>
         </div>
 
-          <button className="icon-button" aria-label={t("appearance.modelOptions")} onClick={() => setOptionsOpen(true)}><SlidersHorizontal size={18} /></button>
+          <button type="button" className="icon-button" aria-label={t("appearance.modelOptions")} title={t("appearance.modelOptions")} onClick={() => setOptionsOpen(true)}><SlidersHorizontal size={18} /></button>
         </div>
         <FormDrawer open={optionsOpen} title={t("appearance.modelOptions")} onClose={() => setOptionsOpen(false)}>
           <div className="space-y-6">

@@ -93,45 +93,48 @@ export default function ResumesPage() {
     );
   }
 
+  const isEmpty = !data || data.length === 0;
+
   return (
     <PageCanvas>
-      <div className="space-y-8">
-        <header className="resource-heading"><h1>{t("nav.resumes")}</h1><Button onClick={() => setUploadOpen(true)}>{t("appearance.upload")}</Button></header>
-        {data?.length === 0 && <ResumeUploader onUploaded={handleUploaded} variant="hero" />}
+      <div className="space-y-6">
+        <header className="resource-heading">
+          <div className="min-w-0">
+            <h1>{t("nav.resumes")}</h1>
+            {!isEmpty && (
+              <p className="mt-1 text-sm text-text-muted">
+                {t("resume.stats", {
+                  count: stats.total,
+                  total: formatLocaleNumber(stats.total),
+                  parsed: formatLocaleNumber(stats.parsed),
+                })}
+              </p>
+            )}
+          </div>
+          {!isEmpty && (
+            <Button className="shrink-0" onClick={() => setUploadOpen(true)}>
+              {t("appearance.upload")}
+            </Button>
+          )}
+        </header>
         <FormDrawer open={uploadOpen} title={t("appearance.upload")} onClose={() => setUploadOpen(false)}>
           <ResumeUploader onUploaded={handleUploaded} />
         </FormDrawer>
 
+        {isEmpty ? (
+          <ResumeUploader onUploaded={handleUploaded} variant="hero" />
+        ) : (
         <section>
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="font-display text-base font-semibold text-text-primary">
-                {t("resume.recentUploads")}
-              </h2>
-              <p className="mt-1 text-xs text-text-muted">
-                {stats.total > 0
-                  ? t("resume.stats", {
-                      total: formatLocaleNumber(stats.total),
-                      parsed: formatLocaleNumber(stats.parsed),
-                    })
-                  : t("resume.firstUploadHint")}
-              </p>
-            </div>
-
-          </div>
-
+          <h2 className="sr-only">{t("resume.recentUploads")}</h2>
           <div className="resource-toolbar">
-            <input aria-label={t("appearance.searchResumes")} placeholder={t("appearance.searchResumes")} value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input type="search" aria-label={t("appearance.searchResumes")} placeholder={t("appearance.searchResumes")} value={query} onChange={(e) => setQuery(e.target.value)} />
             <select aria-label={t("resume.filter")} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="all">{t("appearance.all")}</option><option value="parsed">{t("resume.parsed")}</option><option value="processing">{t("resume.parsing")}</option><option value="failed">{t("resume.parseFailed")}</option><option value="unparsed">{t("resume.unparsed")}</option>
             </select>
             <select aria-label={t("resume.sort")} value={sort} onChange={(e) => setSort(e.target.value)}><option value="newest">{t("appearance.newest")}</option><option value="name">{t("appearance.name")}</option></select>
           </div>
-          {data && data.length === 0 ? (
-            <EmptyState />
-          ) : (
             <div className="space-y-3">
-              {filtered.length === 0 && <p className="py-12 text-center text-text-muted">{t("appearance.noResults")}</p>}
+              {filtered.length === 0 && <EmptyState title={t("appearance.noResults")} />}
               {filtered.map((resume) => (
                 <ResumeCard
                   key={resume.id}
@@ -142,8 +145,8 @@ export default function ResumesPage() {
                 />
               ))}
             </div>
-          )}
         </section>
+        )}
       </div>
 
       <ConfirmDialog
@@ -174,20 +177,13 @@ function PageCanvas({ children }: { children: ReactNode }) {
   );
 }
 
-function EmptyState() {
-  const { t } = useTranslation();
-
+function EmptyState({ title }: { title: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-border-default bg-surface-primary px-6 py-10 text-center shadow-card">
-      <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-surface-secondary text-primary-700">
+    <div className="rounded-xl border border-dashed border-border-default bg-surface-primary px-6 py-10 text-center">
+      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-surface-secondary text-text-muted">
         <FileStackIcon className="h-5 w-5" />
       </div>
-      <p className="font-display text-base font-medium text-text-primary">
-        {t("resume.noResumes")}
-      </p>
-      <p className="mt-1 text-xs text-text-muted">
-        {t("resume.noResumesDescription")}
-      </p>
+      <p className="text-sm font-medium text-text-primary">{title}</p>
     </div>
   );
 }
@@ -214,20 +210,16 @@ function ErrorPanel({
 function ResumesPageSkeleton() {
   return (
     <PageCanvas>
-      <div className="space-y-8">
-        <Skeleton className="h-[232px] rounded-[20px]" />
-        <Skeleton className="h-[110px] rounded-[18px]" />
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <Skeleton className="mb-2 h-5 w-24 rounded-lg" />
-              <Skeleton className="h-4 w-48 rounded-lg" />
-            </div>
-            <div className="flex gap-2">
-              <Skeleton className="h-7 w-7 rounded-full" />
-              <Skeleton className="h-7 w-7 rounded-full" />
-            </div>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Skeleton className="mb-2 h-7 w-28 rounded-lg" />
+            <Skeleton className="h-4 w-48 rounded-lg" />
           </div>
+          <Skeleton className="h-10 w-28 rounded-lg" />
+        </div>
+        <section>
+          <Skeleton className="my-5 h-10 rounded-lg" />
           <div className="space-y-3">
             {[1, 2, 3].map((item) => (
               <Skeleton key={item} className="h-[88px] rounded-xl" />

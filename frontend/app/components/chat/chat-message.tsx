@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
   ChatMessage as ChatMessageType,
@@ -49,11 +50,6 @@ export default function ChatMessage({ message, streaming = false }: Props) {
     );
   }
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
-    // Could add a toast here, but simple copy is fine
-  };
-
   return (
     <div
       className="chat-message-enter group relative py-2"
@@ -85,10 +81,10 @@ export default function ChatMessage({ message, streaming = false }: Props) {
                 />
               )}
               {isUser ? (
-                <MarkdownContent content={message.content} inverse={isUser} />
+                <MarkdownContent content={message.content} inverse={isUser} className="chat-prose" />
               ) : hasContent ? (
                 <div className="flex items-end gap-1">
-                  <MarkdownContent content={message.content} className="min-w-0 flex-1" />
+                  <MarkdownContent content={message.content} className="chat-prose min-w-0 flex-1" />
                   {streaming && (
                     <span className="mb-1 inline-block h-4 w-1.5 shrink-0 animate-pulse bg-primary-500 align-middle" />
                   )}
@@ -116,37 +112,59 @@ export default function ChatMessage({ message, streaming = false }: Props) {
           )}
 
           {hasContent && isUser && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="absolute right-full top-1 mr-2 flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-surface-primary text-text-muted opacity-0 shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-all group-hover:opacity-100 hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
-              title={t("chat.copyText")}
-              aria-label={t("chat.copyText")}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
+            <CopyMessageButton
+              content={message.content}
+              className="absolute right-full top-1 mr-2 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:hidden"
+            />
           )}
 
           {hasContent && !isUser && (
-            <div className={`mt-1.5 flex ${isUser ? "justify-end" : "justify-start"}`}>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-surface-primary text-text-muted shadow-[0_1px_4px_rgba(15,23,42,0.08)] transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
-                title={t("chat.copyText")}
-                aria-label={t("chat.copyText")}
-              >
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </button>
+            <div className="mt-1.5 flex justify-start">
+              <CopyMessageButton content={message.content} />
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function CopyMessageButton({
+  content,
+  className = "",
+}: {
+  content: string;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const label = copied ? t("common.copySuccess") : t("chat.copyText");
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard
+          .writeText(content)
+          .then(() => setCopied(true))
+          .catch(() => setCopied(false));
+      }}
+      className={`flex h-7 w-7 items-center justify-center rounded-md border border-border-light bg-surface-primary text-text-muted transition-colors hover:bg-surface-secondary hover:text-text-primary ${className}`}
+      title={label}
+      aria-label={label}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-success-text" strokeWidth={2.2} aria-hidden="true" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+      )}
+    </button>
   );
 }
 
@@ -208,9 +226,8 @@ function formatReasoningLabel(
     if (durationMs < 1000) {
       return translate("chat.thinkingLessThanSecond");
     }
-    return translate("chat.thinkingSeconds", {
-      seconds: Math.round(durationMs / 1000),
-    });
+    const seconds = Math.round(durationMs / 1000);
+    return translate("chat.thinkingSeconds", { count: seconds, seconds });
   }
 
   return active ? translate("chat.thinking") : translate("chat.reasoning");
