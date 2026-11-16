@@ -178,6 +178,8 @@ button:not(:disabled), summary { cursor: pointer; }
 :is(button, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 /* Text fields never draw a focus border, ring or outline; unlayered so it beats Tailwind focus utilities. */
 :is(input:not([type="checkbox"], [type="radio"]), textarea, select):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
+/* A theme-aware fill keeps the active text field visible for keyboard users. */
+:is(input:not([type="checkbox"], [type="radio"]), textarea, select):focus-visible { background-color: color-mix(in srgb, var(--canvas) 82%, var(--ink)); }
 input, select, textarea { accent-color: var(--ink); }
 select { max-width: 100%; }
 ::selection { background: var(--line); color: var(--ink); }

@@ -59,7 +59,8 @@ export default function ChatArea({
     const observer = new IntersectionObserver(([entry]) => {
       setVisiblePendingKey(entry?.isIntersecting ? activityKey : null);
     }, { root });
-    observer.observe(target);
+    // A long form can intersect the viewport while its question is offscreen.
+    observer.observe(target.querySelector("[data-pending-start]") ?? target);
     return () => observer.disconnect();
   }, [activityKey, pendingInputRef]);
 

@@ -149,8 +149,10 @@ export default function ChatRunPanel({
           ref={index === 0 ? pendingInputRef : undefined}
           tabIndex={-1}
           role="group"
+          className="relative"
           aria-label={input.type === "query" ? input.question : input.message || t("chatRuns.waitingInput")}
         >
+          <span data-pending-start aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
           <InputCard input={input} onAnswer={onAnswer} />
         </div>
       ))}

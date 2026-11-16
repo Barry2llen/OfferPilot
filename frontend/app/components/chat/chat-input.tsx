@@ -1,5 +1,5 @@
 import { ArrowUp, FolderOpen, Plus, Square, Upload } from "lucide-react";
-import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import FormDrawer from "@/app/components/ui/form-drawer";
 import { useMediaQuery } from "@/app/hooks/use-media-query";
@@ -82,16 +82,39 @@ export default function ChatInput({
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const uploadIdRef = useRef(0);
   const lastResetSignal = useRef(resetSignal);
+  const hasDraftAttachments =
+    selectedLibraryFiles.length > 0 || localUploads.length > 0;
 
-  useLayoutEffect(() => {
+  const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = "auto";
     const height = Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT);
     textarea.style.height = `${height}px`;
     // Once a draft wraps it keeps the two-row layout until cleared, so the width change cannot flip it back and forth.
-    setWrapped((current) => (input ? current || height > SINGLE_LINE_MAX_HEIGHT : false));
-  }, [input]);
+    setWrapped((current) => (textarea.value ? current || height > SINGLE_LINE_MAX_HEIGHT : false));
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeTextarea();
+  }, [input, hasDraftAttachments, resizeTextarea]);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", resizeTextarea);
+      return () => window.removeEventListener("resize", resizeTextarea);
+    }
+    let previousWidth: number | undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry || entry.contentRect.width === previousWidth) return;
+      previousWidth = entry.contentRect.width;
+      resizeTextarea();
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [resizeTextarea]);
 
   useDismiss(attachmentMenuRef, attachmentMenuOpen, () => setAttachmentMenuOpen(false));
 
@@ -253,8 +276,6 @@ export default function ChatInput({
   const selectedLibraryIds = new Set(
     selectedLibraryFiles.map((file) => file.id),
   );
-  const hasDraftAttachments =
-    selectedLibraryFiles.length > 0 || localUploads.length > 0;
   const canSend =
     Boolean(input.trim() || hasDraftAttachments) && !disabled && !submitting;
 

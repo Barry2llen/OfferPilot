@@ -83,11 +83,12 @@ describe.each(["en-US", "zh-CN"])("chat status visibility in %s", (locale) => {
     expect((screen.getByLabelText(i18n.t("chat.queryFreeText")) as HTMLTextAreaElement).value).toBe("My draft");
   });
 
-  it("offers a jump to a pending request outside the scroll viewport", () => {
+  it("offers a jump when the start of a pending request is outside the viewport", () => {
     let callback: IntersectionObserverCallback | undefined;
+    const observe = vi.fn();
     class Observer {
       constructor(onChange: IntersectionObserverCallback) { callback = onChange; }
-      observe() {}
+      observe = observe;
       disconnect() {}
     }
     vi.stubGlobal("IntersectionObserver", Observer);
@@ -106,6 +107,8 @@ describe.each(["en-US", "zh-CN"])("chat status visibility in %s", (locale) => {
     const target = pendingInputRef.current!;
     const scrollIntoView = vi.spyOn(target, "scrollIntoView");
     expect(callback).toBeDefined();
+    // The form itself may still intersect the viewport even when its start does not.
+    expect(observe).toHaveBeenCalledWith(target.querySelector("[data-pending-start]"));
     act(() => callback?.([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver));
     fireEvent.click(screen.getByRole("button", { name: i18n.t("chat.viewPendingInput") }));
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });

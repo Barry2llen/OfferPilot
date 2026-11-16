@@ -84,6 +84,57 @@ it("removes only sent attachments when a new attachment is added before acceptan
   expect(screen.getByText("next.txt")).toBeTruthy();
 });
 
+it("keeps a wrapping draft visible after its last attachment is removed", async () => {
+  await i18n.changeLanguage("en-US");
+  const { container } = render(
+    <ToastProvider><ChatInput onSend={() => {}} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>,
+  );
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  const composer = input.closest(".composer-surface")!;
+  // JSDOM has no layout; the draft fits with attachments but wraps in the narrower single-row layout.
+  Object.defineProperty(input, "scrollHeight", {
+    configurable: true,
+    get: () => composer.classList.contains("is-multiline") ? 40 : 62,
+  });
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
+  });
+  fireEvent.change(input, { target: { value: "A draft that wraps only in the narrower layout" } });
+  fireEvent.click(screen.getByRole("button", { name: "Remove notes.txt" }));
+
+  expect(input.value).toBe("A draft that wraps only in the narrower layout");
+  expect(composer.classList.contains("is-multiline")).toBe(true);
+  expect(input.style.height).toBe("62px");
+});
+
+it("remeasures the draft when the input width changes", async () => {
+  await i18n.changeLanguage("en-US");
+  let notifyResize: ResizeObserverCallback | undefined;
+  class Observer {
+    constructor(callback: ResizeObserverCallback) { notifyResize = callback; }
+    observe() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("ResizeObserver", Observer);
+  try {
+    render(<ToastProvider><ChatInput onSend={() => {}} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>);
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    let height = 40;
+    Object.defineProperty(input, "scrollHeight", { configurable: true, get: () => height });
+    fireEvent.change(input, { target: { value: "A draft" } });
+    expect(input.closest(".composer-surface")?.classList.contains("is-multiline")).toBe(false);
+
+    height = 62;
+    act(() => notifyResize?.([{ contentRect: { width: 320 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(input.closest(".composer-surface")?.classList.contains("is-multiline")).toBe(true);
+    expect(input.style.height).toBe("62px");
+    expect(input.value).toBe("A draft");
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
 
 it("does not send while an IME composition is being confirmed", async () => {
   await i18n.changeLanguage("en-US");
