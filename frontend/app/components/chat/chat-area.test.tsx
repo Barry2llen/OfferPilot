@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createRef, type RefObject } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@/app/components/ui/toast";
@@ -29,24 +30,26 @@ beforeAll(() => {
     configurable: true, value: vi.fn(),
   });
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 afterAll(() => {
   Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 
-function view({ historyLoading = false, pending = false }: {
+function view({ historyLoading = false, pending = false, pendingInputRef }: {
   historyLoading?: boolean;
   pending?: boolean;
+  pendingInputRef?: RefObject<HTMLDivElement | null>;
 } = {}) {
   return (
     <MemoryRouter>
       <ToastProvider>
         <ChatArea messages={[]} liveMessages={[]} isStreaming={pending}
+          activityKey={pending ? pendingInput.request_id : undefined} pendingInputRef={pendingInputRef}
           historyLoading={historyLoading} streamError={pending ? null : "Submission failed"}
           contextCompactionStatus="idle" modelContextWindowWarning={null}
           threadModelMismatchMessage={null} hasNoModel={false} onPrompt={() => {}}>
           <ChatRunPanel runs={pending ? [] : [failedRun]} inputs={pending ? [pendingInput] : []}
-            connectionState="reconnecting" onAnswer={async () => {}}
+            pendingInputRef={pendingInputRef} connectionState="reconnecting" onAnswer={async () => {}}
             onCancel={async () => {}} onCancelQueued={async () => {}} />
         </ChatArea>
       </ToastProvider>
@@ -78,5 +81,37 @@ describe.each(["en-US", "zh-CN"])("chat status visibility in %s", (locale) => {
 
     rerender(view({ pending: true }));
     expect((screen.getByLabelText(i18n.t("chat.queryFreeText")) as HTMLTextAreaElement).value).toBe("My draft");
+  });
+
+  it("offers a jump to a pending request outside the scroll viewport", () => {
+    let callback: IntersectionObserverCallback | undefined;
+    class Observer {
+      constructor(onChange: IntersectionObserverCallback) { callback = onChange; }
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("IntersectionObserver", Observer);
+    const pendingInputRef = createRef<HTMLDivElement>();
+    const { container, rerender } = render(view({ pendingInputRef }));
+    const scroll = container.querySelector(".chat-scroll")!;
+    Object.defineProperties(scroll, {
+      clientHeight: { configurable: true, value: 500 },
+      scrollHeight: { configurable: true, value: 1000 },
+      scrollTop: { configurable: true, value: 400 },
+    });
+    fireEvent.scroll(scroll);
+    expect(screen.queryByRole("button", { name: i18n.t("chat.viewPendingInput") })).toBeNull();
+
+    rerender(view({ pending: true, pendingInputRef }));
+    const target = pendingInputRef.current!;
+    const scrollIntoView = vi.spyOn(target, "scrollIntoView");
+    expect(callback).toBeDefined();
+    act(() => callback?.([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver));
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("chat.viewPendingInput") }));
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+    expect(document.activeElement).toBe(target);
+
+    act(() => callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+    expect(screen.queryByRole("button", { name: i18n.t("chat.viewPendingInput") })).toBeNull();
   });
 });

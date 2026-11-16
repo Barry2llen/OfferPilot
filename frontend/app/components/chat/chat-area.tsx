@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ChatMessage from "@/app/components/chat/chat-message";
@@ -15,6 +15,7 @@ const SHOW_SCROLL_BUTTON_THRESHOLD_PX = 240;
 interface ChatAreaProps {
   children?: ReactNode;
   activityKey?: string;
+  pendingInputRef?: RefObject<HTMLDivElement | null>;
   messages: ChatMessageType[];
   liveMessages: ChatMessageType[];
   isStreaming: boolean;
@@ -31,6 +32,7 @@ interface ChatAreaProps {
 export default function ChatArea({
   children,
   activityKey,
+  pendingInputRef,
   messages,
   liveMessages,
   isStreaming,
@@ -48,6 +50,18 @@ export default function ChatArea({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [visiblePendingKey, setVisiblePendingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const target = pendingInputRef?.current;
+    const root = containerRef.current;
+    if (!activityKey || !target || !root || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => {
+      setVisiblePendingKey(entry?.isIntersecting ? activityKey : null);
+    }, { root });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [activityKey, pendingInputRef]);
 
   const hasAnyMessages =
     messages.length > 0 ||
@@ -88,12 +102,26 @@ export default function ChatArea({
     messagesEndRef.current?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 
+  const scrollToPendingInput = () => {
+    const target = pendingInputRef?.current;
+    target?.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    });
+    target?.focus({ preventScroll: true });
+  };
+
+  const showPendingInputJump = Boolean(activityKey && pendingInputRef && visiblePendingKey !== activityKey);
+  const showJump = showPendingInputJump || (showScrollToBottom && hasAnyMessages);
+  const jumpLabel = t(showPendingInputJump ? "chat.viewPendingInput" : "chat.returnToLatest");
+
   return (
-    <div
-      className="chat-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 relative"
-      ref={containerRef}
-      onScroll={handleScroll}
-    >
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        className="chat-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+        ref={containerRef}
+        onScroll={handleScroll}
+      >
       <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
         {historyLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -185,20 +213,22 @@ export default function ChatArea({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Scroll to bottom button */}
-      {showScrollToBottom && hasAnyMessages && (
-        <div className="sticky bottom-3 flex justify-center w-full z-10 pointer-events-none">
+      </div>
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center" aria-live="polite">
+        {showJump && (
           <button
-            onClick={scrollToBottom}
-            className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-surface-primary shadow-card border border-border-default text-text-secondary hover:text-primary-600 hover:border-primary-200 hover:bg-primary-50 transition-all"
-            aria-label={t("chat.returnToLatest")}
-            title={t("chat.returnToLatest")}
+            type="button"
+            onClick={showPendingInputJump ? scrollToPendingInput : scrollToBottom}
+            className={`pointer-events-auto flex h-10 items-center justify-center gap-2 rounded-full bg-surface-primary shadow-card border border-border-default text-text-secondary hover:text-primary-600 hover:border-primary-200 hover:bg-primary-50 transition-all ${showPendingInputJump ? "px-4 text-sm font-medium" : "w-10"}`}
+            aria-label={jumpLabel}
+            title={jumpLabel}
           >
             <svg
               className="w-4 h-4"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -207,9 +237,10 @@ export default function ChatArea({
                 d="M19 14l-7 7m0 0l-7-7m7 7V3"
               />
             </svg>
+            {showPendingInputJump && <span>{jumpLabel}</span>}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -13,10 +13,10 @@ export interface ThinkingOverride {
 }
 
 const DEFAULT_OPTION = "__default";
+const PROVIDER_DEFAULT_OPTION = "__provider_default";
 
 /**
- * Per-request thinking intensity for the composer. "Default" clears the override
- * so the model selection's saved thinking setting applies.
+ * An absent override uses the saved setting; a null value uses the provider default.
  */
 export default function ThinkingPicker({ model, override, onChange, disabled = false }: {
   model: ModelSelectionResponse | undefined;
@@ -42,8 +42,10 @@ export default function ThinkingPicker({ model, override, onChange, disabled = f
       : typeof value === "number"
         ? formatLocaleNumber(value)
         : t(`settings.thinkingValue_${value}`);
-  const current = override && override.value !== null ? override.value : null;
-  const triggerLabel = current !== null ? valueLabel(current) : savedValue !== null ? valueLabel(savedValue) : t("chat.thinkingDefaultShort");
+  const current = override?.value;
+  const triggerLabel = override !== undefined
+    ? valueLabel(override.value)
+    : savedValue !== null ? valueLabel(savedValue) : t("chat.thinkingDefaultShort");
   // The trigger shows only the value; the accessible name and tooltip still say "thinking intensity".
   const triggerContent = <span className="truncate">{triggerLabel}</span>;
 
@@ -58,11 +60,14 @@ export default function ThinkingPicker({ model, override, onChange, disabled = f
         align="end"
         disabled={disabled}
         triggerClassName="h-9 rounded-full px-3"
-        value={typeof current === "string" ? current : DEFAULT_OPTION}
+        value={override === undefined ? DEFAULT_OPTION : current === null ? PROVIDER_DEFAULT_OPTION : typeof current === "string" ? current : DEFAULT_OPTION}
         renderValue={() => triggerContent}
-        onChange={(value) => onChange(value === DEFAULT_OPTION ? undefined : { value })}
+        onChange={(value) => onChange(
+          value === DEFAULT_OPTION ? undefined : { value: value === PROVIDER_DEFAULT_OPTION ? null : value },
+        )}
         options={[
           { value: DEFAULT_OPTION, label: t("chat.thinkingDefault", { value: valueLabel(savedValue) }) },
+          { value: PROVIDER_DEFAULT_OPTION, label: t("settings.providerDefault") },
           ...thinkingValueOptions[type].map((value) => ({ value, label: t(`settings.thinkingValue_${value}`) })),
         ]}
       />
@@ -93,8 +98,8 @@ export default function ThinkingPicker({ model, override, onChange, disabled = f
             type="number"
             min={provider === "Anthropic" ? 1024 : -1}
             value={typeof current === "number" ? current : ""}
-            placeholder={valueLabel(savedValue)}
-            onChange={(event) => onChange(event.target.value === "" ? undefined : { value: Number(event.target.value) })}
+            placeholder={valueLabel(override === undefined ? savedValue : override.value)}
+            onChange={(event) => onChange({ value: event.target.value === "" ? null : Number(event.target.value) })}
             className="mt-1.5 h-9 w-full rounded-lg border border-border-default bg-surface-primary px-2.5 text-sm text-text-primary"
           />
           <button
@@ -106,6 +111,16 @@ export default function ThinkingPicker({ model, override, onChange, disabled = f
             className="mt-2 w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-text-secondary transition hover:bg-surface-secondary hover:text-text-primary"
           >
             {t("chat.thinkingUseDefault")} · {valueLabel(savedValue)}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange({ value: null });
+              setBudgetOpen(false);
+            }}
+            className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-text-secondary transition hover:bg-surface-secondary hover:text-text-primary"
+          >
+            {t("chat.thinkingUseProviderDefault")}
           </button>
         </div>
       )}

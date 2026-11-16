@@ -1,7 +1,7 @@
 import FormDrawer from "@/app/components/ui/form-drawer";
 import { useMediaQuery } from "@/app/hooks/use-media-query";
 import type { QueryDraft } from "./query-decision-composer";
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ChatRun,
@@ -84,6 +84,7 @@ export default function ChatRunPanel({
   onAnswer,
   onCancel,
   onCancelQueued,
+  pendingInputRef,
 }: {
   runs: ChatRun[];
   inputs: PendingInput[];
@@ -91,6 +92,7 @@ export default function ChatRunPanel({
   onAnswer: (input: PendingInput, answer: InputAnswer) => Promise<void>;
   onCancel: (runId: string) => Promise<void>;
   onCancelQueued: () => Promise<void>;
+  pendingInputRef?: RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useTranslation();
   const queued = runs.filter((run) => run.status === "queued");
@@ -141,8 +143,16 @@ export default function ChatRunPanel({
           <p className="text-xs text-text-muted">{t("chatRuns.stopNotice")}</p>
         </div>
       )}
-      {inputs.map((input) => (
-        <InputCard key={input.request_id} input={input} onAnswer={onAnswer} />
+      {inputs.map((input, index) => (
+        <div
+          key={input.request_id}
+          ref={index === 0 ? pendingInputRef : undefined}
+          tabIndex={-1}
+          role="group"
+          aria-label={input.type === "query" ? input.question : input.message || t("chatRuns.waitingInput")}
+        >
+          <InputCard input={input} onAnswer={onAnswer} />
+        </div>
       ))}
       {interrupted.slice(-MAX_RUN_NOTICES).map((run) => (
         <p key={run.run_id} className="text-xs text-warning-text">

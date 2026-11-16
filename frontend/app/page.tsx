@@ -58,6 +58,7 @@ export default function Home() {
   const [modelContextWindowWarning, setModelContextWindowWarning] =
     useState(false);
   const [thinkingOverride, setThinkingOverride] = useState<ThinkingOverride>();
+  const pendingInputRef = useRef<HTMLDivElement>(null);
   // Bumped by "new chat" so the composer clears its draft and takes focus even on an empty new chat.
   const [composerResetSignal, setComposerResetSignal] = useState(0);
 
@@ -252,6 +253,7 @@ export default function Home() {
 
         <ChatArea
           activityKey={pendingInputs.map((input) => input.request_id).join(",")}
+          pendingInputRef={pendingInputRef}
           messages={messages}
           liveMessages={liveMessages}
           isStreaming={isStreaming}
@@ -271,6 +273,7 @@ export default function Home() {
           onAnswer={answerInput}
           onCancel={cancelRun}
           onCancelQueued={cancelQueued}
+          pendingInputRef={pendingInputRef}
         />
         </ChatArea>
 
