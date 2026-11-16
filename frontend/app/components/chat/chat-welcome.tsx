@@ -14,7 +14,7 @@ export default function ChatWelcome({ hasNoModel, hasConfiguredModels, onPrompt 
   const { t } = useTranslation();
 
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+    <div className="flex h-full flex-1 flex-col items-center justify-center px-6 text-center">
       <div className="w-full max-w-lg">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-secondary">
           <svg

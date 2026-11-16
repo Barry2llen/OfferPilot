@@ -178,6 +178,7 @@ export default function ResumeDetailPage() {
           <div className="resume-source">
             <SourceContent
               resume={resume}
+              showSource={showSource}
               replaceOpen={replaceOpen}
               onUploaded={handleReplace}
               uploadFile={(file, selectionId, options) =>
@@ -323,11 +324,13 @@ function AnalysisContent({
 
 function SourceContent({
   resume,
+  showSource,
   replaceOpen,
   onUploaded,
   uploadFile,
 }: {
   resume: ResumeDetail;
+  showSource: boolean;
   replaceOpen: boolean;
   onUploaded: () => void;
   uploadFile: typeof resumesApi.upload;
@@ -338,9 +341,9 @@ function SourceContent({
         <div className="mx-auto max-w-xl py-6">
           <ResumeUploader onUploaded={onUploaded} uploadFile={uploadFile} />
         </div>
-      ) : (
+      ) : showSource ? (
         <ResumePreview resume={resume} />
-      )}
+      ) : null}
     </div>
   );
 }

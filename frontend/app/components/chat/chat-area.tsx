@@ -94,15 +94,21 @@ export default function ChatArea({
       ref={containerRef}
       onScroll={handleScroll}
     >
-      {historyLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Spinner size="lg" />
-        </div>
-      ) : !hasAnyMessages ? (
-        <ChatWelcome hasNoModel={hasNoModel} hasConfiguredModels={hasConfiguredModels} onPrompt={onPrompt} />
-      ) : (
-        <div className="mx-auto w-full max-w-3xl">
-          <>
+      <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
+        {historyLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Spinner size="lg" />
+          </div>
+        ) : !hasAnyMessages ? (
+          <div className="flex flex-1 flex-col">
+            <ChatWelcome
+              hasNoModel={hasNoModel}
+              hasConfiguredModels={hasConfiguredModels}
+              onPrompt={onPrompt}
+            />
+          </div>
+        ) : (
+          <div>
             {modelContextWindowWarning && (
               <div
                 className="mb-4 rounded-2xl bg-warning-bg px-4 py-3 text-sm text-warning-text"
@@ -156,28 +162,28 @@ export default function ChatArea({
                 streaming
               />
             )}
-          </>
+          </div>
+        )}
 
-          {streamError && (
-            <div className="flex justify-center py-3">
-              <div className="rounded-full bg-error-bg px-4 py-2 text-xs text-error-text">
-                {streamError}
-              </div>
+        {streamError && (
+          <div className="flex justify-center py-3">
+            <div className="rounded-full bg-error-bg px-4 py-2 text-xs text-error-text">
+              {streamError}
             </div>
-          )}
+          </div>
+        )}
 
-          {threadModelMismatchMessage && (
-            <div className="flex justify-center py-3">
-              <div className="rounded-2xl bg-warning-bg px-4 py-3 text-xs text-warning-text">
-                {threadModelMismatchMessage}
-              </div>
+        {threadModelMismatchMessage && (
+          <div className="flex justify-center py-3">
+            <div className="rounded-2xl bg-warning-bg px-4 py-3 text-xs text-warning-text">
+              {threadModelMismatchMessage}
             </div>
-          )}
+          </div>
+        )}
 
-          {children}
-          <div ref={messagesEndRef} />
-        </div>
-      )}
+        {children}
+        <div ref={messagesEndRef} />
+      </div>
 
       {/* Scroll to bottom button */}
       {showScrollToBottom && hasAnyMessages && (

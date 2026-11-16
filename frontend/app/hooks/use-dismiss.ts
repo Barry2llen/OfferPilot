@@ -20,7 +20,11 @@ export function useDismiss(
       if (!ref.current?.contains(event.target as Node)) callback.current("outside");
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") callback.current("escape");
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // Prevent an enclosing native dialog from handling the same Escape.
+      event.preventDefault();
+      event.stopPropagation();
+      callback.current("escape");
     };
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);

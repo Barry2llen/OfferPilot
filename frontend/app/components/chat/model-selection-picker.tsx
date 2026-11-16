@@ -223,9 +223,10 @@ export default function ModelSelectionPicker({
   const isDisabled = disabled || loading || models.length === 0;
 
   // The drawer handles its own Escape; outside clicks only close the inline popover.
-  useDismiss(rootRef, open, () => {
+  useDismiss(rootRef, open, (reason) => {
     setQuery("");
     setOpen(false);
+    if (reason === "escape") triggerRef.current?.focus();
   });
 
   const handleSelect = (id: number | null) => {
