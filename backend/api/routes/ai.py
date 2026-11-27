@@ -796,7 +796,13 @@ async def get_chat_run(request: Request, run_id: str):
 @router.get(
     "/chat/runs/{run_id}/events",
     summary="Subscribe to chat events",
-    description="Replay events after the supplied sequence, then follow live events. A snapshot replaces expired replay history and preserves merged analysis progress, phase messages and model retry details per tool call. Disconnecting does not cancel execution.",
+    description=(
+        "Replay events after the supplied sequence, then follow live events. A snapshot "
+        "replaces expired replay history and preserves merged analysis progress, phase "
+        "messages and model retry details per tool call. Background tool events can "
+        "carry background=true and belong to the original run. Disconnecting does not "
+        "cancel execution."
+    ),
     response_description="Sequenced SSE events or a display snapshot.",
     responses=_RUN_ERRORS,
 )
@@ -833,7 +839,10 @@ async def answer_chat_input(
     "/chat/runs/{run_id}/cancel",
     response_model=ChatRunResponse,
     summary="Cancel a chat run",
-    description="Cancel and await this run. Later queued messages still execute; cancel each queued run to remove it.",
+    description=(
+        "Cancel and await this run and its background tools. Later queued messages "
+        "still execute; cancel each queued run to remove it."
+    ),
     response_description="The terminated run state.",
     responses=_RUN_ERRORS,
 )
@@ -846,7 +855,12 @@ async def cancel_chat_run(request: Request, run_id: str):
     openapi_extra=_RUN_BODY,
     summary="Start and subscribe to a chat run",
     description="Compatibility entry point for prompt submissions. Execution survives SSE disconnection. Answers use the separate run input endpoint; legacy query/retry commands return 410.",
-    response_description="SSE events including thread, token, reasoning, tool_start/progress/end/error, input_required/resolved, run_status, snapshot, final and error. Analysis progress identifies its record and tool_call_id.",
+    response_description=(
+        "SSE events including thread, token, reasoning, tool_start/progress/end/error, "
+        "input_required/resolved, run_status, snapshot, final and error. Background tool "
+        "events can carry background=true. Analysis progress identifies its record and "
+        "tool_call_id."
+    ),
     responses=_RUN_ERRORS,
 )
 async def chat_stream(request: Request):

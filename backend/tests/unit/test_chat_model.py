@@ -1,7 +1,8 @@
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
 
+from agent.async_tools import ASYNC_TOOL_BATCH_ID
 from agent.models.chat import DeepSeekThinkingChatModel, load_chat_model
 from exceptions import ChatModelLoadError
 from schemas.model_provider import ModelProvider
@@ -199,4 +200,23 @@ def test_deepseek_payload_passes_back_reasoning_content() -> None:
 
     assert payload["messages"][1]["role"] == "assistant"
     assert payload["messages"][1]["reasoning_content"] == "需要调用天气工具。"
+    assert payload["messages"][1]["tool_calls"][0]["id"] == "call-1"
+
+
+def test_deepseek_payload_includes_reasoning_field_for_background_tool_calls() -> None:
+    model = DeepSeekThinkingChatModel(
+        model="deepseek-reasoner", api_key=SecretStr("sk-test")
+    )
+    payload = model._get_request_payload(
+        [
+            HumanMessage(content="查一下天气"),
+            AIMessage(
+                content=[],
+                additional_kwargs={ASYNC_TOOL_BATCH_ID: "batch-1"},
+                tool_calls=[{"name": "get_weather", "args": {}, "id": "call-1"}],
+            ),
+            ToolMessage(content="晴", tool_call_id="call-1"),
+        ]
+    )
+    assert payload["messages"][1]["reasoning_content"] == ""
     assert payload["messages"][1]["tool_calls"][0]["id"] == "call-1"

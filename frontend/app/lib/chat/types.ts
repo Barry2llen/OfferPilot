@@ -4,6 +4,7 @@ import type {
   AIChatStreamRequest,
   AgentStatus,
   ChatAttachmentRef,
+  ChatStreamEventData,
   QueryChoice,
 } from "@/app/lib/api/types";
 import type { AnalysisResourceType } from "@/app/lib/api/types";
@@ -67,7 +68,7 @@ export interface ChatMessage {
 
 export interface ChatStreamEvent {
   event: string;
-  data: Record<string, unknown>;
+  data: ChatStreamEventData;
 }
 
 export interface ChatStreamLabels {

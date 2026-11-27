@@ -216,6 +216,10 @@ export type ChatFileDetail = ChatFileListItem;
 // ─── AI Chat ───
 export type AnalysisResourceType = "resume" | "job_description";
 
+export interface ChatStreamEventData extends Record<string, unknown> {
+  background?: boolean;
+}
+
 export interface AnalysisToolResult {
   resource_type?: AnalysisResourceType;
   resource_id?: number;

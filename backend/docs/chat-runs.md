@@ -1,5 +1,40 @@
 # Native asynchronous chat runs
 
+## Supervisor background tools
+
+The Supervisor can call `run_async_tools` with a list of independent tool calls
+and choose when to receive their results. Each call uses a tool already available
+to the Supervisor and its normal arguments. The dispatcher returns a scheduling
+receipt with a batch ID and tool call IDs while the calls execute concurrently.
+Unavailable names and recursive dispatch are rejected before launching the batch.
+
+```json
+{
+  "notify": "any",
+  "calls": [
+    {"name": "analyze_resume", "args": {"resume_id": 12}},
+    {"name": "analyze_job_description", "args": {"source_url": "https://example.com/jobs/123"}}
+  ]
+}
+```
+
+- `all` delivers the entire batch when every call has succeeded or failed.
+- `any` makes each result eligible for delivery as soon as its call succeeds or
+  fails. Results ready at the same graph boundary can share a model turn.
+
+The Agent can continue working while tools run. Results enter the checkpointed
+conversation before the next eligible model call. If the Agent reaches the end
+of its work first, the graph waits for eligible results and resumes within the
+same run and SSE subscription. The run publishes one final event after all
+background work and follow-up reasoning finish. Later submissions in the same
+conversation continue to follow the existing FIFO.
+
+Background calls reuse tool SSE events and include `background: true` on live
+start and terminal updates. Progress or completion can arrive while answer text
+is streaming. Disconnecting only detaches the subscriber. Cancelling the run
+cancels and awaits its remaining calls before releasing the conversation.
+Background tasks are process-local and end when the backend stops.
+
 ## Supervisor resume and job-description analysis
 
 The Supervisor registers two tools using the model selected for the current run:
@@ -164,7 +199,7 @@ cancel its successors; the UI offers a separate action for queued items.
 User input has no default timeout; configured expiry fails the run, never
 substitutes an answer. Waiting runs count against the active-run limit.
 
-The graph's tool batch still checkpoints only after all tools finish. During
+The graph's foreground tool batch checkpoints after all its tools finish. During
 termination, the manager merges known completed results, inserts error results
 for unfinished calls, and completes the Supervisor parent node to discard the
 old child continuation. A failed finalization blocks that conversation and fails

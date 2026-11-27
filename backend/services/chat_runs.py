@@ -13,6 +13,7 @@ from uuid import uuid4
 from langchain_core.messages import ToolMessage, messages_from_dict
 from langgraph.graph.message import add_messages
 
+from agent.async_tools import AsyncToolRun
 from agent.interactions import (
     InteractionBroker,
     InteractionContext,
@@ -528,6 +529,7 @@ class ChatRunManager:
                 await self._selection(sub["selection_id"]), sub.get("thinking_override")
             )
 
+        async_tools = AsyncToolRun()
         context = InteractionContext(
             self.broker,
             rid,
@@ -535,6 +537,7 @@ class ChatRunManager:
             interactive=sub["interactive"],
             resolve_model=resolve_selection,
             locale=sub["locale"],
+            async_tools=async_tools,
         )
         token = interaction_context.set(context)
         status, detail = "completed", None
@@ -577,6 +580,9 @@ class ChatRunManager:
                                 "tool_name": data["tool_name"],
                                 "input": data.get("input"),
                                 "tool_call_id": data["tool_call_id"],
+                                **(
+                                    {"background": True} if data.get("background") else {}
+                                ),
                             },
                         )
                     elif name == "on_app_tool_end":
@@ -592,6 +598,9 @@ class ChatRunManager:
                             {
                                 "tool_name": data["tool_name"],
                                 "tool_call_id": data["tool_call_id"],
+                                **(
+                                    {"background": True} if data.get("background") else {}
+                                ),
                                 **(
                                     {"output": summary}
                                     if not failed
@@ -666,6 +675,7 @@ class ChatRunManager:
             status, detail = "failed", public_run_error(error, sub["locale"])
             await self.publish(rid, "error", {"detail": detail})
         finally:
+            context.messages.extend(await async_tools.close())
             self.broker.cancel_run(rid)
             completed_tools = {
                 message.tool_call_id: message

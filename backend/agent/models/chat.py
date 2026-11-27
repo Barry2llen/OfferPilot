@@ -11,6 +11,7 @@ from langchain_deepseek import ChatDeepSeek
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field, SecretStr
 
+from agent.async_tools import ASYNC_TOOL_BATCH_ID
 from exceptions import ChatModelLoadError
 from schemas.model_selection import ModelSelection, google_extra_params
 from utils.logger import logger
@@ -100,6 +101,9 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
             )
             if isinstance(reasoning_content, str):
                 payload_message["reasoning_content"] = reasoning_content
+            elif ASYNC_TOOL_BATCH_ID in source_message.additional_kwargs:
+                # The application generated this call and has no model reasoning to replay.
+                payload_message["reasoning_content"] = ""
 
         return payload
 

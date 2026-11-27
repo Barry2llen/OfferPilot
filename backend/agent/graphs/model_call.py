@@ -12,7 +12,9 @@ from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
+from agent.async_tools import AsyncToolCall, AsyncToolRun, NotifyMode
 from agent.interactions import InteractionContext, ask_user, interaction_context
+from agent.tools.async_tools import run_async_tools
 from exceptions import AgentStateError, ModelCallExecutionError
 from exceptions.agent import ModelRequestConfigurationError, is_model_bad_request
 from schemas.config.base import Config
@@ -130,12 +132,14 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         tools: Tools | ToolsBuilder[State] | None = None,
         compactor: Compactor[State] | None = None,
         context_budget_policy: ContextBudgetPolicy | None = None,
+        async_tools_enabled: bool = False,
         **kwargs,
     ):
 
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
         self.compactor = compactor
+        self.async_tools_enabled = async_tools_enabled
         self.context_budget_policy = (
             context_budget_policy
             if context_budget_policy is not None
@@ -144,6 +148,18 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
         prompts = normalize_system_prompts(system_prompts)
         self.system_prompts = prompts if callable(prompts) else lambda runtime: prompts
+
+    def _async_tool_run(self) -> AsyncToolRun | None:
+        context = interaction_context.get()
+        if self.async_tools_enabled and context is not None:
+            return context.async_tools
+        return None
+
+    async def _resolve_tools(self, state: State) -> tuple[BaseTool, ...]:
+        tools = await resolve_tools(self.tools, self.get_runtime(state))
+        if self._async_tool_run() is not None and tools:
+            return (*tools, run_async_tools)
+        return tools
 
     @staticmethod
     def _resolve_model_selection(state: State):
@@ -182,7 +198,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         state = await self._refresh_model_selection(state)
         try:
             model_selection = self._resolve_model_selection(state)
-            tools = await resolve_tools(self.tools, self.get_runtime(state))
+            tools = await self._resolve_tools(state)
             system_prompts = self.system_prompts(self.get_runtime(state))
             budget = self.context_budget_policy.resolve(model_selection)  # type: ignore[arg-type]
             result = await self.compactor.acompact(
@@ -294,7 +310,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             return state
 
         try:
-            tools = await resolve_tools(self.tools, self.get_runtime(state))
+            tools = await self._resolve_tools(state)
         except Exception as e:
             logger.error(f"Error resolving tools: {e}")
             results = [
@@ -313,8 +329,22 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             return state
 
         tools_dict: dict[str, BaseTool] = {tool.name: tool for tool in tools}
+        context = interaction_context.get()
+        async_tools = self._async_tool_run()
 
-        async def _call_tool(tool_call: ToolCall) -> ToolMessage:
+        def submit(calls: list[AsyncToolCall], notify: NotifyMode) -> str:
+            if async_tools is None:
+                raise ValueError("Background tools are unavailable in this execution.")
+            for call in calls:
+                if call.name == run_async_tools.name or call.name not in tools_dict:
+                    raise ValueError(f"Cannot run {call.name!r} as a background tool.")
+            return async_tools.submit(
+                calls, notify, lambda call: _call_tool(call, background=True)
+            )
+
+        async def _call_tool(
+            tool_call: ToolCall, *, background: bool = False
+        ) -> ToolMessage:
             name = tool_call["name"]
             args = tool_call["args"]
             tool_call_id = tool_call.get("id") or ""
@@ -335,19 +365,23 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 )
 
             tool = tools_dict[name]
-            context = interaction_context.get()
+            tool_context = (
+                replace(
+                    context,
+                    tool_call_id=tool_call_id,
+                    source=name,
+                    messages=[] if background else context.messages,
+                    submit_async_tools=submit if name == run_async_tools.name else None,
+                )
+                if context is not None
+                else None
+            )
             injected_tool_call = self._inject_runtime_if_requested(
                 tool_call,
                 tool,
                 ToolRuntime[InteractionContext | None, State](
                     state=state,
-                    context=replace(
-                        context,
-                        tool_call_id=tool_call_id,
-                        source=name,
-                    )
-                    if context is not None
-                    else None,
+                    context=tool_context,
                     tool_call_id=tool_call_id,
                     config=config,
                     stream_writer=runtime.stream_writer,
@@ -358,56 +392,87 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             )
 
             message_id = str(uuid4())
+            event_data = {
+                "tool_call_id": tool_call_id,
+                "tool_name": name,
+                **({"background": True} if background else {}),
+            }
+            cancelled = False
             try:
-                context = interaction_context.get()
                 token = (
-                    interaction_context.set(
-                        replace(context, tool_call_id=tool_call_id, source=name)
-                    )
-                    if context
+                    interaction_context.set(tool_context)
+                    if tool_context is not None
                     else None
                 )
                 try:
                     await _adispatch_custom_event_safely(
                         "on_app_tool_start",
-                        {
-                            "tool_call_id": tool_call_id,
-                            "tool_name": name,
-                            "input": args,
-                        },
+                        {**event_data, "input": args},
                     )
                     result = await tool.ainvoke(injected_tool_call, config)
                 finally:
                     if token is not None:
                         interaction_context.reset(token)
-            except (TimeoutError, ModelCallExecutionError):
-                raise
-            except Exception as e:
-                logger.error(f"Error calling tool {name} with args {args}: {e}")
-                await _adispatch_custom_event_safely(
-                    "on_tool_call_error",
-                    ToolCallErrorEvent(
-                        error=str(e),
-                        tool_name=name,
-                        args=args,
+            except asyncio.CancelledError:
+                if not background:
+                    raise
+                cancelled = True
+                result = next(
+                    (
+                        message
+                        for message in (tool_context.messages if tool_context else ())
+                        if isinstance(message, ToolMessage)
+                        and message.tool_call_id == tool_call_id
+                    ),
+                    ToolMessage(
+                        content="Background tool was cancelled.",
                         tool_call_id=tool_call_id,
+                        name=name,
+                        status="error",
                     ),
                 )
+            except Exception as e:
+                if not background and isinstance(
+                    e, (TimeoutError, ModelCallExecutionError)
+                ):
+                    raise
+                logger.error(f"Error calling tool {name} with args {args}: {e}")
+                if not background:
+                    await _adispatch_custom_event_safely(
+                        "on_tool_call_error",
+                        ToolCallErrorEvent(
+                            error=str(e),
+                            tool_name=name,
+                            args=args,
+                            tool_call_id=tool_call_id,
+                        ),
+                    )
                 result = ToolMessage(
-                    content=f"Error calling tool {name} with args {args}: {e}",
+                    content=(
+                        f"Error calling background tool {name}: {e}"
+                        if background
+                        else f"Error calling tool {name} with args {args}: {e}"
+                    ),
                     tool_call_id=tool_call_id,
                     name=name,
                     status="error",
                 )
 
             message = self._convert_tool_message(result, tool_call, message_id, tool)
-            context = interaction_context.get()
-            if context and context.source == "supervisor":
+            if background:
+                message = message.model_copy(
+                    update={"id": message_id, "tool_call_id": tool_call_id, "name": name}
+                )
+            elif context and context.source == "supervisor":
                 context.messages.append(message)
-            await _adispatch_custom_event_safely(
-                "on_app_tool_end",
-                {"tool_call_id": tool_call_id, "tool_name": name, "output": message},
-            )
+            if not cancelled:
+                try:
+                    await _adispatch_custom_event_safely(
+                        "on_app_tool_end", {**event_data, "output": message}
+                    )
+                except asyncio.CancelledError:
+                    if not background:
+                        raise
             return message
 
         tasks = [asyncio.create_task(_call_tool(call)) for call in tool_calls]
@@ -420,6 +485,14 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             await asyncio.gather(*tasks, return_exceptions=True)
         return {"messages": list(results)}  # type: ignore
 
+    async def _async_tool_results_node(self, state: BaseAgentState) -> BaseAgentState:
+        context = interaction_context.get()
+        if context is None or context.async_tools is None:
+            raise AgentStateError("No background tools belong to this run.")
+        messages = await context.async_tools.next_messages()
+        context.messages.extend(messages)
+        return {"messages": messages}
+
     async def _model_call_node(self, state: State) -> State:
         """
         Model call node. This node is responsible for calling the model and getting the response.
@@ -430,7 +503,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             state = await self._refresh_model_selection(state)
             model_selection = self._resolve_model_selection(state)
             try:
-                tools = await resolve_tools(self.tools, self.get_runtime(state))
+                tools = await self._resolve_tools(state)
                 system_prompts = self.system_prompts(self.get_runtime(state))
                 model = load_chat_model(model_selection).bind_tools(tools)
 
@@ -530,7 +603,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
 
         tool_calls = getattr(msg, "tool_calls", None)
 
-        return "tool" if tool_calls else "end"
+        return "tool" if tool_calls else self._end_or_wait_for_tools()
+
+    def _end_or_wait_for_tools(self) -> str:
+        async_tools = self._async_tool_run()
+        return "async_tool_results" if async_tools and async_tools.has_work else "end"
 
     def _dicide_after_tool(self, state: State) -> str:
         """
@@ -550,7 +627,10 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 logger.debug(
                     lambda: "Tool message has return_direct flag, ending the graph."
                 )
-                return "end"
+                return self._end_or_wait_for_tools()
+            async_tools = self._async_tool_run()
+            if async_tools is not None and async_tools.has_results:
+                return "async_tool_results"
             return "model"
         else:
             logger.error(
@@ -588,14 +668,21 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             graph.add_edge("compaction_error", "compact")
         else:
             graph.add_edge(START, "model")
-        graph.add_conditional_edges(
-            "model", self._dicide_next_action, {"tool": "tool", "end": END}
-        )
         next_model_node = "compact" if self.compactor is not None else "model"
+        background_route = {}
+        if self.async_tools_enabled:
+            graph.add_node("async_tool_results", self._async_tool_results_node)
+            graph.add_edge("async_tool_results", next_model_node)
+            background_route["async_tool_results"] = "async_tool_results"
+        graph.add_conditional_edges(
+            "model",
+            self._dicide_next_action,
+            {"tool": "tool", "end": END, **background_route},
+        )
         graph.add_conditional_edges(
             "tool",
             self._dicide_after_tool,
-            {"model": next_model_node, "end": END},
+            {"model": next_model_node, "end": END, **background_route},
         )
 
         return graph

@@ -10,11 +10,11 @@ from uuid import uuid4
 from langchain_core.messages import BaseMessage
 from pydantic import ValidationError
 
+from agent.async_tools import AsyncToolRun, SubmitAsyncTools
 from exceptions import ModelCallExecutionError
 from schemas.model_selection import ModelSelection
 from schemas.query import QueryAnswer, QueryRequest
 from utils.i18n import Locale, public_run_error
-
 
 class InteractionError(ValueError):
     def __init__(self, detail: str, status_code: int = 409) -> None:
@@ -141,6 +141,8 @@ class InteractionContext:
     messages: list[BaseMessage] = field(default_factory=list)
     resolve_model: Callable[[], Awaitable[ModelSelection]] | None = None
     locale: Locale = "zh-CN"
+    async_tools: AsyncToolRun | None = None
+    submit_async_tools: SubmitAsyncTools | None = None
 
     async def ask(self, request: Mapping[str, Any]) -> dict[str, Any]:
         if request.get("type") == "error" and request.get("message"):

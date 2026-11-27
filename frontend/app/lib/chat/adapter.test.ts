@@ -196,6 +196,27 @@ describe("chat stream adapter", () => {
     state = reduceChatEvent(state, progress("b", 6), labels).state;
     expect(state.toolCalls[1]).toBe(terminal);
   });
+  it.each(["tool_end", "tool_error"])(
+    "keeps streaming into one assistant message across a background %s",
+    (terminal) => {
+      let state = beginChat(createChatState(), "hello", undefined);
+      const tool = { tool_name: "work", tool_call_id: "call-a", background: true };
+      for (const [name, data] of [
+        ["token", { content: "Still " }],
+        ["tool_start", tool],
+        [terminal, tool],
+        ["token", { content: "working." }],
+      ] as const) {
+        state = reduceChatEvent(state, event(name, data), labels).state;
+      }
+      expect(
+        state.liveMessages.filter((message) => message.role === "assistant"),
+      ).toMatchObject([{ content: "Still working." }]);
+      expect(state.toolCalls[0].status).toBe(
+        terminal === "tool_end" ? "success" : "error",
+      );
+    },
+  );
   it("ignores invalid IDs and duplicate or conflicting terminal tool events", () => {
     let state = beginChat(createChatState(), "hello", undefined);
     const invalid = reduceChatEvent(

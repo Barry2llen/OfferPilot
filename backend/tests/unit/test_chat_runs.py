@@ -19,7 +19,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import Table
 
+from agent.agents.supervisor.agent import SupervisorAgent
 from agent.base import BaseAgentState
+from agent.checkpointers import DatabaseCheckpointer
 from agent.graphs.model_call import ModelCallGraph
 from agent.interactions import (
     InteractionBroker,
@@ -676,6 +678,248 @@ async def test_real_graph_cancel_closes_tools_before_next_prompt(manager, monkey
     tools = [m for m in snapshot.values["messages"] if isinstance(m, ToolMessage)]
     assert {m.tool_call_id for m in tools} == {"write", "ask"}
     assert next(m for m in tools if m.tool_call_id == "write").content == "written"
+
+
+@pytest.mark.parametrize("notify", ["all", "any"])
+async def test_background_tools_wake_the_original_chat_run(
+    manager, monkeypatch, notify, temporary_async_database_manager
+):
+    started = {name: asyncio.Event() for name in ("slow", "fast")}
+    release = {name: asyncio.Event() for name in started}
+    seen_results = []
+    yielded = asyncio.Event()
+
+    @tool
+    async def background_work(name: str) -> str:
+        """Wait for this operation to be released."""
+        started[name].set()
+        await release[name].wait()
+        if name == "fast":
+            raise TimeoutError("Operation timed out")
+        return "slow result"
+
+    class Model:
+        def bind_tools(self, tools):
+            dispatcher = next(tool for tool in tools if tool.name == "run_async_tools")
+            assert set(
+                dispatcher.tool_call_schema.model_json_schema()["properties"]
+            ) == {"calls", "notify"}
+            return self
+
+        async def ainvoke(self, messages):
+            last = messages[-1]
+            if isinstance(last, HumanMessage):
+                if last.content == "next":
+                    return AIMessage(content="next answer")
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "dispatch",
+                            "name": "run_async_tools",
+                            "args": {
+                                "notify": notify,
+                                "calls": [
+                                    {"name": "background_work", "args": {"name": name}}
+                                    for name in started
+                                ],
+                            },
+                        }
+                    ],
+                )
+            if isinstance(last, ToolMessage) and last.tool_call_id == "dispatch":
+                assert isinstance(last.content, str)
+                assert json.loads(last.content)["status"] == "scheduled"
+                assert all(event.is_set() for event in started.values())
+                assert not any(event.is_set() for event in release.values())
+                yielded.set()
+                return AIMessage(content="Waiting for results.")
+
+            for index, message in enumerate(messages):
+                if isinstance(message, AIMessage) and message.tool_calls:
+                    following = messages[
+                        index + 1 : index + 1 + len(message.tool_calls)
+                    ]
+                    assert len(following) == len(message.tool_calls)
+                    for call, result in zip(message.tool_calls, following):
+                        assert isinstance(result, ToolMessage)
+                        assert result.tool_call_id == call["id"]
+            results = [
+                (m.status, m.content)
+                for m in messages
+                if isinstance(m, ToolMessage) and m.name == "background_work"
+            ]
+            seen_results.append(results)
+            return AIMessage(content=f"Received {len(results)} results.")
+
+    monkeypatch.setattr("agent.graphs.model_call.load_chat_model", lambda _: Model())
+
+    async def selection(_):
+        return None
+
+    monkeypatch.setattr(manager, "_selection", selection)
+    manager.agent = SupervisorAgent(
+        config=manager.config,
+        checkpointer=DatabaseCheckpointer(
+            manager.database, temporary_async_database_manager
+        ),
+        tools=[background_work],
+    ).get_agent()
+    first = await submit(manager, "start")
+    rid = first["run_id"]
+    second = await submit(manager, "next")
+    await asyncio.wait_for(yielded.wait(), 5)
+    release["fast"].set()
+    await until(
+        lambda: any(
+            event["event"] == "tool_error"
+            and event["data"].get("tool_name") == "background_work"
+            for event in manager.runs[rid].projection
+        )
+    )
+    if notify == "any":
+        await until(lambda: len(seen_results) == 1)
+        assert seen_results[0] == [
+            (
+                "error",
+                "Error calling background tool background_work: Operation timed out",
+            )
+        ]
+    else:
+        assert seen_results == []
+    assert (await manager.get(rid))["status"] == "running"
+    assert (await manager.get(second["run_id"]))["status"] == "queued"
+    stream = manager.stream(rid)
+    replay = await anext(stream)
+    assert "event: snapshot" in replay and '"background": true' in replay
+    assert '"tool_error"' in replay
+    await stream.aclose()
+
+    release["slow"].set()
+    assert await asyncio.wait_for(manager.result(rid), 5) == "Received 2 results."
+    assert len(seen_results) == (2 if notify == "any" else 1)
+    assert {status for status, _ in seen_results[-1]} == {"success", "error"}
+    assert await asyncio.wait_for(manager.result(second["run_id"]), 5) == "next answer"
+
+    events = manager.runs[rid].projection
+    tool_events = [
+        event for event in events if event["data"].get("tool_name") == "background_work"
+    ]
+    assert [event["event"] for event in tool_events] == [
+        "tool_start",
+        "tool_start",
+        "tool_error",
+        "tool_end",
+    ]
+    assert all(
+        event["data"].get("background") is True and event["data"]["run_id"] == rid
+        for event in tool_events
+    )
+    assert sum(event["event"] == "final" for event in events) == 1
+    snapshot = await manager.agent.aget_state(
+        {"configurable": {"thread_id": first["thread_id"]}}
+    )
+    assert (
+        len(
+            [
+                m
+                for m in snapshot.values["messages"]
+                if isinstance(m, ToolMessage) and m.name == "background_work"
+            ]
+        )
+        == 2
+    )
+    await manager.shutdown()
+
+
+async def test_cancelling_chat_waits_for_background_tools_without_waking_agent(
+    manager, monkeypatch
+):
+    slow_started = asyncio.Event()
+    slow_cleaned = asyncio.Event()
+    model_inputs = []
+
+    @tool
+    async def background_work(name: str) -> str:
+        """Return a result or wait to be cancelled."""
+        if name == "fast":
+            return "already finished"
+        slow_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            slow_cleaned.set()
+        return "unreachable"
+
+    class Model:
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            model_inputs.append(messages[-1])
+            if messages[-1].content != "start":
+                return AIMessage(content="Continuing.")
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "dispatch",
+                        "name": "run_async_tools",
+                        "args": {
+                            "notify": "all",
+                            "calls": [
+                                {"name": "background_work", "args": {"name": "fast"}},
+                                {"name": "background_work", "args": {"name": "slow"}},
+                            ],
+                        },
+                    }
+                ],
+            )
+
+    monkeypatch.setattr("agent.graphs.model_call.load_chat_model", lambda _: Model())
+
+    async def selection(_):
+        return None
+
+    monkeypatch.setattr(manager, "_selection", selection)
+    manager.agent = SupervisorAgent(
+        config=manager.config,
+        checkpointer=InMemorySaver(),
+        tools=[background_work],
+    ).get_agent()
+    run = await submit(manager, "start")
+    rid = run["run_id"]
+    await asyncio.wait_for(slow_started.wait(), 5)
+    await until(
+        lambda: (
+            len(model_inputs) == 2
+            and any(
+                event["event"] == "tool_end"
+                and event["data"].get("tool_name") == "background_work"
+                for event in manager.runs[rid].projection
+            )
+        )
+    )
+    assert (await asyncio.wait_for(manager.cancel(rid), 5))["status"] == "cancelled"
+    assert slow_cleaned.is_set()
+    assert len(model_inputs) == 2
+    assert not any(event["event"] == "final" for event in manager.runs[rid].projection)
+    assert not manager.runs[rid].open_tools
+    snapshot = await manager.agent.aget_state(
+        {"configurable": {"thread_id": run["thread_id"]}}
+    )
+    assert not snapshot.next
+    outputs = [
+        (m.status, m.content)
+        for m in snapshot.values["messages"]
+        if isinstance(m, ToolMessage) and m.name == "background_work"
+    ]
+    assert outputs == [
+        ("success", "already finished"),
+        ("error", "Background tool was cancelled."),
+    ]
+    await manager.shutdown()
 
 
 async def test_slow_subscriber_is_detached_and_reconnects_with_snapshot(manager):

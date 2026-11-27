@@ -652,8 +652,10 @@ export function reduceChatEvent(
           : undefined;
       if (existing) break;
 
-      addAgentStatusEffect(effects, "tool_calling");
-      next = endAssistantSegment(next);
+      if (data.background !== true) {
+        addAgentStatusEffect(effects, "tool_calling");
+        next = endAssistantSegment(next);
+      }
       const name =
         typeof data.tool_name === "string" ? data.tool_name : "unknown_tool";
       const input = data.input as Record<string, unknown> | undefined;
@@ -720,8 +722,10 @@ export function reduceChatEvent(
       const entry =
         index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
       next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
-      next = endAssistantSegment(next);
-      addAgentStatusEffect(effects, "generating");
+      if (data.background !== true) {
+        next = endAssistantSegment(next);
+        addAgentStatusEffect(effects, "generating");
+      }
       break;
     }
 
@@ -798,8 +802,10 @@ export function reduceChatEvent(
       const entry =
         index >= 0 ? toolCalls[index] : toolCalls[toolCalls.length - 1];
       next = updateRunningToolMessage({ ...next, toolCalls }, name, entry);
-      next = endAssistantSegment(next);
-      addAgentStatusEffect(effects, "generating");
+      if (data.background !== true) {
+        next = endAssistantSegment(next);
+        addAgentStatusEffect(effects, "generating");
+      }
       break;
     }
 
