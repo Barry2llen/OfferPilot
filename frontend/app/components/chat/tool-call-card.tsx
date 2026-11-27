@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router";
 import type { AnalysisToolProgress, ToolCallEntry } from "@/app/lib/chat/types";
 import { analysisDetailPath } from "@/app/lib/analysis-events/links";
-import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
+import i18n from "@/app/lib/i18n";
 
 type ToolStatus = ToolCallEntry["status"];
 
@@ -35,7 +35,7 @@ interface QueryToolOutput {
 
 const statusLabelKeys: Record<ToolStatus, string> = {
   running: "chat.toolRunning",
-  success: "",
+  success: "chat.toolSuccess",
   error: "chat.toolFailed",
 };
 
@@ -81,7 +81,7 @@ export default function ToolCallCard({
   return (
     <div className="py-1">
       <div
-        className={`mx-auto w-full max-w-3xl rounded-xl border bg-white/60 ${
+        className={`mx-auto w-full max-w-3xl rounded-xl border bg-surface-primary/60 ${
           entry.status === "error" ? "border-error-text/25" : "border-border-default"
         }`}
       >
@@ -105,7 +105,7 @@ export default function ToolCallCard({
               </span>
               {statusLabel && (
                 <span
-                  className={`shrink-0 text-[11px] font-medium ${
+                  className={`shrink-0 text-xs font-medium ${
                     statusClassNames[entry.status]
                   }`}
                 >
@@ -136,7 +136,7 @@ export default function ToolCallCard({
         {entry.analysis && (
           <div className="px-3 pb-2 text-xs">
             <Link to={analysisDetailPath(entry.analysis.resourceType, entry.analysis.resourceId)}
-              className="font-medium text-primary-600 hover:text-primary-700">
+              className="font-medium text-brand-blue hover:underline">
               {i18n.t("chat.openAnalysis")} <span aria-hidden="true">→</span>
             </Link>
           </div>
@@ -237,7 +237,7 @@ function QueryToolDetails({ entry }: { entry: ToolCallEntry }) {
 
 function ToolRawDetails({ entry }: { entry: ToolCallEntry }) {
   return (
-    <div className="space-y-2 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-text-secondary">
+    <div className="space-y-2 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text-secondary">
       {entry.input !== undefined && (
         <DetailBlock label="input" value={formatUnknown(entry.input)} />
       )}
@@ -287,7 +287,7 @@ function SearchResultList({ results }: { results: SearchResult[] }) {
             <span className="block truncate font-medium text-text-primary">
               {result.title || result.url}
             </span>
-            <span className="block truncate text-[11px] text-text-muted">
+            <span className="block truncate text-xs text-text-muted">
               {formatUrl(result.url)}
             </span>
           </span>
@@ -430,10 +430,10 @@ function buildSummary(
   if (searchResults.length > 0) {
     return isFetchTool(entry.name)
       ? i18n.t("chat.webResults", {
-          count: formatLocaleNumber(searchResults.length),
+          count: searchResults.length,
         })
       : i18n.t("chat.searchResults", {
-          count: formatLocaleNumber(searchResults.length),
+          count: searchResults.length,
         });
   }
   if (showSearchEmpty) {

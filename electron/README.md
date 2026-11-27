@@ -2,8 +2,11 @@
 
 OfferPilot Electron starts FastAPI and Vite in development. Packaged builds run
 one frozen FastAPI service that serves both APIs and the React SPA. Preload
-exposes only `window.offerPilotRuntime.apiBaseUrl`; context isolation stays
-on and Node integration stays off.
+exposes only `window.offerPilotRuntime`: `apiBaseUrl`, `platform` and, on
+Windows/Linux, `windowControls` wrapper functions (`minimize`,
+`toggleMaximize`, `close`, `isMaximized`, `onMaximizedChange`). Context
+isolation stays on, Node integration stays off, and `ipcRenderer` is never
+exposed.
 
 ## Development and requirements
 
@@ -144,7 +147,8 @@ The workflow remains named `Release` in
 
 1. Dispatch a `bump-patch`, `bump-minor` or `bump-major` from `main`.
 2. Review and merge `release/vX.Y.Z`. Root/frontend/Electron versions and
-   both sidebar labels are synchronized; dependency versions remain locked.
+   both sidebar `nav.version` labels (`vX.Y.Z`, shown beside the brand name)
+   are synchronized; dependency versions remain locked.
 3. The merge is tagged `vX.Y.Z`. Existing tags are never moved; re-running
    the same merge accepts a tag only when it already targets that commit.
 4. Windows and Ubuntu 22.04 build jobs upload artifacts without publishing.
@@ -207,3 +211,20 @@ before a new log is opened. Invalid external bytes appear as an
 an encoding or inserting replacement characters. Historical text is not
 rewritten. These changes do not change the system code page or GPU settings;
 AMD/Chromium diagnostics remain visible.
+
+
+## Responsive window and appearance
+
+The shared frontend implements desktop, tablet-width and narrow-window layouts.
+The default BrowserWindow size is 1280×820, with a 640×560 minimum. On Windows
+and Linux the window uses `titleBarStyle: 'hidden'` without a title bar overlay;
+the renderer draws minimize/maximize/close buttons (46×72px, hover feedback, red
+close hover) whose bottom edge lines up with the 72px header divider. They call
+the main process through the `window-controls:*` IPC channels, which only accept
+the main window as sender, and the main process pushes maximize state changes so
+the restore icon stays accurate. The buttons are repeated inside open dialogs
+because native modal dialogs render in the top layer. macOS keeps its native
+traffic lights and title bar overlay. The frontend light/dark/system preference
+updates its theme-color metadata; Electron handles did-change-theme-color to
+synchronize the window background.
+See [the shared UI specification](../frontend/DESIGN.md).

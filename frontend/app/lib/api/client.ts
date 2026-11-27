@@ -1,12 +1,6 @@
 import { getCurrentLocale } from "@/app/lib/i18n";
-
-declare global {
-  interface Window {
-    offerPilotRuntime?: {
-      apiBaseUrl?: string;
-    };
-  }
-}
+// Declares window.offerPilotRuntime.
+import "@/app/lib/desktop";
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");

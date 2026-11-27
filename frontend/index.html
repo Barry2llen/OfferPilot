@@ -2,12 +2,24 @@
 <html lang="en-US">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta
       name="description"
       content="An AI career assistant powered by large language models and Agent workflows"
     />
     <link rel="icon" type="image/svg+xml" href="/file.svg" />
+    <meta name="theme-color" content="#ffffff" />
+    <script>
+      let mode = 'system';
+      try {
+        const stored = localStorage.getItem('offerpilot.theme');
+        if (stored === 'light' || stored === 'dark') mode = stored;
+      } catch { /* use the system preference when storage is unavailable */ }
+      const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#121212' : '#ffffff';
+    </script>
     <title>OfferPilot - AI Career Assistant</title>
   </head>
   <body>

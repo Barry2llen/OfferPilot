@@ -13,6 +13,7 @@ import { reduceAnalysisEvent, updateAnalysisTaskMap } from "@/app/lib/analysis-e
 
 interface AppState {
   currentModelSelection: number | null;
+  modelSelectionInitialized: boolean;
   currentThreadId: string | null;
   currentThreadRequiresImageInput: boolean;
   agentStatus: AgentStatus;
@@ -23,6 +24,7 @@ interface AppState {
 
 type AppAction =
   | { type: "SET_MODEL_SELECTION"; payload: number | null }
+  | { type: "INITIALIZE_MODEL_SELECTION"; payload: number }
   | { type: "SET_THREAD_ID"; payload: string | null }
   | { type: "SET_THREAD_REQUIRES_IMAGE_INPUT"; payload: boolean }
   | { type: "SET_AGENT_STATUS"; payload: AgentStatus }
@@ -33,6 +35,7 @@ const SELECTION_STORAGE_KEY = "offerpilot.chat.selection";
 
 const initialState: AppState = {
   currentModelSelection: null,
+  modelSelectionInitialized: false,
   currentThreadId: null,
   currentThreadRequiresImageInput: false,
   agentStatus: "idle",
@@ -65,8 +68,16 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ? { ...state.analysisEventVersions, [resource]: state.analysisEventVersions[resource] + 1 }
         : state.analysisEventVersions };
     }
+    case "INITIALIZE_MODEL_SELECTION":
     case "SET_MODEL_SELECTION":
-      return { ...state, currentModelSelection: action.payload };
+      if (action.type === "INITIALIZE_MODEL_SELECTION" && state.modelSelectionInitialized) {
+        return state;
+      }
+      return {
+        ...state,
+        currentModelSelection: action.payload,
+        modelSelectionInitialized: true,
+      };
     case "SET_THREAD_ID":
       return { ...state, currentThreadId: action.payload };
     case "SET_THREAD_REQUIRES_IMAGE_INPUT":
@@ -98,15 +109,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         parsed && typeof parsed === "object"
           ? (parsed as Record<string, unknown>)
           : {};
+      const model =
+        typeof saved.model === "number" &&
+        Number.isSafeInteger(saved.model) &&
+        saved.model > 0
+          ? saved.model
+          : null;
       return {
         ...defaults,
         currentThreadId: typeof saved.thread === "string" ? saved.thread : null,
-        currentModelSelection:
-          typeof saved.model === "number" &&
-          Number.isSafeInteger(saved.model) &&
-          saved.model > 0
-            ? saved.model
-            : null,
+        currentModelSelection: model,
+        // An omitted model still needs a default. A stored null preserves the empty selection.
+        modelSelectionInitialized: model !== null || saved.model === null,
       };
     } catch {
       return defaults;
@@ -118,13 +132,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         SELECTION_STORAGE_KEY,
         JSON.stringify({
           thread: state.currentThreadId,
-          model: state.currentModelSelection,
+          model: state.modelSelectionInitialized ? state.currentModelSelection : undefined,
         }),
       );
     } catch {
       /* Persistence is optional; keep the in-memory selection. */
     }
-  }, [state.currentThreadId, state.currentModelSelection]);
+  }, [state.currentThreadId, state.currentModelSelection, state.modelSelectionInitialized]);
   const onAnalysisEvent = useCallback((event: AnalysisEvent) => {
     dispatch({ type: "ANALYSIS_EVENT", payload: event });
   }, []);
@@ -149,6 +163,10 @@ export function useAppActions() {
     setModelSelection: useCallback(
       (id: number | null) =>
         dispatch({ type: "SET_MODEL_SELECTION", payload: id }),
+      [dispatch],
+    ),
+    initializeModelSelection: useCallback(
+      (id: number) => dispatch({ type: "INITIALIZE_MODEL_SELECTION", payload: id }),
       [dispatch],
     ),
     setThreadId: useCallback(

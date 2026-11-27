@@ -3,7 +3,10 @@ import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
 import type { PendingQueryInput, QueryAnswer } from "@/app/lib/api/types";
 
+export interface QueryDraft { selectedIds: string[]; freeText: string; note: string; }
 interface Props {
+  draft?: QueryDraft;
+  onDraftChange?: (draft: QueryDraft) => void;
   input: PendingQueryInput;
   onAnswer: (answer: QueryAnswer) => void;
 }
@@ -12,25 +15,23 @@ export default function QueryDecisionComposer(props: Props) {
   return <DecisionForm key={props.input.request_id} {...props} />;
 }
 
-function DecisionForm({ input, onAnswer }: Props) {
+function DecisionForm({ input, onAnswer, draft, onDraftChange }: Props) {
   const { t } = useTranslation();
   const id = useId();
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [freeText, setFreeText] = useState("");
-  const [note, setNote] = useState("");
+  const [localDraft, setLocalDraft] = useState<QueryDraft>({ selectedIds: [], freeText: "", note: "" });
+  const { selectedIds, freeText, note } = draft ?? localDraft;
+  const change = (patch: Partial<QueryDraft>) => {
+    const next = { ...(draft ?? localDraft), ...patch };
+    if (onDraftChange) onDraftChange(next); else setLocalDraft(next);
+  };
   const multiple = input.selection_mode === "multiple";
   const canSubmit = selectedIds.length > 0 || Boolean(freeText.trim());
 
   const choose = (optionId: string) => {
-    if (!multiple) {
-      setSelectedIds([optionId]);
-      setFreeText("");
-      return;
-    }
-    setSelectedIds((current) => current.includes(optionId)
-      ? current.filter((value) => value !== optionId)
-      : [...current, optionId]);
+    if (!multiple) { change({ selectedIds: [optionId], freeText: "" }); return; }
+    change({ selectedIds: selectedIds.includes(optionId) ? selectedIds.filter((value) => value !== optionId) : [...selectedIds, optionId] });
   };
+
   const submit = () => {
     if (!canSubmit) return;
     onAnswer({
@@ -49,7 +50,7 @@ function DecisionForm({ input, onAnswer }: Props) {
   };
 
   return (
-    <div className="rounded-[1.45rem] border border-border-light bg-white px-4 py-3.5 text-text-primary shadow-[0_0_22px_rgba(44,30,116,0.16)] sm:px-5">
+    <div className="rounded-[1.45rem] border border-border-light bg-surface-primary px-4 py-3.5 text-text-primary shadow-none sm:px-5">
       <fieldset aria-describedby={`${id}-mode`}>
         <legend className="text-sm font-semibold leading-snug sm:text-base">
           {input.question}
@@ -92,24 +93,23 @@ function DecisionForm({ input, onAnswer }: Props) {
           <textarea
             value={freeText}
             onChange={(event) => {
-              setFreeText(event.target.value);
-              if (!multiple) setSelectedIds([]);
+              change({ freeText: event.target.value, ...(!multiple ? { selectedIds: [] } : {}) });
             }}
             onKeyDown={onKeyDown}
             rows={1}
             placeholder={t("chat.queryFreeTextPlaceholder")}
-            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary-500/25"
+            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none"
           />
         </label>
         <label className="block text-xs text-text-secondary">
           {t("chat.queryNote")}
           <textarea
             value={note}
-            onChange={(event) => setNote(event.target.value)}
+            onChange={(event) => change({ note: event.target.value })}
             onKeyDown={onKeyDown}
             rows={1}
             placeholder={t("chat.queryNoteOnlyPlaceholder")}
-            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary-500/25"
+            className="mt-1 block min-h-10 w-full resize-y rounded-xl border border-border-light bg-surface-secondary/50 px-3 py-2 text-sm text-text-primary outline-none"
           />
         </label>
         <div className="flex justify-end">

@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { useMediaQuery } from "@/app/hooks/use-media-query";
+import { shouldOpenUpward, useDismiss } from "@/app/hooks/use-dismiss";
+import FormDrawer from "@/app/components/ui/form-drawer";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Button from "@/app/components/ui/button";
+import { selectMenuClassName, selectTriggerClassName } from "@/app/components/ui/select-styles";
 import type { ModelSelectionResponse } from "@/app/lib/api/types";
-import i18n, { formatLocaleNumber } from "@/app/lib/i18n";
+import i18n from "@/app/lib/i18n";
 
 interface ModelSelectionPickerProps {
   models: ModelSelectionResponse[];
+  compact?: boolean;
+  /** Horizontal menu anchor, independent of the trigger's compact styling. */
+  align?: "start" | "end";
   loading: boolean;
   value: number | null;
   disabled?: boolean;
@@ -20,7 +28,7 @@ interface ProviderGroup {
 const providerStyles: Record<string, string> = {
   DeepSeek: "bg-info-bg text-info-text",
   Google: "bg-success-bg text-success-text",
-  OpenAI: "bg-text-charcoal text-white",
+  OpenAI: "bg-text-charcoal text-on-accent",
   Anthropic: "bg-warning-bg text-warning-text",
   "OpenAI Compatible": "bg-surface-secondary text-text-secondary",
 };
@@ -126,13 +134,13 @@ function SelectionList({
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <span
-                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${providerClass(group.provider)}`}
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${providerClass(group.provider)}`}
               >
                 {group.provider}
               </span>
-              <span className="text-[11px] text-text-muted">
+              <span className="text-xs text-text-muted">
                 {t("chat.modelsCount", {
-                  count: formatLocaleNumber(group.items.length),
+                  count: group.items.length,
                 })}
               </span>
             </div>
@@ -148,14 +156,14 @@ function SelectionList({
                   onClick={() => onSelect(model.id)}
                   className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
                     selected
-                      ? "bg-text-charcoal text-white shadow-sm"
+                      ? "bg-text-charcoal text-on-accent shadow-sm"
                       : "hover:bg-surface-secondary"
                   }`}
                 >
                   <span
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
                       selected
-                        ? "bg-white/15 text-white"
+                        ? "bg-surface-primary/15 text-on-accent"
                         : providerClass(group.provider)
                     }`}
                   >
@@ -167,7 +175,7 @@ function SelectionList({
                     </span>
                     <span
                       className={`block truncate text-xs ${
-                        selected ? "text-white/65" : "text-text-muted"
+                        selected ? "text-on-accent/65" : "text-text-muted"
                       }`}
                     >
                       {model.provider.name}
@@ -194,13 +202,18 @@ export default function ModelSelectionPicker({
   loading,
   value,
   disabled = false,
+  compact = false,
+  align = compact ? "end" : "start",
   onChange,
 }: ModelSelectionPickerProps) {
   const { t } = useTranslation();
+  const mobile = useMediaQuery("(max-width: 767px)");
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
+  const [upward, setUpward] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const selected = useMemo(
     () => models.find((model) => model.id === value) ?? null,
@@ -209,30 +222,12 @@ export default function ModelSelectionPicker({
   const groups = useMemo(() => groupModels(models, query), [models, query]);
   const isDisabled = disabled || loading || models.length === 0;
 
-  useEffect(() => {
-    if (!open && !expanded) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (open && !rootRef.current?.contains(event.target as Node)) {
-        setQuery("");
-        setOpen(false);
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setQuery("");
-        setOpen(false);
-        setExpanded(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [expanded, open]);
+  // The drawer handles its own Escape; outside clicks only close the inline popover.
+  useDismiss(rootRef, open, (reason) => {
+    setQuery("");
+    setOpen(false);
+    if (reason === "escape") triggerRef.current?.focus();
+  });
 
   const handleSelect = (id: number | null) => {
     onChange(id);
@@ -260,8 +255,9 @@ export default function ModelSelectionPicker({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          aria-label={t("chat.searchModels")}
           placeholder={t("chat.searchModels")}
-          className="h-10 w-full rounded-xl bg-surface-secondary pl-9 pr-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
+          className="h-10 w-full rounded-xl bg-surface-secondary pl-9 pr-3 text-sm text-text-primary outline-none transition"
         />
       </div>
       <div className={listClassName}>
@@ -278,50 +274,49 @@ export default function ModelSelectionPicker({
 
   return (
     <div ref={rootRef} className="relative flex min-w-0 items-center gap-2">
-      <span className="shrink-0 text-xs text-text-muted">{t("chat.modelLabel")}</span>
+      {!compact && <span className="shrink-0 text-xs text-text-muted">{t("chat.modelLabel")}</span>}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => {
           if (!isDisabled) {
+            if (mobile) { setExpanded(true); return; }
             if (open) setQuery("");
+            else setUpward(shouldOpenUpward(triggerRef.current, 480));
             setOpen(!open);
           }
         }}
         disabled={isDisabled}
-        title={disabled ? t("chat.modelSwitchDisabled") : undefined}
-        className="flex h-9 w-60 max-w-[52vw] items-center gap-2 rounded-full bg-surface-secondary px-4 text-left text-sm text-text-primary shadow-sm outline-none transition hover:bg-border-light focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary-500/25 disabled:cursor-not-allowed disabled:text-text-muted disabled:shadow-none"
+        data-open={open}
+        aria-haspopup="dialog"
+        aria-expanded={open || expanded}
+        aria-label={t("chat.chooseModel")}
+        title={disabled ? t("chat.modelSwitchDisabled") : selected ? modelLabel(selected) : undefined}
+        className={`${selectTriggerClassName("md", "outline")} h-9 w-auto min-w-40 max-w-72`}
       >
         <span className="min-w-0 flex-1 truncate">
           {loading
             ? t("common.loading")
             : selected
-              ? modelLabel(selected)
+              ? compact ? selected.model_name : modelLabel(selected)
               : models.length === 0
                 ? t("chat.noModels")
                 : t("chat.noSelection")}
         </span>
-        <svg
-          className={`h-4 w-4 shrink-0 text-text-muted transition ${open ? "rotate-180" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+        <ChevronDown
+          aria-hidden="true"
+          size={16}
+          className={`shrink-0 text-text-muted transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[26rem] max-w-[calc(100vw-2rem)] rounded-2xl bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.18)] ring-1 ring-black/5">
+        <div role="dialog" aria-label={t("chat.chooseModel")} className={`${selectMenuClassName} ${align === "end" ? "right-0" : "left-0"} ${upward ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]"} w-[26rem] max-w-[calc(100vw-2rem)] p-3`}>
           {renderPickerContent("mt-4 max-h-[22rem] overflow-y-auto pr-1")}
           <div className="mt-3 flex items-center justify-between border-t border-border-light pt-3">
             <span className="text-xs text-text-muted">
               {t("chat.modelsCount", {
-                count: formatLocaleNumber(models.length),
+                count: models.length,
               })}
             </span>
             <Button
@@ -338,55 +333,9 @@ export default function ModelSelectionPicker({
         </div>
       )}
 
-      {expanded && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-            onClick={() => {
-              setQuery("");
-              setExpanded(false);
-            }}
-          />
-          <div className="relative flex max-h-[86vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
-            <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
-              <div>
-                <h3 className="font-display text-lg font-semibold text-text-primary">
-                  {t("chat.chooseModel")}
-                </h3>
-                <p className="text-xs text-text-muted">
-                  {t("chat.browseModels")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setExpanded(false);
-                }}
-                className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
-                aria-label={t("chat.closeModelSelection")}
-              >
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {renderPickerContent("mt-4 pr-1")}
-            </div>
-          </div>
-        </div>
-      )}
+      <FormDrawer open={expanded} title={t("chat.chooseModel")} onClose={() => { setQuery(""); setExpanded(false); }}>
+        {renderPickerContent("mt-4")}
+      </FormDrawer>
     </div>
   );
 }

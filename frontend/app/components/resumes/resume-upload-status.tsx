@@ -18,7 +18,7 @@ export default function ResumeUploadStatus() {
       : t("resume.uploadInProgress");
 
   return (
-    <div className="fixed bottom-4 left-4 z-[90] w-[min(360px,calc(100vw-2rem))] rounded-xl border border-border-default bg-white p-4 shadow-elevated">
+    <div className="fixed bottom-4 left-4 z-[90] w-[min(360px,calc(100vw-2rem))] rounded-xl border border-border-default bg-surface-primary p-4 shadow-elevated">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-text-primary">{title}</p>

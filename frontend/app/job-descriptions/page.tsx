@@ -1,9 +1,10 @@
+import FormDrawer from "@/app/components/ui/form-drawer";
 import { Link } from "react-router";
+import { BriefcaseBusiness, ImagePlus, Link2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Badge from "@/app/components/ui/badge";
 import Button, { buttonClassName } from "@/app/components/ui/button";
-import Card from "@/app/components/ui/card";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import AnalysisTaskStatus from "@/app/components/analysis/analysis-task-status";
 import ChatAttachmentCard from "@/app/components/chat/chat-attachment-card";
@@ -95,7 +96,7 @@ export default function JobDescriptionsPage() {
   const runningRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const { state } = useAppContext();
-  const { setModelSelection } = useAppActions();
+  const { initializeModelSelection, setModelSelection } = useAppActions();
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -116,9 +117,7 @@ export default function JobDescriptionsPage() {
         if (!mounted) return;
         setModels(modelItems);
         setLibraryFiles(fileItems.filter(isImageFile));
-        if (state.currentModelSelection === null && modelItems.length > 0) {
-          setModelSelection(modelItems[0].id);
-        }
+        if (modelItems.length > 0) initializeModelSelection(modelItems[0].id);
       })
       .catch(() => {
         if (!mounted) return;
@@ -132,7 +131,7 @@ export default function JobDescriptionsPage() {
     return () => {
       mounted = false;
     };
-  }, [setModelSelection, state.currentModelSelection]);
+  }, [initializeModelSelection]);
 
   const selectedLibraryFiles = useMemo(() => {
     const selected = new Set(selectedFileIds);
@@ -313,103 +312,87 @@ export default function JobDescriptionsPage() {
 
   if (loading) {
     return (
-      <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6 lg:py-8">
+      <div className="electron-titlebar-safe-top min-h-full bg-surface-primary"><div className="mx-auto max-w-[1280px] px-5 pb-10 sm:px-8 lg:px-10">
         <Skeleton className="mb-2 h-8 w-32 rounded-lg" />
         <Skeleton className="mb-6 h-4 w-72 rounded-lg" />
-        <Skeleton className="mb-6 h-80 rounded-[20px]" />
-        <div className="space-y-3">
-          {[1, 2, 3].map((item) => (
-            <Skeleton key={item} className="h-32 rounded-[20px]" />
-          ))}
+        <div className="jd-workspace">
+          <Skeleton className="h-96 rounded-2xl" />
+          <div className="space-y-2">
+            {[1, 2, 3].map((item) => (
+              <Skeleton key={item} className="h-28 rounded-xl" />
+            ))}
+          </div>
         </div>
-      </div>
+      </div></div>
     );
   }
 
   if (error) {
     return (
-      <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6">
+      <div className="electron-titlebar-safe-top min-h-full bg-surface-primary"><div className="mx-auto max-w-[1280px] px-5 pb-10 sm:px-8 lg:px-10">
         <div className="py-20 text-center">
           <p className="mb-4 text-sm text-error-text">{error}</p>
           <Button variant="secondary" onClick={refetch}>
             {t("common.retry")}
           </Button>
         </div>
-      </div>
+      </div></div>
     );
   }
 
+  const imageCount = localImages.length + selectedLibraryFiles.length;
+
   return (
-    <div className="electron-titlebar-safe-top mx-auto max-w-4xl p-6 lg:py-8">
-      <div className="mb-6">
+    <div className="electron-titlebar-safe-top min-h-full bg-surface-primary"><div className="mx-auto max-w-[1280px] px-5 pb-10 sm:px-8 lg:px-10">
+      <header className="mb-6">
         <h1 className="font-display text-2xl font-semibold text-text-primary">
           {t("jobDescription.title")}
         </h1>
         <p className="mt-1 text-sm text-text-muted">
           {t("jobDescription.description")}
         </p>
-      </div>
+      </header>
 
-      <Card shadow="none" radius="lg" padding="lg" className="mb-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <ModelSelectionPicker
-            models={models}
-            loading={modelsLoading}
-            value={state.currentModelSelection}
-            disabled={running}
-            onChange={setModelSelection}
-          />
-          {hasNoModel && (
-            <Link
-              to="/settings/providers"
-              className={buttonClassName({ variant: "secondary", size: "sm" })}
-            >
-              {t("settings.title")}
-            </Link>
-          )}
-        </div>
-
-        <div className="grid gap-4">
-          <textarea
-            value={jdText}
-            disabled={running}
-            onChange={(event) => setJdText(event.target.value)}
-            placeholder={t("jobDescription.textPlaceholder")}
-            className="min-h-40 resize-y rounded-2xl border border-border-light bg-white px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={JD_IMAGE_ACCEPT}
-            onChange={handleFileChange}
-            className="hidden"
-          />
-
-          <div className="rounded-2xl border border-dashed border-border-default bg-surface-primary p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-text-primary">{t("jobDescription.chooseImages")}</p>
-                <p className="mt-1 text-xs text-text-muted">
-                  {t("jobDescription.imageDescription")}
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
+      <div className="jd-workspace">
+        <div className="min-w-0 space-y-4">
+          <section className="jd-composer" aria-label={t("jobDescription.title")}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-light px-4 py-3">
+              <ModelSelectionPicker
+                models={models}
+                loading={modelsLoading}
+                value={state.currentModelSelection}
                 disabled={running}
-                onClick={() => setImagePickerOpen(true)}
-              >
-                {t("jobDescription.chooseImages")}
-              </Button>
+                onChange={setModelSelection}
+              />
+              {hasNoModel && (
+                <Link
+                  to="/settings/providers"
+                  className={buttonClassName({ variant: "secondary", size: "sm" })}
+                >
+                  {t("settings.title")}
+                </Link>
+              )}
             </div>
 
-            {localImages.length === 0 && selectedLibraryFiles.length === 0 ? (
-              <p className="mt-4 rounded-xl bg-white px-3 py-4 text-center text-xs text-text-muted">
-                {t("jobDescription.notSelectedImages")}
-              </p>
-            ) : (
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <textarea
+              aria-label={t("jobDescription.textPlaceholder")}
+              value={jdText}
+              disabled={running}
+              onChange={(event) => setJdText(event.target.value)}
+              placeholder={t("jobDescription.textPlaceholder")}
+              className="block min-h-64 w-full resize-y bg-transparent px-5 py-4 text-[15px] leading-7 text-text-primary placeholder:text-text-muted disabled:opacity-60"
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={JD_IMAGE_ACCEPT}
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
+            {imageCount > 0 && (
+              <div className="grid grid-cols-1 gap-2 px-4 pb-4 sm:grid-cols-2">
                 {localImages.map((item) => (
                   <ChatAttachmentCard
                     key={item.key}
@@ -443,18 +426,49 @@ export default function JobDescriptionsPage() {
                 ))}
               </div>
             )}
-          </div>
 
-          <input
-            value={sourceUrl}
-            disabled={running}
-            onChange={(event) => setSourceUrl(event.target.value)}
-            placeholder={t("jobDescription.sourceUrl")}
-            className="h-11 rounded-2xl border border-border-light bg-white px-4 text-sm text-text-primary outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-          />
+            <label className="flex items-center gap-2.5 border-t border-border-light px-5">
+              <Link2 size={16} className="shrink-0 text-text-muted" aria-hidden="true" />
+              <input
+                type="url"
+                aria-label={t("jobDescription.sourceUrl")}
+                value={sourceUrl}
+                disabled={running}
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder={t("jobDescription.sourceUrl")}
+                className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted disabled:opacity-60"
+              />
+            </label>
 
-          {task && (
-            <div className="rounded-2xl bg-surface-secondary p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-light px-3 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={running}
+                  onClick={() => setImagePickerOpen(true)}
+                  title={t("jobDescription.imageDescription")}
+                >
+                  <ImagePlus size={16} aria-hidden="true" />
+                  {t("jobDescription.chooseImages")}
+                  {imageCount > 0 && (
+                    <span className="rounded-full bg-surface-secondary px-1.5 text-xs tabular-nums text-text-primary">
+                      {formatLocaleNumber(imageCount)}
+                    </span>
+                  )}
+                </Button>
+                <span className="hidden min-w-0 truncate text-xs text-text-muted md:inline">
+                  {imageCount > 0 ? t("jobDescription.imageDescription") : t("jobDescription.notSelectedImages")}
+                </span>
+              </div>
+              <Button size="sm" pill className="px-5" disabled={disabled || !hasInput} onClick={handleSubmit}>
+                {running ? t("jobDescription.analyzing") : t("jobDescription.start")}
+              </Button>
+            </div>
+          </section>
+
+          <div className="jd-progress" aria-live="polite">{task && (
+            <div className="rounded-xl border border-border-light bg-surface-secondary p-4">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-text-primary">
                   {task.message}
@@ -468,7 +482,7 @@ export default function JobDescriptionsPage() {
                   </Link>
                 )}
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white">
+              <div className="h-1.5 overflow-hidden rounded-full bg-surface-primary">
                 <div
                   className={`h-full transition-all ${
                     task.status === "error" ? "bg-error-text" : "bg-primary-500"
@@ -483,47 +497,56 @@ export default function JobDescriptionsPage() {
                 <p className="mt-2 text-xs text-error-text">{task.error}</p>
               )}
             </div>
-          )}
+          )}</div>
+        </div>
 
-          <div className="flex justify-end">
-            <Button disabled={disabled || !hasInput} onClick={handleSubmit}>
-              {running ? t("jobDescription.analyzing") : t("jobDescription.start")}
-            </Button>
+        <section className="jd-saved min-w-0" aria-labelledby="jd-saved-title">
+          <div className="mb-3 flex items-baseline justify-between gap-2 px-1">
+            <h2 id="jd-saved-title" className="text-sm font-semibold text-text-primary">
+              {t("appearance.savedAnalyses")}
+            </h2>
+            {data && data.length > 0 && (
+              <span className="text-xs tabular-nums text-text-muted">{formatLocaleNumber(data.length)}</span>
+            )}
           </div>
-        </div>
-      </Card>
-
-      {data && data.length === 0 ? (
-        <div className="rounded-[20px] border-2 border-dashed border-border-default bg-surface-primary px-4 py-16 text-center">
-          <p className="mb-1 text-sm font-medium text-text-primary">{t("jobDescription.noAnalyses")}</p>
-          <p className="text-xs text-text-muted">{t("jobDescription.noAnalysesDescription")}</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {data?.map((item) => (
-            <Card key={item.id} shadow="none" radius="lg" padding="md">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-base font-semibold text-text-primary">
-                      {item.job_title || `JD #${item.id}`}
-                    </h2>
+          {data && data.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border-default px-4 py-12 text-center">
+              <BriefcaseBusiness size={22} strokeWidth={1.6} className="mx-auto mb-3 text-text-muted" aria-hidden="true" />
+              <p className="mb-1 text-sm font-medium text-text-primary">{t("jobDescription.noAnalyses")}</p>
+              <p className="text-xs text-text-muted">{t("jobDescription.noAnalysesDescription")}</p>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {data?.map((item) => (
+                <li key={item.id} className="jd-saved-card relative rounded-xl border border-border-light p-4 transition-colors">
+                  <div className="flex items-start gap-2">
+                    <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
+                      {/* Stretched link: the whole card opens the detail page. */}
+                      <Link to={`/job-descriptions/${item.id}`} className="jd-card-link after:absolute after:inset-0 after:rounded-xl">
+                        {item.job_title || `JD #${item.id}`}
+                      </Link>
+                    </h3>
                     <Badge variant={statusVariant(item.status)} size="sm">
                       {statusLabel(item.status)}
                     </Badge>
                   </div>
-                  <p className="text-sm text-text-secondary">
+                  <p className="mt-1 truncate text-xs text-text-secondary">
                     {[item.company_name, item.primary_location]
                       .filter(Boolean)
                       .join(" · ") || t("jobDescription.unidentifiedCompany")}
                   </p>
                   {item.summary && (
-                    <p className="mt-2 line-clamp-2 text-sm text-text-muted">
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-text-muted">
                       {item.summary}
                     </p>
                   )}
                   {item.error_message && (
-                    <p className="mt-2 text-sm text-error-text">{item.error_message}</p>
+                    <p
+                      className="mt-2 line-clamp-2 break-words text-xs text-error-text"
+                      title={item.error_message}
+                    >
+                      {item.error_message}
+                    </p>
                   )}
                   <AnalysisTaskStatus
                     task={
@@ -532,34 +555,32 @@ export default function JobDescriptionsPage() {
                       ]
                     }
                   />
-                  <p className="mt-2 text-xs text-text-muted">
-                    {formatTime(item.created_at)} · {t("jobDescription.countBlocksFacts", {
-                      blocks: formatLocaleNumber(item.block_count),
-                      facts: formatLocaleNumber(item.fact_count),
-                    })}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Link
-                    to={`/job-descriptions/${item.id}`}
-                    className={buttonClassName({ variant: "secondary", size: "sm" })}
-                  >
-                    {t("jobDescription.detail")}
-                  </Link>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    disabled={deleting === item.id}
-                    onClick={() => setConfirmDelete(item)}
-                  >
-                    {deleting === item.id ? t("jobDescription.deleteInProgress") : t("common.delete")}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs tabular-nums text-text-muted">
+                      {formatTime(item.created_at)}
+                      {item.status === "parsed" &&
+                        ` · ${t("jobDescription.blockCount", { count: item.block_count })} · ${t(
+                          "jobDescription.factCount",
+                          { count: item.fact_count },
+                        )}`}
+                    </p>
+                    <button
+                      type="button"
+                      className="jd-delete relative z-10 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted transition hover:bg-error-bg hover:text-error-text disabled:opacity-40"
+                      aria-label={deleting === item.id ? t("jobDescription.deleteInProgress") : t("common.delete")}
+                      title={deleting === item.id ? t("jobDescription.deleteInProgress") : t("common.delete")}
+                      disabled={deleting === item.id}
+                      onClick={() => setConfirmDelete(item)}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}
@@ -576,115 +597,87 @@ export default function JobDescriptionsPage() {
         loading={!!deleting}
       />
 
-      {imagePickerOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-            onClick={() => setImagePickerOpen(false)}
-          />
-          <div className="relative flex max-h-[82vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
-            <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
-              <div>
-                <h3 className="font-display text-lg font-semibold text-text-primary">
-                  {t("jobDescription.pickerTitle")}
-                </h3>
-                <p className="text-xs text-text-muted">
-                  {t("jobDescription.pickerDescription")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setImagePickerOpen(false)}
-                className="rounded-lg p-1.5 text-text-muted transition hover:bg-surface-secondary hover:text-text-primary"
-                aria-label={t("jobDescription.closePicker")}
-                title={t("common.close")}
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="border-b border-border-light px-5 py-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={running}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {t("jobDescription.uploadLocalImage")}
-                </Button>
-                <input
-                  value={imagePickerQuery}
-                  onChange={(event) => setImagePickerQuery(event.target.value)}
-                  placeholder={t("jobDescription.searchLibraryImages")}
-                  className="h-10 min-w-0 flex-1 rounded-xl bg-surface-secondary px-3 text-sm text-text-primary outline-none transition focus:bg-white focus:ring-2 focus:ring-primary-500/25"
-                />
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {libraryFiles.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border-default px-4 py-10 text-center">
-                  <p className="text-sm font-medium text-text-primary">
-                    {t("jobDescription.libraryNoImages")}
-                  </p>
-                  <p className="mt-1 text-xs text-text-muted">
-                    {t("jobDescription.libraryNoImagesDescription")}
-                  </p>
-                </div>
-              ) : filteredLibraryFiles.length === 0 ? (
-                <p className="py-8 text-center text-sm text-text-muted">
-                  {t("jobDescription.noMatchingImages")}
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {filteredLibraryFiles.map((file) => {
-                    const selected = selectedFileIdSet.has(file.id);
-                    return (
-                      <ChatAttachmentCard
-                        key={file.id}
-                        onClick={() => {
-                          if (!running) toggleLibraryFile(file.id);
-                        }}
-                        selected={selected}
-                        variant="picker"
-                        attachment={{
-                          fileId: file.id,
-                          originalFilename: file.original_filename,
-                          mediaType: file.media_type,
-                          rawUrl: chatFilesApi.rawUrl(file.id),
-                          sizeBytes: file.size_bytes,
-                          referenceCount: file.reference_count,
-                          createdAt: file.created_at,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between border-t border-border-light px-5 py-4">
-              <span className="text-xs text-text-muted">
-                {t("jobDescription.selectedImages", {
-                  count: formatLocaleNumber(
-                    localImages.length + selectedFileIds.length
-                  ),
-                })}
-              </span>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setImagePickerOpen(false)}
-              >
-                {t("common.done")}
-              </Button>
-            </div>
+      <FormDrawer
+        open={imagePickerOpen}
+        title={t("jobDescription.pickerTitle")}
+        onClose={() => setImagePickerOpen(false)}
+        toolbar={
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={running}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {t("jobDescription.uploadLocalImage")}
+            </Button>
+            <input
+              type="search"
+              value={imagePickerQuery}
+              onChange={(event) => setImagePickerQuery(event.target.value)}
+              aria-label={t("jobDescription.searchLibraryImages")}
+              placeholder={t("jobDescription.searchLibraryImages")}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-border-light bg-surface-primary px-3 text-sm text-text-primary outline-none transition"
+            />
           </div>
-        </div>
-      )}
-    </div>
+        }
+        footer={
+          <>
+            <span className="text-xs text-text-muted">
+              {t("jobDescription.selectedImages", {
+                count: localImages.length + selectedFileIds.length,
+              })}
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setImagePickerOpen(false)}
+            >
+              {t("common.done")}
+            </Button>
+          </>
+        }
+      >
+        {libraryFiles.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border-default px-4 py-10 text-center">
+            <p className="text-sm font-medium text-text-primary">
+              {t("jobDescription.libraryNoImages")}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              {t("jobDescription.libraryNoImagesDescription")}
+            </p>
+          </div>
+        ) : filteredLibraryFiles.length === 0 ? (
+          <p className="py-8 text-center text-sm text-text-muted">
+            {t("jobDescription.noMatchingImages")}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {filteredLibraryFiles.map((file) => {
+              const selected = selectedFileIdSet.has(file.id);
+              return (
+                <ChatAttachmentCard
+                  key={file.id}
+                  onClick={() => {
+                    if (!running) toggleLibraryFile(file.id);
+                  }}
+                  selected={selected}
+                  variant="picker"
+                  attachment={{
+                    fileId: file.id,
+                    originalFilename: file.original_filename,
+                    mediaType: file.media_type,
+                    rawUrl: chatFilesApi.rawUrl(file.id),
+                    sizeBytes: file.size_bytes,
+                    referenceCount: file.reference_count,
+                    createdAt: file.created_at,
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+      </FormDrawer>
+    </div></div>
   );
 }

@@ -1,3 +1,4 @@
+import Modal from "./modal";
 import Button from "./button";
 import { useTranslation } from "react-i18next";
 
@@ -28,18 +29,9 @@ export default function ConfirmDialog({
   const resolvedConfirmLabel = confirmLabel ?? t("common.confirm");
   const resolvedCancelLabel = cancelLabel ?? t("common.cancel");
 
-  if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center">
-      <div
-        className="fixed inset-0 bg-black/20 backdrop-blur-sm"
-        onClick={onCancel}
-      />
-      <div className="relative bg-white rounded-[20px] shadow-elevated p-6 w-full max-w-sm mx-4">
-        <h3 className="font-display text-lg font-semibold text-text-primary mb-2">
-          {title}
-        </h3>
+    <Modal open={open} title={title} onClose={onCancel} busy={loading}>
         <p className="text-sm text-text-secondary mb-6 leading-relaxed">
           {message}
         </p>
@@ -55,7 +47,6 @@ export default function ConfirmDialog({
             {loading ? t("common.processing") : resolvedConfirmLabel}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

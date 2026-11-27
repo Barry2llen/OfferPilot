@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is the Electron desktop shell for OfferPilot. `electron/main.ts` enforces a single instance, starts the managed FastAPI and Vite processes in development, starts only the packaged FastAPI process in production, logs under Electron `userData`, and opens the app URL. `electron/preload.ts` exposes the minimal `window.offerPilotRuntime.apiBaseUrl` bridge. Renderer code is in `src/`; the application UI is served by the sibling `frontend/dist` build or by Vite during development. Packaging scripts live in `scripts/`, and installer config is in `electron-builder.json5`. `dist/`, `dist-electron/`, `release/`, `resources/`, `logs/`, and `node_modules/` are generated or local-only outputs.
+This repository is the Electron desktop shell for OfferPilot. `electron/main.ts` enforces a single instance, starts the managed FastAPI and Vite processes in development, starts only the packaged FastAPI process in production, logs under Electron `userData`, and opens the app URL. `electron/preload.ts` exposes the minimal `window.offerPilotRuntime` bridge: `apiBaseUrl`, `platform`, and on Windows/Linux the `windowControls` wrappers used by the renderer's self-drawn window buttons. Renderer code is in `src/`; the application UI is served by the sibling `frontend/dist` build or by Vite during development. Packaging scripts live in `scripts/`, and installer config is in `electron-builder.json5`. `dist/`, `dist-electron/`, `release/`, `resources/`, `logs/`, and `node_modules/` are generated or local-only outputs.
 
 ## Architecture & Runtime Notes
 

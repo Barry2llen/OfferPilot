@@ -1,3 +1,4 @@
+import FormDrawer from "@/app/components/ui/form-drawer";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { resumesApi } from "@/app/lib/api/resumes";
@@ -8,9 +9,11 @@ import ResumeCard from "@/app/components/resumes/resume-card";
 import ResumeUploader from "@/app/components/resumes/resume-uploader";
 import ConfirmDialog from "@/app/components/ui/confirm-dialog";
 import Button from "@/app/components/ui/button";
+import Select from "@/app/components/ui/select";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import type { ResumeListItem } from "@/app/lib/api/types";
 import { useAppContext } from "@/app/lib/context/app-context";
+import { useResumeUpload } from "@/app/lib/context/resume-upload-context";
 import { analysisTaskKey } from "@/app/lib/analysis-events/types";
 
 interface ResumeStats {
@@ -29,11 +32,20 @@ export default function ResumesPage() {
   const {
     state: { analysisEventVersions, analysisTasks },
   } = useAppContext();
+  const { running: uploading } = useResumeUpload();
   const { addToast } = useToast();
 
   useEffect(() => {
     if (analysisEventVersions.resume > 0) refresh();
   }, [analysisEventVersions.resume, refresh]);
+
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const filtered = useMemo(() => (data ?? []).filter((item) =>
+    (status === "all" || item.parse_status === status) && (item.original_filename ?? "").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+  ).sort((a, b) => sort === "name" ? (a.original_filename ?? "").localeCompare(b.original_filename ?? "") : new Date(b.upload_time).getTime() - new Date(a.upload_time).getTime()), [data, query, status, sort]);
 
   const [deleting, setDeleting] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ResumeListItem | null>(
@@ -52,6 +64,7 @@ export default function ResumesPage() {
   }, [data]);
 
   const handleUploaded = useCallback(() => {
+    setUploadOpen(false);
     refetch();
   }, [refetch]);
 
@@ -83,41 +96,61 @@ export default function ResumesPage() {
     );
   }
 
+  const isEmpty = !data || data.length === 0;
+
   return (
     <PageCanvas>
-      <div className="space-y-8">
-        <ResumeUploader onUploaded={handleUploaded} variant="hero" />
-
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <div>
-              <h1 className="font-display text-base font-semibold text-text-primary">
-                {t("resume.recentUploads")}
-              </h1>
-              <p className="mt-1 text-xs text-text-muted">
-                {stats.total > 0
-                  ? t("resume.stats", {
-                      total: formatLocaleNumber(stats.total),
-                      parsed: formatLocaleNumber(stats.parsed),
-                    })
-                  : t("resume.firstUploadHint")}
+      <div className="space-y-6">
+        <header className="resource-heading">
+          <div className="min-w-0">
+            <h1>{t("nav.resumes")}</h1>
+            {!isEmpty && (
+              <p className="mt-1 text-sm text-text-muted">
+                {t("resume.stats", {
+                  count: stats.total,
+                  total: formatLocaleNumber(stats.total),
+                  parsed: formatLocaleNumber(stats.parsed),
+                })}
               </p>
-            </div>
-            <div className="flex items-center gap-1 text-text-muted">
-              <IconButton label={t("resume.filter")}>
-                <FilterIcon className="h-3.5 w-3.5" />
-              </IconButton>
-              <IconButton label={t("resume.sort")}>
-                <SortIcon className="h-3.5 w-3.5" />
-              </IconButton>
-            </div>
+            )}
           </div>
+          {!isEmpty && (
+            <Button className="shrink-0" onClick={() => setUploadOpen(true)}>
+              {t("appearance.upload")}
+            </Button>
+          )}
+        </header>
+        <FormDrawer
+          open={uploadOpen}
+          busy={uploading}
+          title={t("appearance.upload")}
+          onClose={() => setUploadOpen(false)}
+        >
+          <ResumeUploader onUploaded={handleUploaded} />
+        </FormDrawer>
 
-          {data && data.length === 0 ? (
-            <EmptyState />
-          ) : (
+        {isEmpty ? (
+          <ResumeUploader onUploaded={handleUploaded} variant="hero" />
+        ) : (
+        <section>
+          <h2 className="sr-only">{t("resume.recentUploads")}</h2>
+          <div className="resource-toolbar">
+            <input type="search" aria-label={t("appearance.searchResumes")} placeholder={t("appearance.searchResumes")} value={query} onChange={(e) => setQuery(e.target.value)} />
+            <Select aria-label={t("resume.filter")} className="resource-select" value={status} onChange={setStatus} options={[
+              { value: "all", label: t("appearance.all") },
+              { value: "parsed", label: t("resume.parsed") },
+              { value: "processing", label: t("resume.parsing") },
+              { value: "failed", label: t("resume.parseFailed") },
+              { value: "unparsed", label: t("resume.unparsed") },
+            ]} />
+            <Select aria-label={t("resume.sort")} className="resource-select" align="end" value={sort} onChange={setSort} options={[
+              { value: "newest", label: t("appearance.newest") },
+              { value: "name", label: t("appearance.name") },
+            ]} />
+          </div>
             <div className="space-y-3">
-              {data?.map((resume) => (
+              {filtered.length === 0 && <EmptyState title={t("appearance.noResults")} />}
+              {filtered.map((resume) => (
                 <ResumeCard
                   key={resume.id}
                   resume={resume}
@@ -127,8 +160,8 @@ export default function ResumesPage() {
                 />
               ))}
             </div>
-          )}
         </section>
+        )}
       </div>
 
       <ConfirmDialog
@@ -151,7 +184,7 @@ export default function ResumesPage() {
 
 function PageCanvas({ children }: { children: ReactNode }) {
   return (
-    <div className="electron-titlebar-safe-top min-h-full bg-white">
+    <div className="electron-titlebar-safe-top min-h-full bg-surface-primary">
       <div className="mx-auto max-w-[1040px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6">
         {children}
       </div>
@@ -159,20 +192,13 @@ function PageCanvas({ children }: { children: ReactNode }) {
   );
 }
 
-function EmptyState() {
-  const { t } = useTranslation();
-
+function EmptyState({ title }: { title: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#c3c5d8] bg-white px-6 py-10 text-center shadow-card">
-      <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-[#dce1ff] text-primary-700">
+    <div className="rounded-xl border border-dashed border-border-default bg-surface-primary px-6 py-10 text-center">
+      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-surface-secondary text-text-muted">
         <FileStackIcon className="h-5 w-5" />
       </div>
-      <p className="font-display text-base font-medium text-text-primary">
-        {t("resume.noResumes")}
-      </p>
-      <p className="mt-1 text-xs text-text-muted">
-        {t("resume.noResumesDescription")}
-      </p>
+      <p className="text-sm font-medium text-text-primary">{title}</p>
     </div>
   );
 }
@@ -187,7 +213,7 @@ function ErrorPanel({
   const { t } = useTranslation();
 
   return (
-    <div className="rounded-xl border border-border-light bg-white px-6 py-16 text-center shadow-card">
+    <div className="rounded-xl border border-border-light bg-surface-primary px-6 py-16 text-center shadow-card">
       <p className="mb-4 text-sm text-error-text">{error}</p>
       <Button variant="secondary" size="sm" onClick={onRetry}>
         {t("common.retry")}
@@ -199,20 +225,16 @@ function ErrorPanel({
 function ResumesPageSkeleton() {
   return (
     <PageCanvas>
-      <div className="space-y-8">
-        <Skeleton className="h-[232px] rounded-[20px]" />
-        <Skeleton className="h-[110px] rounded-[18px]" />
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <Skeleton className="mb-2 h-5 w-24 rounded-lg" />
-              <Skeleton className="h-4 w-48 rounded-lg" />
-            </div>
-            <div className="flex gap-2">
-              <Skeleton className="h-7 w-7 rounded-full" />
-              <Skeleton className="h-7 w-7 rounded-full" />
-            </div>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Skeleton className="mb-2 h-7 w-28 rounded-lg" />
+            <Skeleton className="h-4 w-48 rounded-lg" />
           </div>
+          <Skeleton className="h-10 w-28 rounded-lg" />
+        </div>
+        <section>
+          <Skeleton className="my-5 h-10 rounded-lg" />
           <div className="space-y-3">
             {[1, 2, 3].map((item) => (
               <Skeleton key={item} className="h-[88px] rounded-xl" />
@@ -221,63 +243,6 @@ function ResumesPageSkeleton() {
         </section>
       </div>
     </PageCanvas>
-  );
-}
-
-function IconButton({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className="rounded-full p-2 transition-colors hover:bg-surface-secondary hover:text-text-primary"
-      aria-label={label}
-      title={label}
-    >
-      {children}
-    </button>
-  );
-}
-
-function FilterIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.8}
-        d="M4 7h16M7 12h10M10 17h4"
-      />
-    </svg>
-  );
-}
-
-function SortIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.8}
-        d="M8 6h10M8 12h7M8 18h4M5 6h.01M5 12h.01M5 18h.01"
-      />
-    </svg>
   );
 }
 

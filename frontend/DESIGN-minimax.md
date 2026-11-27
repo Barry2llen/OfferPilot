@@ -1,3 +1,5 @@
+> Historical reference. The active product specification is [DESIGN.md](DESIGN.md).
+
 # Design System Inspired by MiniMax
 
 ## 1. Visual Theme & Atmosphere

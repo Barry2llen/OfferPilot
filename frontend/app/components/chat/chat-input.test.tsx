@@ -83,3 +83,145 @@ it("removes only sent attachments when a new attachment is added before acceptan
   expect(screen.queryByText("first.txt")).toBeNull();
   expect(screen.getByText("next.txt")).toBeTruthy();
 });
+
+it("keeps a wrapping draft visible after its last attachment is removed", async () => {
+  await i18n.changeLanguage("en-US");
+  const { container } = render(
+    <ToastProvider><ChatInput onSend={() => {}} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>,
+  );
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  const composer = input.closest(".composer-surface")!;
+  // JSDOM has no layout; the draft fits with attachments but wraps in the narrower single-row layout.
+  Object.defineProperty(input, "scrollHeight", {
+    configurable: true,
+    get: () => composer.classList.contains("is-multiline") ? 40 : 62,
+  });
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
+  });
+  fireEvent.change(input, { target: { value: "A draft that wraps only in the narrower layout" } });
+  fireEvent.click(screen.getByRole("button", { name: "Remove notes.txt" }));
+
+  expect(input.value).toBe("A draft that wraps only in the narrower layout");
+  expect(composer.classList.contains("is-multiline")).toBe(true);
+  expect(input.style.height).toBe("62px");
+});
+
+it("remeasures the draft when the input width changes", async () => {
+  await i18n.changeLanguage("en-US");
+  let notifyResize: ResizeObserverCallback | undefined;
+  class Observer {
+    constructor(callback: ResizeObserverCallback) { notifyResize = callback; }
+    observe() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("ResizeObserver", Observer);
+  try {
+    render(<ToastProvider><ChatInput onSend={() => {}} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>);
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    let height = 40;
+    Object.defineProperty(input, "scrollHeight", { configurable: true, get: () => height });
+    fireEvent.change(input, { target: { value: "A draft" } });
+    expect(input.closest(".composer-surface")?.classList.contains("is-multiline")).toBe(false);
+
+    height = 62;
+    act(() => notifyResize?.([{ contentRect: { width: 320 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(input.closest(".composer-surface")?.classList.contains("is-multiline")).toBe(true);
+    expect(input.style.height).toBe("62px");
+    expect(input.value).toBe("A draft");
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+
+it("does not send while an IME composition is being confirmed", async () => {
+  await i18n.changeLanguage("en-US");
+  const onSend = vi.fn();
+  render(<ToastProvider><ChatInput onSend={onSend} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>);
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "优化项目经历" } });
+  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+  fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+  expect(onSend).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(onSend).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { device: "a phone in portrait", narrow: true, touch: true, electron: false, sends: false },
+  { device: "a phone in landscape", narrow: false, touch: true, electron: false, sends: false },
+  { device: "a narrow desktop browser", narrow: true, touch: false, electron: false, sends: true },
+  { device: "a narrow Electron window on a touchscreen", narrow: true, touch: true, electron: true, sends: true },
+])("uses the expected Enter shortcut on $device", async ({ narrow, touch, electron, sends }) => {
+  await i18n.changeLanguage("en-US");
+  const originalMatchMedia = window.matchMedia;
+  const originalRuntime = window.offerPilotRuntime;
+  window.offerPilotRuntime = electron ? { platform: "win32" } : undefined;
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: (narrow && query === "(max-width: 767px)") || (touch && query === "(pointer: coarse) and (hover: none)"),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  try {
+    const onSend = vi.fn();
+    render(<ToastProvider><ChatInput onSend={onSend} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "next step" } });
+    expect(fireEvent.keyDown(input, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(!sends);
+    expect(onSend).toHaveBeenCalledTimes(sends ? 1 : 0);
+    if (!sends) fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup();
+    window.matchMedia = originalMatchMedia;
+    window.offerPilotRuntime = originalRuntime;
+  }
+});
+
+it("renders trailing controls inside the composer and offers stop and enqueue while streaming", async () => {
+  await i18n.changeLanguage("en-US");
+  const onStop = vi.fn();
+  render(
+    <ToastProvider>
+      <ChatInput
+        onSend={() => {}}
+        onStop={onStop}
+        isStreaming
+        disabled={false}
+        trailing={<button type="button">Thinking picker</button>}
+      />
+    </ToastProvider>,
+  );
+  expect(screen.getByRole("button", { name: "Thinking picker" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: i18n.t("chatRuns.enqueue") })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: i18n.t("chatRuns.stopCurrent") }));
+  expect(onStop).toHaveBeenCalledTimes(1);
+});
+
+it("clears the draft and attachments and focuses the input when the reset signal changes", async () => {
+  await i18n.changeLanguage("en-US");
+  const view = (resetSignal: number) => (
+    <ToastProvider>
+      <ChatInput onSend={() => {}} onStop={() => {}} isStreaming={false} disabled={false} resetSignal={resetSignal} />
+    </ToastProvider>
+  );
+  const { container, rerender } = render(view(0));
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "unsent draft" } });
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
+  });
+  expect(screen.getByText("notes.txt")).toBeTruthy();
+
+  rerender(view(0));
+  expect(input.value).toBe("unsent draft");
+
+  rerender(view(1));
+  expect(input.value).toBe("");
+  expect(screen.queryByText("notes.txt")).toBeNull();
+  expect(document.activeElement).toBe(input);
+});

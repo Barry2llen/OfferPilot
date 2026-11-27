@@ -83,14 +83,28 @@ async function versionFixture(t) {
     await writeFile(path.join(root, directory, 'package.json'), JSON.stringify({ name: directory, version: '1.2.3' }))
   }
   await mkdir(path.join(root, 'frontend/app/lib'), { recursive: true })
-  await writeFile(path.join(root, 'frontend/app/lib/i18n.ts'), 'zh: "OfferPilot v1.2.3", en: "OfferPilot v1.2.3"')
+  await writeFile(path.join(root, 'frontend/app/lib/i18n.ts'), [
+    'const zhCN = { nav: { version: "v1.2.3" } }',
+    "const enUS = { nav: { version: 'v1.2.3' } }",
+    'const releaseNote = "OfferPilot v1.2.3"',
+  ].join('\n'))
   return root
 }
+
+test('repository versions and sidebar labels pass release validation', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'))
+  assert.equal(await checkVersion(), pkg.version)
+})
 
 test('version bumps synchronize every package and both locale labels without npm lockfiles', async t => {
   const root = await versionFixture(t)
   assert.equal(await bumpVersion('bump-minor', root), '1.3.0')
   assert.equal(await checkVersion(root, '1.3.0'), '1.3.0')
+  assert.equal(await readFile(path.join(root, 'frontend/app/lib/i18n.ts'), 'utf8'), [
+    'const zhCN = { nav: { version: "v1.3.0" } }',
+    "const enUS = { nav: { version: 'v1.3.0' } }",
+    'const releaseNote = "OfferPilot v1.2.3"',
+  ].join('\n'))
   assert.equal(nextVersion('1.2.3', 'bump-major'), '2.0.0')
   assert.equal(nextVersion('1.2.3', 'bump-patch'), '1.2.4')
   await writeFile(path.join(root, 'electron/package.json'), JSON.stringify({ version: '1.3.1' }))
@@ -99,8 +113,15 @@ test('version bumps synchronize every package and both locale labels without npm
 
 test('inconsistent translations and invalid versions stop release preparation', async t => {
   const root = await versionFixture(t)
-  await writeFile(path.join(root, 'frontend/app/lib/i18n.ts'), 'OfferPilot v1.2.3')
-  await assert.rejects(bumpVersion('bump-patch', root), /two sidebar labels/)
+  const file = path.join(root, 'frontend/app/lib/i18n.ts')
+  for (const translations of [
+    'const zhCN = { nav: { version: "v1.2.3" } }',
+    'const zhCN = { nav: { version: "v1.2.3" } }; const enUS = { nav: { version: "v1.2.4" } }',
+    'const description = "OfferPilot v1.2.3"; const other = "OfferPilot v1.2.3"',
+  ]) {
+    await writeFile(file, translations)
+    await assert.rejects(bumpVersion('bump-patch', root), /two sidebar labels/)
+  }
   assert.equal(JSON.parse(await readFile(path.join(root, 'package.json'))).version, '1.2.3')
   assert.throws(() => nextVersion('v1.2.3', 'bump-patch'), /X.Y.Z/)
   assert.throws(() => nextVersion('1.2.3', 'arbitrary'), /Unsupported/)

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Link, useNavigate, useParams } from "react-router";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { resumesApi } from "@/app/lib/api/resumes";
 import { useAsyncData } from "@/app/hooks/use-async-data";
 import { useToast } from "@/app/components/ui/toast";
@@ -18,11 +20,10 @@ import type {
   ResumeSection,
 } from "@/app/lib/api/types";
 import i18n, { formatLocaleList } from "@/app/lib/i18n";
-
-type DetailTab = "analysis" | "source";
+import { analysisLabel } from "@/app/lib/analysis-labels";
 
 export default function ResumeDetailPage() {
-  const { t, i18n: translation } = useTranslation();
+  const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const navigate = useNavigate();
   const id = Number(params.id);
@@ -40,19 +41,20 @@ export default function ResumeDetailPage() {
     if (analysisEventVersions.resume > 0) refresh();
   }, [analysisEventVersions.resume, refresh]);
 
-  const [activeTab, setActiveTab] = useState<DetailTab>("analysis");
+  // The original file is hidden by default; showing it splits the page into two columns on wide screens.
+  const [showSource, setShowSource] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [operating, setOperating] = useState(false);
 
   const derived = useMemo(() => {
     if (!resume) return null;
-    return deriveResumeView(resume, translation.language);
-  }, [resume, translation.language]);
+    return deriveResumeView(resume, t);
+  }, [resume, t]);
 
   const handleReplace = useCallback(async () => {
     setReplaceOpen(false);
-    setActiveTab("analysis");
+    setShowSource(false);
     refetch();
     addToast(t("resume.fileReplaced"), "success");
   }, [refetch, addToast, t]);
@@ -84,7 +86,7 @@ export default function ResumeDetailPage() {
   const toggleReplace = () => {
     setReplaceOpen((open) => {
       const next = !open;
-      if (next) setActiveTab("source");
+      if (next) setShowSource(true);
       return next;
     });
   };
@@ -102,7 +104,7 @@ export default function ResumeDetailPage() {
   if (error) {
     return (
       <PageCanvas>
-        <div className="rounded-[20px] border border-border-light bg-white px-6 py-16 text-center shadow-card">
+        <div className="rounded-[20px] border border-border-light bg-surface-primary px-6 py-16 text-center shadow-card">
           <p className="mb-4 text-sm text-error-text">{error}</p>
           <div className="flex justify-center gap-3">
             <Button variant="secondary" size="sm" onClick={refetch}>
@@ -123,7 +125,7 @@ export default function ResumeDetailPage() {
   if (!resume || !derived) return null;
 
   return (
-    <PageCanvas>
+    <PageCanvas wide={showSource}>
       <header className="mb-4 flex items-center justify-between gap-4">
         <Link
           to="/resumes"
@@ -132,12 +134,10 @@ export default function ResumeDetailPage() {
           <ArrowLeftIcon className="h-5 w-5" />
           {t("resume.backToLibrary")}
         </Link>
-        <Button variant="ghost" size="sm" aria-label={t("resume.moreActions")}>
-          <DotsIcon className="h-5 w-5" />
-        </Button>
+
       </header>
 
-      <section className="flex min-h-[680px] flex-col bg-white lg:min-h-[calc(100vh-7.5rem)]">
+      <section className="flex min-h-[680px] flex-col bg-surface-primary lg:min-h-[calc(100vh-7.5rem)]">
         <div className="flex flex-col gap-4 border-b border-border-light py-5 sm:py-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <h1 className="truncate font-display text-2xl font-semibold leading-tight text-text-primary">
@@ -148,14 +148,22 @@ export default function ResumeDetailPage() {
             </p>
           </div>
 
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center lg:shrink-0">
+          <div className="flex flex-wrap items-center gap-3 lg:shrink-0">
             <Badge
               variant={parseVariant(resume.parse_status)}
-              className="rounded-full px-3 py-1 font-mono text-[11px] font-bold"
+              className="rounded-full px-2.5"
             >
               {parseLabel(resume.parse_status)}
             </Badge>
-            <TabSwitch activeTab={activeTab} onChange={setActiveTab} />
+            <Button
+              variant={showSource ? "primary" : "secondary"}
+              size="sm"
+              aria-pressed={showSource}
+              onClick={() => setShowSource((shown) => !shown)}
+            >
+              {showSource ? <PanelRightClose size={16} aria-hidden="true" /> : <PanelRightOpen size={16} aria-hidden="true" />}
+              {t(showSource ? "resume.hideOriginal" : "resume.showOriginal")}
+            </Button>
           </div>
         </div>
 
@@ -163,22 +171,24 @@ export default function ResumeDetailPage() {
           task={analysisTasks[analysisTaskKey("resume", resume.id)]}
         />
 
-        <div className="flex-1">
-          {activeTab === "analysis" ? (
+        <div className="resume-detail-panes flex-1" data-source={showSource ? "shown" : "hidden"}>
+          <div className="resume-analysis">
             <AnalysisContent resume={resume} derived={derived} />
-          ) : (
+          </div>
+          <div className="resume-source">
             <SourceContent
               resume={resume}
+              showSource={showSource}
               replaceOpen={replaceOpen}
               onUploaded={handleReplace}
               uploadFile={(file, selectionId, options) =>
                 resumesApi.replace(id, file, selectionId, options)
               }
             />
-          )}
+          </div>
         </div>
 
-        <div className="mt-auto flex flex-col gap-3 border-t border-border-light bg-white/95 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-auto flex flex-col gap-3 border-t border-border-light bg-surface-primary/95 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
           <Button
             variant="ghost"
             size="sm"
@@ -223,49 +233,12 @@ export default function ResumeDetailPage() {
   );
 }
 
-function PageCanvas({ children }: { children: ReactNode }) {
+function PageCanvas({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <div className="electron-titlebar-safe-top min-h-full bg-white">
-      <div className="mx-auto max-w-[1080px] px-5 py-4 sm:px-8 lg:px-10 lg:py-6">
+    <div className="electron-titlebar-safe-top min-h-full bg-surface-primary">
+      <div className={`mx-auto px-5 py-4 transition-[max-width] duration-200 sm:px-8 lg:px-10 lg:py-6 ${wide ? "max-w-[1440px]" : "max-w-[1080px]"}`}>
         {children}
       </div>
-    </div>
-  );
-}
-
-function TabSwitch({
-  activeTab,
-  onChange,
-}: {
-  activeTab: DetailTab;
-  onChange: (tab: DetailTab) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="relative grid w-full grid-cols-2 rounded-full border border-[#e6e1dc] bg-white p-0.5 shadow-[0_1px_8px_rgba(24,24,24,0.06)] sm:w-[188px]">
-      <span
-        className={`absolute bottom-0.5 top-0.5 w-[calc(50%-2px)] rounded-full bg-[#1b1f24] shadow-sm transition-transform duration-200 ${
-          activeTab === "source" ? "translate-x-full" : "translate-x-0"
-        }`}
-      />
-      <button
-        type="button"
-        onClick={() => onChange("analysis")}
-        className={`relative z-10 h-8 rounded-full px-3 text-[11px] font-semibold transition-colors ${
-          activeTab === "analysis" ? "text-white" : "text-[#5b5751]"
-        }`}
-      >
-        {t("resume.aiAnalysis")}
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("source")}
-        className={`relative z-10 h-8 rounded-full px-3 text-[11px] font-semibold transition-colors ${
-          activeTab === "source" ? "text-white" : "text-[#5b5751]"
-        }`}
-      >
-        {t("resume.originalResume")}
-      </button>
     </div>
   );
 }
@@ -301,7 +274,7 @@ function AnalysisContent({
             {derived.keywords.map((keyword) => (
               <span
                 key={keyword}
-                className="rounded-full border border-[#ddd6cf] bg-white px-3 py-1 font-mono text-[11px] font-bold text-[#2f2d29]"
+                className="rounded-full border border-border-default bg-surface-primary px-3 py-1 text-xs font-medium text-text-secondary"
               >
                 {keyword}
               </span>
@@ -340,7 +313,7 @@ function AnalysisContent({
           icon={<TextIcon className="h-5 w-5" />}
           title={t("resume.fullText")}
         >
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-[#eee8e2] bg-[#fbfaf8] p-4 text-[13px] leading-7 text-text-secondary">
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-border-default bg-surface-secondary p-4 text-[13px] leading-7 text-text-secondary">
             {resume.raw_text}
           </pre>
         </AnalysisSection>
@@ -351,30 +324,32 @@ function AnalysisContent({
 
 function SourceContent({
   resume,
+  showSource,
   replaceOpen,
   onUploaded,
   uploadFile,
 }: {
   resume: ResumeDetail;
+  showSource: boolean;
   replaceOpen: boolean;
   onUploaded: () => void;
   uploadFile: typeof resumesApi.upload;
 }) {
   return (
-    <div className="py-5">
+    <div className="py-7">
       {replaceOpen ? (
         <div className="mx-auto max-w-xl py-6">
           <ResumeUploader onUploaded={onUploaded} uploadFile={uploadFile} />
         </div>
-      ) : (
+      ) : showSource ? (
         <ResumePreview resume={resume} />
-      )}
+      ) : null}
     </div>
   );
 }
 
-function deriveResumeView(resume: ResumeDetail, locale: string) {
-  const title = (resume.original_filename || i18n.t("resume.defaultTitle", { id: resume.id })).replace(
+function deriveResumeView(resume: ResumeDetail, translate: TFunction) {
+  const title = (resume.original_filename || translate("resume.defaultTitle", { id: resume.id })).replace(
     /\.[^/.]+$/,
     ""
   );
@@ -384,15 +359,15 @@ function deriveResumeView(resume: ResumeDetail, locale: string) {
   ).slice(0, 10);
   const subtitle =
     resume.parse_status === "parsed"
-      ? i18n.t("resume.sectionsFacts", {
-          sections: new Intl.NumberFormat(locale).format(resume.section_count),
-          facts: new Intl.NumberFormat(locale).format(resume.fact_count),
-        })
+      ? `${translate("resume.sectionCount", { count: resume.section_count })} · ${translate(
+          "resume.factCount",
+          { count: resume.fact_count },
+        )}`
       : resume.parse_status === "processing"
-        ? i18n.t("resume.processingDescription")
+        ? translate("resume.processingDescription")
         : resume.parse_status === "failed"
-          ? i18n.t("resume.failedDescription")
-          : i18n.t("resume.waitingDescription");
+          ? translate("resume.failedDescription")
+          : translate("resume.waitingDescription");
   return {
     title,
     subtitle,
@@ -400,8 +375,8 @@ function deriveResumeView(resume: ResumeDetail, locale: string) {
     summary:
       resume.summary ||
       (resume.parse_status === "parsed"
-        ? i18n.t("resume.parsedDescription")
-        : i18n.t("resume.uploadDescription")),
+        ? translate("resume.parsedDescription")
+        : translate("resume.uploadDescription")),
   };
 }
 
@@ -418,10 +393,10 @@ function ResumePreview({ resume }: { resume: ResumeDetail }) {
 
   if (resume.media_type?.includes("pdf")) {
     return (
-      <div className="mx-auto min-h-[620px] max-w-[820px] overflow-hidden bg-white">
+      <div className="mx-auto max-w-[820px] overflow-hidden rounded-xl border border-border-light bg-surface-primary">
         <iframe
           src={resumesApi.previewUrl(resume.id)}
-          className="h-[620px] w-full"
+          className="resume-preview-frame block w-full"
           title={t("resume.previewTitle")}
         />
       </div>
@@ -430,7 +405,7 @@ function ResumePreview({ resume }: { resume: ResumeDetail }) {
 
   if (resume.media_type?.startsWith("image/")) {
     return (
-      <div className="mx-auto flex min-h-[620px] max-w-[820px] items-start justify-center overflow-auto bg-white py-4">
+      <div className="mx-auto flex min-h-[620px] max-w-[820px] items-start justify-center overflow-auto bg-surface-primary py-4">
         <img
           src={resumesApi.previewUrl(resume.id)}
           alt={resume.original_filename || ""}
@@ -498,9 +473,8 @@ function TimelineSection({
   return (
     <section className="relative">
       <span
-        className={`absolute -left-[33px] top-1 h-4 w-4 rounded-full border-2 bg-white ${
-          index === 0 ? "border-[#1b1f24]" : "border-[#e4ded8]"
-        }`}
+        aria-hidden="true"
+        className="absolute -left-[29px] top-1 h-4 w-4 rounded-full border-2 border-border-default bg-surface-primary"
       />
       <h3 className="font-display text-base font-medium text-text-primary">
         {section.title || t("resume.chapter", { index: index + 1 })}
@@ -521,20 +495,20 @@ function TimelineSection({
 
 function FactLine({ fact }: { fact: ResumeFact }) {
   return (
-    <div className="rounded-xl border border-[#eee8e2] bg-[#fbfaf8] px-3 py-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="rounded-xl border border-border-default bg-surface-secondary px-3 py-2">
+      <div className="flex items-start gap-2">
         <Badge
           variant="neutral"
-          className="rounded-full border border-[#e6dfd8] bg-white font-mono text-[11px] text-[#5a544d]"
+          className="mt-0.5 shrink-0 whitespace-nowrap rounded-full border border-border-default bg-surface-primary text-text-secondary"
         >
-          {fact.fact_type}
+          {analysisLabel("factType", fact.fact_type)}
         </Badge>
-        <span className="text-[13px] leading-6 text-text-primary">
+        <span className="min-w-0 flex-1 text-[13px] leading-6 text-text-primary">
           {fact.text}
         </span>
       </div>
       {fact.keywords.length > 0 && (
-        <p className="mt-1 font-mono text-[13px] text-text-muted">
+        <p className="mt-1 text-xs leading-5 text-text-muted">
           {formatLocaleList(fact.keywords)}
         </p>
       )}
@@ -565,19 +539,6 @@ function parseVariant(status: ResumeDetail["parse_status"]) {
 
 function ArrowLeftIcon({ className }: { className?: string }) {
   return <BaseIcon className={className} path="M15 19 8 12l7-7" />;
-}
-
-function DotsIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="currentColor"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path d="M12 8.25a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM12 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM12 18.75a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
-    </svg>
-  );
 }
 
 function FileIcon({ className }: { className?: string }) {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 export const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url))
 const packages = ['package.json', 'frontend/package.json', 'electron/package.json']
+const sidebarVersionPattern = /(\bversion:\s*)(["'])v(\d+\.\d+\.\d+)\2/g
 
 export function validateVersion(version) {
   if (typeof version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
@@ -20,8 +21,8 @@ export async function checkVersion(root = repositoryRoot, expected) {
     if (record.version !== version) throw new Error(`${file} has version ${record.version}, expected ${version}.`)
   }
   const translations = await readFile(path.join(root, 'frontend/app/lib/i18n.ts'), 'utf8')
-  const labels = [...translations.matchAll(/OfferPilot v(\d+\.\d+\.\d+)/g)]
-  if (labels.length !== 2 || labels.some(match => match[1] !== version)) {
+  const labels = [...translations.matchAll(sidebarVersionPattern)]
+  if (labels.length !== 2 || labels.some(match => match[3] !== version)) {
     throw new Error(`Expected two sidebar labels synchronized to ${version}.`)
   }
   return version
@@ -48,7 +49,7 @@ export async function bumpVersion(action, root = repositoryRoot) {
   }
   const file = path.join(root, 'frontend/app/lib/i18n.ts')
   const translations = await readFile(file, 'utf8')
-  await writeFile(file, translations.replace(/OfferPilot v\d+\.\d+\.\d+/g, `OfferPilot v${version}`))
+  await writeFile(file, translations.replace(sidebarVersionPattern, (_label, prefix, quote) => `${prefix}${quote}v${version}${quote}`))
   await checkVersion(root, version)
   return version
 }

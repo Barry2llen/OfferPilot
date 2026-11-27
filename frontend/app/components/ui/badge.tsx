@@ -16,7 +16,7 @@ const variants: Record<string, string> = {
 };
 
 const sizes: Record<string, string> = {
-  sm: "text-[11px] px-2 py-0.5 rounded-md",
+  sm: "text-xs px-2 py-0.5 rounded-md",
   md: "text-xs px-2.5 py-1 rounded-lg",
 };
 

@@ -165,6 +165,15 @@ describe("chat stream adapter", () => {
     expect(form).toBeInstanceOf(FormData);
     expect((form as FormData).get("thinking_override")).toBe('{"value":"high"}');
   });
+  it("preserves a provider-default override for JSON and attachment submissions", () => {
+    const override = { value: null };
+    const json = buildStreamBody(1, "hello", "thread", undefined, { thinkingOverride: override });
+    expect(json).toMatchObject({ thinking_override: { value: null } });
+    const form = buildStreamBody(1, "hello", "thread", undefined, { fileIds: ["file"], thinkingOverride: override });
+    expect((form as FormData).get("thinking_override")).toBe('{"value":null}');
+    const saved = buildStreamBody(1, "hello", "thread", undefined, {});
+    expect(saved).not.toHaveProperty("thinking_override");
+  });
   it("keeps concurrent analysis progress separate and ignores late updates", () => {
     let state = beginChat(createChatState(), "分析", undefined);
     for (const id of ["a", "b"]) {

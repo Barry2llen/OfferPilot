@@ -1,4 +1,7 @@
-import { useState } from "react";
+import FormDrawer from "@/app/components/ui/form-drawer";
+import { useMediaQuery } from "@/app/hooks/use-media-query";
+import type { QueryDraft } from "./query-decision-composer";
+import { useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ChatRun,
@@ -7,6 +10,7 @@ import type {
   InputAnswer,
 } from "@/app/lib/api/types";
 import Button from "@/app/components/ui/button";
+import { useToast } from "@/app/components/ui/toast";
 import QueryDecisionComposer from "./query-decision-composer";
 import { needsRunNotice } from "@/app/lib/chat/run-state";
 
@@ -20,21 +24,29 @@ function InputCard({
   onAnswer: (input: PendingInput, answer: InputAnswer) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const { addToast } = useToast();
+  const mobile = useMediaQuery("(max-width: 767px)");
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<QueryDraft>({ selectedIds: [], freeText: "", note: "" });
   const [busy, setBusy] = useState(false);
   const submit = async (answer: InputAnswer) => {
     if (busy) return;
     setBusy(true);
     try {
       await onAnswer(input, answer);
-    } catch {
+      setOpen(false);
+    } catch (error) {
+      addToast(error instanceof Error && error.message ? error.message : t("errors.submitFailed"), "error");
       setBusy(false);
     }
   };
-  return (
+  const form = (
     <fieldset disabled={busy} className="min-w-0">
       {input.type === "query" ? (
         <QueryDecisionComposer
           input={input}
+          draft={draft}
+          onDraftChange={setDraft}
           onAnswer={(answer) => {
             void submit(answer);
           }}
@@ -52,8 +64,17 @@ function InputCard({
           </Button>
         </div>
       )}
-    </fieldset>
-  );
+    </fieldset>);
+  if (!mobile) return form;
+  return <>
+    <div className="rounded-xl border border-border-default bg-surface-secondary p-4">
+      <p className="mb-3 text-sm font-semibold">{input.type === "query" ? input.question : input.message}</p>
+      {input.type === "query" && <p className="mb-4 line-clamp-2 text-sm text-text-secondary">{input.options.map((option) => option.label).join(" · ")}</p>}
+      <Button className="w-full" onClick={() => setOpen(true)}>{t("appearance.answer")}</Button>
+    </div>
+    <FormDrawer busy={busy} open={open} title={t("chatRuns.waitingInput")} onClose={() => setOpen(false)}>{form}</FormDrawer>
+  </>;
+
 }
 
 export default function ChatRunPanel({
@@ -63,6 +84,7 @@ export default function ChatRunPanel({
   onAnswer,
   onCancel,
   onCancelQueued,
+  pendingInputRef,
 }: {
   runs: ChatRun[];
   inputs: PendingInput[];
@@ -70,13 +92,14 @@ export default function ChatRunPanel({
   onAnswer: (input: PendingInput, answer: InputAnswer) => Promise<void>;
   onCancel: (runId: string) => Promise<void>;
   onCancelQueued: () => Promise<void>;
+  pendingInputRef?: RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useTranslation();
   const queued = runs.filter((run) => run.status === "queued");
   const interrupted = runs.filter(needsRunNotice);
   return (
     <div
-      className="max-h-[45vh] overflow-y-auto space-y-3 px-4 sm:px-6"
+      className="run-panel space-y-3 py-3"
       aria-live="polite"
     >
       {connectionState === "reconnecting" && (
@@ -120,8 +143,18 @@ export default function ChatRunPanel({
           <p className="text-xs text-text-muted">{t("chatRuns.stopNotice")}</p>
         </div>
       )}
-      {inputs.map((input) => (
-        <InputCard key={input.request_id} input={input} onAnswer={onAnswer} />
+      {inputs.map((input, index) => (
+        <div
+          key={input.request_id}
+          ref={index === 0 ? pendingInputRef : undefined}
+          tabIndex={-1}
+          role="group"
+          className="relative"
+          aria-label={input.type === "query" ? input.question : input.message || t("chatRuns.waitingInput")}
+        >
+          <span data-pending-start aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
+          <InputCard input={input} onAnswer={onAnswer} />
+        </div>
       ))}
       {interrupted.slice(-MAX_RUN_NOTICES).map((run) => (
         <p key={run.run_id} className="text-xs text-warning-text">
