@@ -11,6 +11,7 @@ from openai import LengthFinishReasonError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from schemas.model_selection import ModelSelection
+from utils.chat_attachment_content import attachment_content
 from utils.custom_events import _adispatch_custom_event_safely
 from utils.logger import logger
 from utils.message_content import extract_text_content
@@ -463,9 +464,14 @@ def _summary_input(entries: Sequence[CompactedMessage]) -> HumanMessage:
     records: list[dict[str, Any]] = []
     for entry in entries:
         message = entry.rendered
+        layout = (
+            attachment_content(message) if isinstance(message, HumanMessage) else None
+        )
         record: dict[str, Any] = {
             "role": "prior_summary" if entry.kind == "summary" else message.type,
-            "content": extract_text_content(message.content),
+            "content": layout.prompt
+            if layout is not None
+            else extract_text_content(message.content),
         }
         if isinstance(message, AIMessage) and message.tool_calls:
             record["tool_calls"] = message.tool_calls

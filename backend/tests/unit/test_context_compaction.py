@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import cast
 
 import pytest
@@ -42,6 +42,7 @@ from agent.models.structured import StructuredModel
 from schemas.config import Config, ContextCompactionConfig
 from schemas.model_provider import ModelProvider
 from schemas.model_selection import ModelSelection
+from utils.logger import logger
 
 
 def build_test_pipeline(
@@ -385,6 +386,7 @@ async def test_attachment_compactor_preserves_legacy_message_with_no_trusted_bou
     rewritten = result.entries[0].rendered
     assert isinstance(rewritten, HumanMessage)
     assert rewritten == old
+    assert result.entries[0].protected
     assert not result.actions
     assert rewritten.additional_kwargs == old.additional_kwargs
     assert result.entries[1].rendered == latest
@@ -984,11 +986,27 @@ async def test_context_compaction_snapshot_round_trips_through_langgraph_checkpo
     assert isinstance(stored["messages"][0], SystemMessage)
 
 
+@pytest.fixture
+def compaction_logs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    monkeypatch.setattr("schemas.config.load_config", Config)
+    logs: list[str] = []
+    handler = logger.add(
+        logs.append,
+        level="DEBUG",
+        format="{level} {message}",
+        filter="agent.compaction.pipeline",
+    )
+    try:
+        yield logs
+    finally:
+        logger.remove(handler)
+
+
 @pytest.mark.parametrize(
     "size, calls", [(7999, 0), (8000, 1), (8001, 1), (10000, 1), (10001, 1)]
 )
 async def test_watermarks_use_the_actual_post_layer_count(
-    size: int, calls: int
+    size: int, calls: int, compaction_logs: list[str]
 ) -> None:
     runnable = FakeStructuredRunnable(summary_result())
     messages = [AIMessage(content="x" * (size - 3)), HumanMessage(content="new")]
@@ -1000,20 +1018,25 @@ async def test_watermarks_use_the_actual_post_layer_count(
     assert runnable.calls == calls
     assert result.auto_compacted_this_run is bool(calls)
     assert result.compacted_tokens <= (6_000 if calls else size)
+    assert not result.warnings and not compaction_logs
 
 
-async def test_deterministic_rewrite_below_trigger_skips_summary() -> None:
+@pytest.mark.parametrize("max_characters", [80, 7_000])
+async def test_deterministic_rewrite_below_trigger_skips_summary(
+    max_characters: int, compaction_logs: list[str]
+) -> None:
     runnable = FakeStructuredRunnable(summary_result())
     messages = [HumanMessage(content="new"), *exchange("done", "x" * 11_000)]
     result = await build_test_pipeline(
-        runnable, layers=(ToolResultCompactor(max_characters=80),)
+        runnable, layers=(ToolResultCompactor(max_characters=max_characters),)
     ).acompact(make_request(messages, budget=ContextBudget(10_000, 0, 0)))
 
     assert result.original_tokens == 11_003
-    assert result.compacted_tokens == 83
+    assert result.compacted_tokens == max_characters + 3
     assert result.applied_layers == ("historical_tool_results",)
     assert not result.auto_compacted
     assert runnable.calls == 0
+    assert not result.warnings and not compaction_logs
 
 
 class InvalidOrLongSummary:
@@ -1058,11 +1081,13 @@ async def test_summary_repairs_invalid_or_hard_oversize_once(first: object) -> N
 
 @pytest.mark.parametrize("size", [9_000, 10_001])
 async def test_summary_two_failures_preserve_candidate_and_obey_hard_limit(
-    size: int,
+    size: int, compaction_logs: list[str]
 ) -> None:
-    runnable = InvalidOrLongSummary([{"invalid": True}, {"invalid": True}])
-    current = HumanMessage(content="new")
-    messages = [AIMessage(content="x" * (size - 3)), current]
+    sensitive_output = "private model output sentinel"
+    runnable = InvalidOrLongSummary([{"invalid": sensitive_output}] * 2)
+    sensitive_prompt = "private user prompt sentinel"
+    current = HumanMessage(content=sensitive_prompt)
+    messages = [AIMessage(content="x" * (size - len(sensitive_prompt))), current]
     pipeline = build_test_pipeline(runnable)
     request = make_request(messages, budget=ContextBudget(10_000, 0, 0))
 
@@ -1073,6 +1098,7 @@ async def test_summary_two_failures_preserve_candidate_and_obey_hard_limit(
             await pipeline.acompact(request)
         result = caught.value.partial_result
         assert result is not None and result.snapshot_status == "pending_auto_compact"
+        assert not compaction_logs
     else:
         result = await pipeline.acompact(request)
         assert result.snapshot_status == "complete"
@@ -1081,12 +1107,24 @@ async def test_summary_two_failures_preserve_candidate_and_obey_hard_limit(
             for warning in result.warnings
         )
         assert not result.should_persist_snapshot
+        soft, target = compaction_logs
+        assert soft.startswith("WARNING Context compaction soft_degraded")
+        assert "reason=" in soft and "invalid structured output" in soft
+        assert target.startswith("INFO Context compaction target_unmet")
+        assert "reason=Kept the verified view after the summary failed." in target
+        for log in compaction_logs:
+            assert "B=10000" in log and "H=8000" in log and "L=6000" in log
+            assert f"before_tokens={size}" in log and f"after_tokens={size}" in log
+            assert "continue_inference=True" in log
+            assert sensitive_prompt not in log and sensitive_output not in log
     assert len(runnable.prompts) == 2
     assert result.model_messages == messages
     assert not result.auto_compacted and not result.auto_compacted_this_run
 
 
-async def test_summary_above_target_but_under_hard_limit_is_accepted_once() -> None:
+async def test_summary_above_target_but_under_hard_limit_is_accepted_once(
+    compaction_logs: list[str],
+) -> None:
     runnable = FakeStructuredRunnable(
         summary_result().model_copy(update={"current_work": "z" * 5_900})
     )
@@ -1099,6 +1137,13 @@ async def test_summary_above_target_but_under_hard_limit_is_accepted_once() -> N
     assert result.auto_compacted_this_run
     assert any(warning.startswith("target_unmet") for warning in result.warnings)
     assert runnable.calls == 1
+    (target,) = compaction_logs
+    assert target.startswith("INFO Context compaction target_unmet")
+    assert "reason=The accepted summary" in target
+    assert "B=10000" in target and "H=8000" in target and "L=6000" in target
+    assert "before_tokens=9000" in target
+    assert f"after_tokens={result.compacted_tokens}" in target
+    assert "continue_inference=True" in target
 
 
 async def test_soft_failure_reuses_prior_summary_and_every_raw_suffix_message() -> None:

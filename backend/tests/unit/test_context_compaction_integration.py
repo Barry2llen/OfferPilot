@@ -1,4 +1,5 @@
 import json
+from base64 import b64decode
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Literal
@@ -27,6 +28,7 @@ from agent.compaction import (
     DefaultContextBudgetPolicy,
     PipelineCompactor,
     build_supervisor_compactor,
+    model_messages_for_state,
 )
 from agent.compaction.layers.auto import _SUMMARY_ENVELOPE, AutoCompactLayer
 from agent.compaction.protection import message_groups
@@ -656,6 +658,138 @@ def help_with_chat_files(
         )
 
 
+@pytest.mark.parametrize("as_image", [False, True], ids=["text", "image"])
+async def test_supervisor_summarizes_repeated_attachment_references_and_reuses_snapshot(
+    help_with_chat_files: ChatFileService,
+    monkeypatch: pytest.MonkeyPatch,
+    as_image: bool,
+) -> None:
+    service = help_with_chat_files
+    thread_id = "repeated-attachment-references"
+    model = selection("main", vision=as_image)
+    upload = (
+        UploadedChatFile(
+            "evidence.png",
+            "image/png",
+            b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+            ),
+        )
+        if as_image
+        else UploadedChatFile("evidence.txt", "text/plain", b"source record\n" * 100)
+    )
+    uploaded = service.prepare_prompt(
+        thread_id=thread_id,
+        selection=model,
+        prompt="保留原始证据。",
+        file_ids=[],
+        uploaded_files=[upload],
+    )
+    evidence = uploaded.human_message.model_copy(update={"id": "upload"})
+    layout = attachment_content(evidence)
+    assert layout is not None and len(layout.spans) == 1
+    assert layout.spans[0]["injection_mode"] == ("image" if as_image else "text")
+
+    def reference(note: str, message_id: str) -> HumanMessage:
+        prepared = service.prepare_prompt(
+            thread_id=thread_id,
+            selection=model,
+            prompt=note,
+            file_ids=[uploaded.attachments[0].file_id],
+            uploaded_files=[],
+        )
+        message = prepared.human_message.model_copy(update={"id": message_id})
+        layout = attachment_content(message)
+        assert layout is not None and layout.spans == []
+        return message
+
+    notes = [
+        "",
+        *(f"第 {i} 条限制\n" + "additional requirement " * 700 for i in range(5)),
+    ]
+    raw_messages: list[BaseMessage] = [evidence, AIMessage(content="Read", id="read")]
+    for index, note in enumerate(notes):
+        raw_messages.extend(
+            [
+                reference(note, f"reference-{index}"),
+                AIMessage(content="Acknowledged", id=f"answer-{index}"),
+            ]
+        )
+    current_text = "  先核对原件，禁止编造经历。\n\t保留空格和换行。  \n"
+    current = reference(current_text, "current")
+    raw_messages.append(current)
+    original_history = [message.model_copy(deep=True) for message in raw_messages]
+
+    summarizer = FakeSummaryModel()
+    install_summary_model(monkeypatch, summarizer)
+    seen_inputs: list[list[BaseMessage]] = []
+
+    class BusinessModel:
+        def bind_tools(self, tools: list[BaseTool]) -> "BusinessModel":
+            assert not tools
+            return self
+
+        async def ainvoke(self, messages: list[BaseMessage]) -> AIMessage:
+            seen_inputs.append(messages)
+            return AIMessage(content="Checked the source.")
+
+    monkeypatch.setattr(
+        "agent.graphs.model_call.load_chat_model", lambda _: BusinessModel()
+    )
+    settings = ContextCompactionConfig(model_context_windows={model.model_name: 40_000})
+    supervisor = SupervisorAgent(
+        checkpointer=InMemorySaver(),
+        config=Config(context_compaction=settings),
+        compaction_model_resolver=SummaryResolver(selection("summary-model")),
+    ).get_agent()
+    run_config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+    counter = ApproximateTokenCounter()
+    hard_limit = (
+        DefaultContextBudgetPolicy(settings).resolve(model).available_input_tokens
+    )
+
+    output = await supervisor.ainvoke(
+        {"model": model, "messages": raw_messages}, run_config
+    )
+
+    assert len(seen_inputs) == len(summarizer.inputs) == 1
+    assert (
+        await counter.acount(
+            system_prompts=seen_inputs[0][:1], messages=original_history, tools=()
+        )
+        > hard_limit
+    )
+    records = json.loads(str(summarizer.inputs[0][1].content))
+    assert [
+        record["content"] for record in records if record["role"] == "human"
+    ] == notes
+    snapshot = output["context_compaction"]
+    assert snapshot["status"] == "complete" and snapshot["auto_compacted"]
+    assert snapshot["source_message_count"] == len(raw_messages)
+    assert seen_inputs[0][1:] == snapshot["messages"]
+    assert evidence in seen_inputs[0]
+    assert seen_inputs[0][-1] == current
+    assert seen_inputs[0][-1].additional_kwargs["display_content"] == current_text
+    assert not any(
+        (message.id or "").startswith("reference-") for message in seen_inputs[0]
+    )
+    assert raw_messages == original_history == output["messages"][:-1]
+
+    follow_up = reference("\t继续核对原件。\n", "follow-up")
+    resumed = await supervisor.ainvoke({"messages": [follow_up]}, run_config)
+
+    assert len(seen_inputs) == 2 and len(summarizer.inputs) == 1
+    assert resumed["context_compaction"] == snapshot
+    first_answer = output["messages"][-1]
+    assert seen_inputs[1][1:] == [*snapshot["messages"], first_answer, follow_up]
+    assert resumed["messages"][:-1] == [*original_history, first_answer, follow_up]
+    for model_input in seen_inputs:
+        assert (
+            await counter.acount(system_prompts=(), messages=model_input, tools=())
+            <= hard_limit
+        )
+
+
 async def test_equivalent_file_is_removed_only_with_full_payload_in_view(
     help_with_chat_files: ChatFileService,
 ) -> None:
@@ -709,6 +843,63 @@ async def test_equivalent_file_is_removed_only_with_full_payload_in_view(
     assert older.additional_kwargs["display_content"] == "  \n"
     assert len(first.human_message.content) == 2
     assert len(current.human_message.content) == 2
+
+
+async def test_snapshot_reuses_summarized_attachment_duplicate_with_exact_copy(
+    help_with_chat_files: ChatFileService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = help_with_chat_files
+    model = selection("main")
+    old_text = "historical requirement " * 1_350
+    upload = service.prepare_prompt(
+        thread_id="origin",
+        selection=model,
+        prompt=old_text,
+        file_ids=[],
+        uploaded_files=[
+            UploadedChatFile("evidence.txt", "text/plain", b"exact source")
+        ],
+    )
+    duplicate = service.prepare_prompt(
+        thread_id="second",
+        selection=model,
+        prompt="Use the full evidence.",
+        file_ids=[upload.attachments[0].file_id],
+        uploaded_files=[],
+    )
+    older = upload.human_message.model_copy(update={"id": "older"})
+    newer = duplicate.human_message.model_copy(update={"id": "newer"})
+    raw_messages = [older, newer]
+    summarizer = FakeSummaryModel()
+    install_summary_model(monkeypatch, summarizer)
+    settings = ContextCompactionConfig(model_context_windows={model.model_name: 40_000})
+    pipeline = build_supervisor_compactor(Config(context_compaction=settings))
+    assert pipeline is not None
+    initial_request = request(raw_messages, model=model, settings=settings)
+
+    result = await pipeline.acompact(initial_request)
+
+    assert result.applied_layers == ("historical_attachments", "auto_compact")
+    assert len(result.model_messages) == 2 and result.model_messages[-1] == newer
+    assert json.loads(str(summarizer.inputs[0][1].content)) == [
+        {"role": "human", "content": old_text}
+    ]
+    snapshot = result.build_snapshot()
+    follow_up = HumanMessage(content="Continue.", id="follow-up")
+    raw_suffix = [*raw_messages, follow_up]
+    assert model_messages_for_state(
+        {"messages": raw_suffix, "context_compaction": snapshot}
+    ) == [*result.model_messages, follow_up]
+
+    # An old summary cannot stand in for the last exact copy of the attachment.
+    without_evidence = {**snapshot, "messages": result.model_messages[:-1]}
+    assert (
+        model_messages_for_state(
+            {"messages": raw_suffix, "context_compaction": without_evidence}
+        )
+        == raw_suffix
+    )
 
 
 async def test_reference_only_legacy_and_empty_text_keep_unique_evidence(

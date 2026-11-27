@@ -198,15 +198,22 @@ def _snapshot_preserves_required_content(
         if saved == raw or (raw.id is None and raw in view):
             continue
         layout = attachment_content(raw) if isinstance(raw, HumanMessage) else None
-        saved_layout = (
-            attachment_content(saved) if isinstance(saved, HumanMessage) else None
-        )
-        if (
-            layout is None
-            or saved_layout is None
-            or saved_layout.visible_block != layout.visible_block
-        ):
+        if layout is None:
             return False
+        if saved is not None or raw is current:
+            saved_layout = (
+                attachment_content(saved) if isinstance(saved, HumanMessage) else None
+            )
+            if (
+                saved_layout is None
+                or saved_layout.prompt != layout.prompt
+                or saved_layout.visible_block != layout.visible_block
+            ):
+                return False
+        # A historical message may be summarized after deduplication only if
+        # every original payload still has an exact copy in the view.
+        if not layout.spans:
+            continue
         if payloads is None:
             payloads = {}
             for candidate in view:
@@ -336,10 +343,37 @@ class PipelineCompactor(Compactor):
                 )
             )
 
-        if context.current_tokens > request.budget.target_input_tokens:
-            context = context.add_warnings(
-                f"target_unmet: {context.current_tokens} estimated tokens, "
-                f"target {request.budget.target_input_tokens}."
+        diagnostics = [
+            ("WARNING", warning)
+            for warning in context.warnings
+            if warning.startswith("soft_degraded: ")
+        ]
+        budget = request.budget
+        if (
+            diagnostics or AutoCompactLayer.name in context.applied_layers
+        ) and context.current_tokens > budget.target_input_tokens:
+            reason = (
+                "Kept the verified view after the summary failed."
+                if diagnostics
+                else "The accepted summary left the assembled input above the target."
+            )
+            warning = f"target_unmet: {reason}"
+            context = context.add_warnings(warning)
+            diagnostics.append(("INFO", warning))
+
+        for level, diagnostic in diagnostics:
+            event, _, reason = diagnostic.partition(": ")
+            logger.log(
+                level,
+                "Context compaction {}: reason={} B={} H={} L={} "
+                "before_tokens={} after_tokens={} continue_inference=True",
+                event,
+                reason,
+                budget.available_input_tokens,
+                budget.trigger_input_tokens,
+                budget.target_input_tokens,
+                original_tokens,
+                context.current_tokens,
             )
         return self._result(
             context,
@@ -364,7 +398,14 @@ class PipelineCompactor(Compactor):
                 return candidate
             # Verify the assembled view before treating an edit as a saving.
             verify_summary = is_summary_layer
-            message_groups(candidate.model_messages)
+            if layer.name == HistoricalAttachmentCompactor.name:
+                candidate = candidate.with_entries(
+                    protect_entries(
+                        candidate.entries, keep_recent_turns=self.keep_recent_turns
+                    )
+                )
+            else:
+                message_groups(candidate.model_messages)
             tokens = await self._count(candidate)
             if (
                 is_summary_layer

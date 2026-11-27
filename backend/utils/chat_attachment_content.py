@@ -18,6 +18,7 @@ class AttachmentSpan(TypedDict):
 
 @dataclass(frozen=True, slots=True)
 class AttachmentContent:
+    prompt: str
     visible_block: dict
     blocks: list[str | dict]
     spans: list[AttachmentSpan]
@@ -104,4 +105,4 @@ def attachment_content(message: HumanMessage) -> AttachmentContent | None:
         cursor = end
     if cursor != len(blocks):
         return None
-    return AttachmentContent(visible_block, blocks, spans)
+    return AttachmentContent(prompt, visible_block, blocks, spans)

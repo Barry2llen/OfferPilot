@@ -11,6 +11,8 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
+from utils.chat_attachment_content import attachment_content
+
 from .errors import ContextCompactionError
 from .models import CompactedMessage
 
@@ -79,6 +81,9 @@ def message_groups(messages: Sequence[BaseMessage]) -> list[range]:
 
 def has_indispensable_payload(message: BaseMessage) -> bool:
     if isinstance(message, HumanMessage):
+        layout = attachment_content(message)
+        if layout is not None:
+            return bool(layout.spans)
         return isinstance(message.content, list) or bool(
             message.additional_kwargs.get("attachments")
         )
@@ -97,7 +102,7 @@ def protect_entries(
     *,
     keep_recent_turns: int,
 ) -> tuple[CompactedMessage, ...]:
-    """Protect user input and evidence. Give recent history a soft priority."""
+    """Compute protection from the current view, including any attachment rewrites."""
     if keep_recent_turns < 0:
         raise ValueError("keep_recent_turns must be non-negative.")
 
@@ -116,7 +121,7 @@ def protect_entries(
     for group in message_groups([entry.rendered for entry in entries]):
         protected = any(
             index == current_user
-            or entries[index].protected
+            or entries[index].kind == "summary"
             or isinstance(entries[index].rendered, SystemMessage)
             or has_indispensable_payload(entries[index].rendered)
             for index in group
