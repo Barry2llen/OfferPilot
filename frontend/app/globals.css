@@ -179,17 +179,17 @@ button:not(:disabled), summary { cursor: pointer; }
 /* Text fields never draw a focus border, ring or outline; unlayered so it beats Tailwind focus utilities. */
 :is(input:not([type="checkbox"], [type="radio"]), textarea, select):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
 /* A theme-aware fill keeps the active text field visible for keyboard users. */
-:is(input:not([type="checkbox"], [type="radio"]), textarea, select):focus-visible { background-color: color-mix(in srgb, var(--canvas) 82%, var(--ink)); }
+:is(input:not([type="checkbox"], [type="radio"]), textarea:not(.composer-text), select):focus-visible { background-color: color-mix(in srgb, var(--canvas) 82%, var(--ink)); }
 input, select, textarea { accent-color: var(--ink); }
 select { max-width: 100%; }
 ::selection { background: var(--line); color: var(--ink); }
-.app-shell { height: var(--app-height, 100dvh); display: flex; overflow: hidden; }
+.app-shell { --sidebar-column-width: var(--sidebar-width, 232px); --sidebar-resizer-overhang: 4px; height: var(--app-height, 100dvh); display: flex; overflow: hidden; }
 .app-main { flex: 1; min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
-.app-sidebar { position: relative; width: var(--sidebar-width, 232px); flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); }
+.app-sidebar { position: relative; width: var(--sidebar-column-width); flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); }
 .sidebar-brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; height: 72px; min-height: 72px; padding: 22px 24px; font-size: 23px; font-weight: 700; letter-spacing: -.7px; white-space: nowrap; }
 .brand-full { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .brand-version { flex-shrink: 0; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
-.sidebar-resizer { position: absolute; top: 0; right: -4px; z-index: 20; width: 8px; height: 100%; cursor: col-resize; touch-action: none; }
+.sidebar-resizer { position: absolute; top: 0; right: calc(-1 * var(--sidebar-resizer-overhang)); z-index: 20; width: calc(2 * var(--sidebar-resizer-overhang)); height: 100%; cursor: col-resize; touch-action: none; }
 .sidebar-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 120ms; }
 .sidebar-resizer:hover::after, .sidebar-resizer[data-dragging="true"]::after { background: var(--muted); }
 .sidebar-resizer:focus-visible { outline: none; }
@@ -222,6 +222,7 @@ select { max-width: 100%; }
 /* Pill composer: one row while the draft fits, text above the controls once it wraps or carries attachments. */
 .composer-surface { border: 1px solid var(--line); border-radius: 28px; background: var(--canvas); padding: 8px; box-shadow: 0 1px 2px rgb(0 0 0 / .03), 0 8px 28px rgb(0 0 0 / .05); transition: border-radius 160ms ease; }
 :root[data-theme="dark"] .composer-surface { background: var(--surface); box-shadow: none; }
+.composer-surface:has(.composer-text:focus-visible) { border-color: var(--muted); }
 .composer-surface.is-multiline { border-radius: 24px; }
 .composer-attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 4px 8px; }
 .composer-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "leading text trailing"; align-items: center; column-gap: 6px; }
@@ -279,16 +280,19 @@ body:has(dialog[open]) .app-main { overflow: hidden; }
 @keyframes drawer-in { from { transform: translateX(100%); } to { transform: none; } }
 @keyframes drawer-out { to { transform: translateX(100%); } }
 @media (min-width: 768px) and (max-width: 1199px) {
-  .app-sidebar { width: 64px; }
+  .app-shell { --sidebar-column-width: 64px; }
   .sidebar-brand { padding: 24px 12px; font-size: 20px; }
   .brand-full, .brand-version, .nav-item span, .sidebar-footer, .sidebar-history, .sidebar-resizer { display: none; }
   .brand-short { display: block; }
   .primary-nav { padding: 8px; gap: 12px; }
   .nav-item { padding: 12px; justify-content: center; }
 }
-@media (max-width: 1199px) { .chat-header .history-toggle { display: inline-flex; } }
+@media (max-width: 1199px) {
+  .app-shell { --sidebar-resizer-overhang: 0px; }
+  .chat-header .history-toggle { display: inline-flex; }
+}
 @media (max-width: 767px) {
-  .app-shell { flex-direction: column-reverse; }
+  .app-shell { --sidebar-column-width: 0px; flex-direction: column-reverse; }
   .app-main { height: auto; min-height: 0; }
   .app-sidebar { width: 100%; border: 0; border-top: 1px solid var(--line); background: var(--canvas); padding-bottom: env(safe-area-inset-bottom); }
   .sidebar-brand, .sidebar-history, .sidebar-footer, .sidebar-resizer { display: none; }
@@ -428,18 +432,16 @@ body:has(dialog[open]) .app-main { overflow: hidden; }
 :root[data-window-controls="custom"] { --electron-titlebar-height: 72px; --electron-window-controls-width: 138px; }
 :root { --sticky-top: max(calc(var(--electron-titlebar-height) + 8px), 16px); }
 .window-drag-region { display: none; }
-/* Narrow non-chat pages have no sidebar brand or chat header to drag the desktop window. */
-@media (max-width: 767px) {
-  :root[data-window-controls="custom"] .app-shell:not(:has(.chat-header)) > .window-drag-region {
-    display: block;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: var(--electron-window-controls-width);
-    height: var(--electron-titlebar-height);
-    z-index: 60;
-    background: var(--canvas);
-  }
+/* Non-chat pages reserve a title bar between the sidebar resize handle and the window buttons. */
+:root[data-window-controls="custom"] .app-shell:not(:has(.chat-header)) > .window-drag-region {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: calc(var(--sidebar-column-width) + var(--sidebar-resizer-overhang));
+  right: var(--electron-window-controls-width);
+  height: var(--electron-titlebar-height);
+  z-index: 60;
+  background: var(--canvas);
 }
 .window-controls { position: fixed; top: 0; right: 0; z-index: 70; display: flex; height: var(--electron-titlebar-height); background: var(--canvas); }
 .op-modal .window-controls { background: transparent; }

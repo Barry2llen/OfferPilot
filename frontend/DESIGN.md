@@ -46,7 +46,7 @@
 
 ## Electron
 
-窗口默认 1280×820，最小 640×560。保留标题栏拖拽区；宽度低于 768px 且侧栏品牌隐藏时，Windows/Linux 非聊天页面由 AppShell 在标题栏留白中提供拖拽区，聊天页继续使用现有顶部栏，浏览器页面不显示额外区域。Windows/Linux 由前端自绘最小化、最大化/还原、关闭按钮（每个 46×72px，悬停变色，关闭悬停为红色），按钮底边与 72px 顶部栏分隔线对齐；对话框打开时按钮在对话框内重复渲染以保持可用。macOS 保留原生红绿灯。页面的 theme-color 元数据驱动原生背景色；preload 只暴露 apiBaseUrl、platform 和 windowControls 包装函数，contextIsolation/nodeIntegration 安全配置不变。
+窗口默认 1280×820，最小 640×560。Windows/Linux 的非聊天页面使用 AppShell 的顶部留白拖动窗口，拖拽区随侧栏宽度调整，并避开侧栏调宽手柄和窗口按钮。聊天页使用自身的顶部栏，拖拽区仅在桌面客户端启用。Windows/Linux 由前端自绘最小化、最大化/还原、关闭按钮（每个 46×72px，悬停变色，关闭悬停为红色），按钮底边与 72px 顶部栏分隔线对齐；对话框打开时按钮在对话框内重复渲染以保持可用。macOS 保留原生红绿灯。页面的 theme-color 元数据驱动原生背景色；preload 只暴露 apiBaseUrl、platform 和 windowControls 包装函数，contextIsolation/nodeIntegration 安全配置不变。
 
 ## 验证边界
 
