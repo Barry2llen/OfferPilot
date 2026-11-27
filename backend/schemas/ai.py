@@ -58,7 +58,7 @@ class AIChatRequest(BaseModel):
     thinking_override: ThinkingOverride | None = Field(default=None, description="Temporary thinking value for this run.")
     prompt: str | None = Field(
         default=None,
-        description="User text message. Optional when attachments are present and required for text-only requests.",
+        description="User text preserved verbatim. Optional with attachments and required for text-only requests.",
         examples=["Summarize the strengths of this resume."],
     )
     thread_id: str | None = Field(
@@ -137,7 +137,7 @@ class AIChatHistoryMessage(BaseModel):
         examples=["ai"],
     )
     content: Any = Field(
-        description="Message content. User messages expose display_content visible to the user; hidden attachment bodies are not sent to the frontend.",
+        description="Message content. User messages expose the original visible text. Injected attachment bodies and model-only summaries are excluded.",
         examples=["这份简历的主要优势是项目经历完整、技术栈清晰。"],
     )
     attachments: list[ChatAttachmentRef] | None = Field(
@@ -327,7 +327,7 @@ class AIChatStreamRequest(BaseModel):
     thinking_override: ThinkingOverride | None = Field(default=None, description="Temporary thinking value for this run.")
     prompt: str | None = Field(
         default=None,
-        description="User text message. Optional when attachments are present or when using a retry command.",
+        description="User text preserved verbatim. Optional with attachments.",
         examples=["Summarize the strengths of this resume."],
     )
     thread_id: str | None = Field(

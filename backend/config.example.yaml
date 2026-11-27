@@ -13,6 +13,9 @@ context_compaction:
   default_max_context_tokens: 128000
   reserved_output_tokens: 20000
   safety_margin_tokens: 10000
+  trigger_input_ratio: 0.80
+  target_input_ratio: 0.60
+  summary_max_tokens: 4000
   keep_recent_turns: 4
   tool_result_max_characters: 6000
   compact_historical_attachments: true

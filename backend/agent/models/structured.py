@@ -12,9 +12,21 @@ from schemas.model_selection import ModelSelection
 from utils.json import jsonify
 from utils.logger import logger
 
-from .chat import load_chat_model
+from .chat import _build_json_output_instruction, load_chat_model
 
 type StructuredOutputMethod = Literal["function_calling", "json_mode", "json_schema"]
+
+
+def structured_output_overhead(
+    model_selection: ModelSelection, schema: type[BaseModel]
+) -> tuple[tuple[SystemMessage, ...], tuple[dict[str, Any], ...]]:
+    """Represent the schema sent by the default structured-output adapter."""
+    if model_selection.provider.provider.lower() == "deepseek":
+        return (
+            (SystemMessage(content=_build_json_output_instruction(schema)),),
+            ({"response_format": {"type": "json_object"}},),
+        )
+    return (), ({"name": schema.__name__, "schema": schema.model_json_schema()},)
 
 
 class StructuredModel[Struct: dict[str, Any] | BaseModel](
@@ -153,6 +165,7 @@ def load_structured_model[T: BaseModel](
     schema: type[T],
     *,
     method: StructuredOutputMethod | None = None,
+    disable_streaming: bool = False,
 ) -> StructuredModel[T]: ...
 
 
@@ -162,6 +175,7 @@ def load_structured_model(
     schema: dict[str, Any],
     *,
     method: StructuredOutputMethod | None = None,
+    disable_streaming: bool = False,
 ) -> StructuredModel[dict[str, Any]]: ...
 
 
@@ -170,6 +184,7 @@ def load_structured_model[T: BaseModel](
     schema: type[T] | dict[str, Any],
     *,
     method: StructuredOutputMethod | None = None,
+    disable_streaming: bool = False,
 ) -> StructuredModel[T] | StructuredModel[dict[str, Any]]:
     structured_kwargs: dict[str, Any] = {}
     if method is not None:
@@ -180,6 +195,8 @@ def load_structured_model[T: BaseModel](
         if model_selection and model_selection.provider.provider.lower() == "google"
         else {}
     )
+    if disable_streaming:
+        model_kwargs["disable_streaming"] = True
     chat_model = load_chat_model(model_selection, **model_kwargs)
     structured_model = chat_model.with_structured_output(
         schema,

@@ -753,6 +753,47 @@ async def test_legacy_interrupt_checkpoint_is_closed_without_replay(manager):
     assert snapshot.values["messages"][-1].status == "error"
     assert snapshot.values["messages"][-1].content != "[INTERRUPT_TOOL_CALLED]"
 
+@pytest.mark.parametrize("status", ["complete", "pending_auto_compact"])
+async def test_closing_child_checkpoint_preserves_compatible_compaction_sidecar(manager, status):
+    from langgraph.types import interrupt
+
+    user = HumanMessage(content="  current user text\n", id="user")
+    sidecar = {
+        "messages": [user],
+        "source_message_count": 1,
+        "source_message_ids": ["user"],
+        "status": status,
+        "auto_compacted": status == "complete",
+    }
+    def wait_for_user(state):
+        interrupt({"type": "error"})
+        return state
+
+    child = (
+        StateGraph(BaseAgentState)
+        .add_node("compact", lambda state: {"context_compaction": sidecar})
+        .add_node("model", wait_for_user)
+        .add_edge(START, "compact")
+        .add_edge("compact", "model")
+        .add_edge("model", END)
+        .compile()
+    )
+    manager.agent = (
+        StateGraph(BaseAgentState)
+        .add_node("model_call", child)
+        .add_edge(START, "model_call")
+        .add_edge("model_call", END)
+        .compile(checkpointer=InMemorySaver())
+    )
+    config: RunnableConfig = {"configurable": {"thread_id": "preserved-sidecar"}}
+    await manager.agent.ainvoke({"messages": [user]}, config)
+
+    await manager._close_checkpoint("preserved-sidecar")
+    saved = await manager.agent.aget_state(config)
+    assert not saved.next
+    assert saved.values["messages"] == [user]
+    assert saved.values["context_compaction"] == sidecar
+
 
 async def test_limits_queue_removal_and_delete_before_checkpoint(manager):
     manager.limits = manager.limits.model_copy(

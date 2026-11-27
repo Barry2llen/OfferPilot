@@ -1,8 +1,16 @@
 from functools import lru_cache
+from math import floor
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from ruamel.yaml import YAML
 
 from utils.logger import logger
@@ -38,6 +46,27 @@ class ContextCompactionConfig(BaseModel):
     default_max_context_tokens: int = Field(default=128_000, ge=1)
     reserved_output_tokens: int = Field(default=20_000, ge=0)
     safety_margin_tokens: int = Field(default=10_000, ge=0)
+    trigger_input_ratio: float = Field(
+        default=0.80,
+        gt=0,
+        lt=1,
+        description="Fraction of the hard input limit that triggers proactive summarization.",
+        examples=[0.80],
+    )
+    target_input_ratio: float = Field(
+        default=0.60,
+        gt=0,
+        lt=1,
+        description="Fraction of the hard input limit targeted by proactive summarization.",
+        examples=[0.60],
+    )
+    summary_max_tokens: int = Field(
+        default=4_000,
+        gt=0,
+        strict=True,
+        description="Maximum total generation tokens for one summary request, including thinking where applicable.",
+        examples=[4000],
+    )
     keep_recent_turns: int = Field(default=4, ge=0)
     tool_result_max_characters: int = Field(default=6_000, ge=1)
     compact_historical_attachments: bool = True
@@ -54,12 +83,13 @@ class ContextCompactionConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_capacity(self) -> "ContextCompactionConfig":
-        if self.default_max_context_tokens <= (
-            self.reserved_output_tokens + self.safety_margin_tokens
-        ):
-            raise ValueError(
-                "default_max_context_tokens must leave room for input tokens."
-            )
+        input_watermarks(
+            self.default_max_context_tokens
+            - self.reserved_output_tokens
+            - self.safety_margin_tokens,
+            self.trigger_input_ratio,
+            self.target_input_ratio,
+        )
         return self
 
     def __hash__(self) -> int:
@@ -69,12 +99,30 @@ class ContextCompactionConfig(BaseModel):
                 self.default_max_context_tokens,
                 self.reserved_output_tokens,
                 self.safety_margin_tokens,
+                self.trigger_input_ratio,
+                self.target_input_ratio,
+                self.summary_max_tokens,
                 self.keep_recent_turns,
                 self.tool_result_max_characters,
                 self.compact_historical_attachments,
                 tuple(sorted(self.model_context_windows.items())),
             )
         )
+
+
+def input_watermarks(
+    hard_limit: int, trigger_ratio: float, target_ratio: float
+) -> tuple[int, int]:
+    if not 0 < target_ratio < trigger_ratio < 1:
+        raise ValueError("Expected 0 < target_input_ratio < trigger_input_ratio < 1.")
+    trigger = floor(hard_limit * trigger_ratio)
+    target = floor(hard_limit * target_ratio)
+    if not 0 < target < trigger < hard_limit:
+        raise ValueError(
+            "Context window, output reserve and safety margin must leave distinct "
+            f"positive input watermarks (target={target}, trigger={trigger}, hard={hard_limit})."
+        )
+    return trigger, target
 
 
 class ChatRunsConfig(BaseModel):
@@ -156,7 +204,9 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     try:
         return Config(**_normalize_config_data(config_data))
-    except Exception as error:
+    except ValidationError as error:
+        if any(item["loc"][:1] == ("context_compaction",) for item in error.errors()):
+            raise
         logger.error(f"Error loading config: {error}")
         return Config()
 

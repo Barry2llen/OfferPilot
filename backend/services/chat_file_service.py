@@ -23,6 +23,12 @@ from schemas.chat_file import (
     StoredChatFile,
 )
 from schemas.model_selection import ModelSelection
+from utils.chat_attachment_content import (
+    ATTACHMENT_LAYOUT_KEY,
+    ATTACHMENT_LAYOUT_VERSION,
+    AttachmentSpan,
+    visible_attachment_prompt,
+)
 from utils.document_assets import (
     decode_text_file,
     extract_ocr_text,
@@ -124,8 +130,6 @@ class ChatFileService:
         file_ids: list[str],
         uploaded_files: list[UploadedChatFile],
     ) -> PreparedChatPrompt:
-        normalized_prompt = prompt.strip()
-
         created_file_paths: list[Path] = []
         try:
             stored_records: list[ChatFileORM] = []
@@ -145,12 +149,12 @@ class ChatFileService:
                 stored_records.append(record)
 
             if not stored_records:
-                if not normalized_prompt:
+                if not prompt.strip():
                     raise ResumeValidationError(
                         "Prompt or at least one attachment is required for chat requests."
                     )
                 return PreparedChatPrompt(
-                    human_message=HumanMessage(content=normalized_prompt),
+                    human_message=HumanMessage(content=prompt),
                     attachments=[],
                     requires_image_input=self.thread_requires_image_input(thread_id),
                     attachment_count=self._thread_file_repository.count_by_thread(
@@ -160,7 +164,9 @@ class ChatFileService:
                 )
 
             attachments: list[ChatAttachmentRef] = []
-            content_blocks: list[dict[str, object]] = []
+            visible_block: dict[str, object] = {"type": "text"}
+            content_blocks: list[str | dict[str, object]] = [visible_block]
+            payload_spans: list[AttachmentSpan] = []
             reference_lines: list[str] = []
 
             for record in stored_records:
@@ -194,6 +200,7 @@ class ChatFileService:
                 if not is_new_to_thread:
                     continue
 
+                start = len(content_blocks)
                 try:
                     if injection_mode == "image":
                         content_blocks.extend(self._build_image_blocks(record))
@@ -217,28 +224,33 @@ class ChatFileService:
                     ResumePreviewError,
                 ) as error:
                     raise ChatFileProcessingError(str(error)) from error
+                if len(content_blocks) > start:
+                    payload_spans.append(
+                        AttachmentSpan(
+                            file_id=record.id,
+                            injection_mode=injection_mode,
+                            start=start,
+                            end=len(content_blocks),
+                        )
+                    )
 
-            content_blocks.insert(
-                0,
-                {
-                    "type": "text",
-                    "text": self._build_visible_prompt(
-                        normalized_prompt, reference_lines
-                    ),
-                },
-            )
+            visible_block["text"] = visible_attachment_prompt(prompt, reference_lines)
 
             requires_image_input = self.thread_requires_image_input(thread_id)
             return PreparedChatPrompt(
                 human_message=HumanMessage(
                     content=content_blocks,
                     additional_kwargs={
-                        "display_content": normalized_prompt,
+                        "display_content": prompt,
                         "attachments": [
                             attachment.model_dump(mode="json")
                             for attachment in attachments
                         ],
                         "requires_image_input": requires_image_input,
+                        ATTACHMENT_LAYOUT_KEY: {
+                            "version": ATTACHMENT_LAYOUT_VERSION,
+                            "spans": payload_spans,
+                        },
                     },
                 ),
                 attachments=attachments,
@@ -341,11 +353,6 @@ class ChatFileService:
         if injection_mode == "ocr_text":
             return extract_ocr_text(file_path)
         raise ChatFileProcessingError(f"Unsupported injection mode: {injection_mode}")
-
-    def _build_visible_prompt(self, prompt: str, reference_lines: list[str]) -> str:
-        references = "\n".join(reference_lines)
-        visible_prompt = prompt or "请分析这些附件内容。"
-        return f"{visible_prompt}\n\n[附件引用]\n{references}"
 
     def _build_attachment_text_block(
         self,

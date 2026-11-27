@@ -4,13 +4,101 @@ import pytest
 from pydantic import ValidationError
 from ruamel.yaml import YAML
 
+from agent.compaction import DefaultContextBudgetPolicy
 from schemas.config import (
     Config,
+    ContextCompactionConfig,
     CorsConfig,
     PostgreSQLDatabaseConfig,
     SQLiteDatabaseConfig,
     load_config,
 )
+from schemas.model_provider import ModelProvider
+from schemas.model_selection import ModelSelection
+
+
+def test_compaction_budget_preserves_defaults_and_old_config() -> None:
+    settings = Config.model_validate(
+        {
+            "context_compaction": {
+                "keep_recent_turns": 4,
+                "tool_result_max_characters": 1,
+            }
+        }
+    ).context_compaction
+    assert settings.summary_max_tokens == 4_000
+    assert settings.tool_result_max_characters == 1
+    model = ModelSelection(
+        provider=ModelProvider(provider="OpenAI", name="test"), model_name="test"
+    )
+    budget = DefaultContextBudgetPolicy(settings).resolve(model)
+    assert budget.reserved_output_tokens == 20_000
+    assert (
+        budget.available_input_tokens,
+        budget.trigger_input_tokens,
+        budget.target_input_tokens,
+    ) == (98_000, 78_400, 58_800)
+
+    policy = DefaultContextBudgetPolicy(
+        ContextCompactionConfig(model_context_windows={"test": 40_000})
+    )
+    budget = policy.resolve(model)
+    assert (
+        budget.available_input_tokens,
+        budget.trigger_input_tokens,
+        budget.target_input_tokens,
+    ) == (10_000, 8_000, 6_000)
+    explicit = model.model_copy(
+        update={"extra_params": {"max_completion_tokens": 24_000}}
+    )
+    budget = policy.resolve(explicit)
+    assert (budget.reserved_output_tokens, budget.available_input_tokens) == (
+        24_000,
+        6_000,
+    )
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"trigger_input_ratio": 1.0},
+        {"target_input_ratio": 0.0},
+        {"target_input_ratio": 0.8},
+        {"trigger_input_ratio": 0.5, "target_input_ratio": 0.6},
+        {"summary_max_tokens": 0},
+        {"summary_max_tokens": 1.5},
+        {"summary_max_tokens": True},
+        {"default_max_context_tokens": 30_002},
+        {"reserved_output_tokens": -1},
+    ],
+)
+def test_invalid_compaction_settings_are_rejected(settings: dict) -> None:
+    with pytest.raises(ValidationError):
+        ContextCompactionConfig.model_validate(settings)
+
+
+def test_resolving_small_window_and_invalid_explicit_limit_fails_clearly() -> None:
+    model = ModelSelection(
+        provider=ModelProvider(provider="OpenAI", name="test"), model_name="tiny"
+    )
+    policy = DefaultContextBudgetPolicy(
+        ContextCompactionConfig(model_context_windows={"tiny": 30_002})
+    )
+    with pytest.raises(ValueError, match="distinct positive input watermarks"):
+        policy.resolve(model)
+    for invalid in (0, -1, True):
+        selection = model.model_copy(update={"extra_params": {"max_tokens": invalid}})
+        with pytest.raises(ValueError, match="positive integer"):
+            policy.resolve(selection)
+
+
+def test_load_config_reports_invalid_compaction_config(workspace_tmp_dir: Path) -> None:
+    config_path = workspace_tmp_dir / "invalid-compaction.yaml"
+    config_path.write_text(
+        "context_compaction:\n  target_input_ratio: 0.9\n", encoding="utf-8"
+    )
+    with pytest.raises(ValidationError, match="target_input_ratio"):
+        load_config(str(config_path))
 
 
 def test_config_validation_rejects_mixed_database_fields() -> None:

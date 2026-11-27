@@ -1,73 +1,78 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
+from math import ceil
 from typing import Any
 
-from langchain_core.messages import BaseMessage
-from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from .protocols import TokenCounter
+from .protocols import TokenCounter, ToolSchema
+
+_IMAGE_BLOCKS = {"image", "image_url", "input_image"}
+_TOKENS_PER_IMAGE = 2_048
 
 
-def _canonicalize(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {
-            str(key): _canonicalize(value[key])
-            for key in sorted(value, key=lambda item: str(item))
-        }
-    if isinstance(value, (list, tuple)):
-        return [_canonicalize(item) for item in value]
-    if hasattr(value, "model_dump"):
-        return _canonicalize(value.model_dump(mode="json"))
-    return value
+def _wire_tokens(value: Any) -> int:
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return ceil(len(encoded.encode("utf-8", errors="surrogatepass")) / 3)
 
 
-def _tool_schema(tool: BaseTool) -> dict[str, Any]:
-    try:
-        converted = convert_to_openai_tool(tool)
-    except Exception:
-        raw_schema = getattr(tool, "tool_call_schema", {})
-        if hasattr(raw_schema, "model_json_schema"):
-            parameters = raw_schema.model_json_schema()
-        elif isinstance(raw_schema, Mapping):
-            parameters = dict(raw_schema)
-        else:
-            parameters = {"type": "object", "properties": {}}
-        converted = {
-            "type": "function",
-            "function": {
-                "name": str(getattr(tool, "name", "unknown")),
-                "description": str(getattr(tool, "description", "") or ""),
-                "parameters": parameters,
-            },
-        }
-    canonical = _canonicalize(converted)
-    if not isinstance(canonical, dict):
-        raise TypeError("Tool schema conversion must produce a mapping.")
-    # Force a stable JSON-compatible traversal now so token estimates do not rely
-    # on object reprs or insertion order from provider adapters.
-    json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return canonical
+def _message_tokens(message: BaseMessage) -> int:
+    content = message.content
+    image_tokens = 0
+    if isinstance(content, list):
+        blocks = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") in _IMAGE_BLOCKS:
+                image_tokens += _TOKENS_PER_IMAGE
+                blocks.append({"type": block["type"]})
+            else:
+                blocks.append(block)
+        content = blocks
+
+    wire: dict[str, Any] = {"role": message.type, "content": content}
+    if message.name:
+        wire["name"] = message.name
+    if isinstance(message, AIMessage):
+        if message.tool_calls:
+            wire["tool_calls"] = message.tool_calls
+        for key in ("reasoning_content", "function_call"):
+            if key in message.additional_kwargs:
+                wire[key] = message.additional_kwargs[key]
+    elif isinstance(message, ToolMessage):
+        wire["tool_call_id"] = message.tool_call_id
+        wire["status"] = message.status
+
+    return _wire_tokens(wire) + image_tokens + 3
 
 
 class ApproximateTokenCounter(TokenCounter):
-    """Use LangChain's approximate counter with stable tool schemas."""
+    """Estimate serialized inputs, plus a fixed allowance per image and message."""
 
     async def acount(
         self,
         *,
         system_prompts: Sequence[BaseMessage],
         messages: Sequence[BaseMessage],
-        tools: Sequence[BaseTool],
+        tools: Sequence[ToolSchema],
     ) -> int:
-        all_messages = [*system_prompts, *messages]
-        stable_tools = [_tool_schema(tool) for tool in tools]
-        return count_tokens_approximately(
-            all_messages,
-            tools=stable_tools,
+        tool_tokens = (
+            _wire_tokens(
+                [
+                    convert_to_openai_tool(tool) if isinstance(tool, BaseTool) else tool
+                    for tool in tools
+                ]
+            )
+            if tools
+            else 0
+        )
+        return tool_tokens + sum(
+            _message_tokens(message) for message in (*system_prompts, *messages)
         )
 
 

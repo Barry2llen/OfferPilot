@@ -166,7 +166,7 @@ export default function ChatInput({
     }
     onSend(
       {
-        prompt: trimmed,
+        prompt: input,
         localFiles: localUploads.map((item) => item.file),
         fileIds: selectedLibraryFiles.map((file) => file.id),
         draftAttachments: buildDraftAttachments(),

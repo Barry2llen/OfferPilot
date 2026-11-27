@@ -15,6 +15,8 @@ from exceptions import ChatModelLoadError
 from schemas.model_selection import ModelSelection, google_extra_params
 from utils.logger import logger
 
+from .output_limits import provider_extra_params
+
 
 class GoogleConfiguredChatModel(ChatGoogleGenerativeAI):
     """Apply native generation fields that the LangChain constructor does not forward."""
@@ -250,12 +252,22 @@ def _openai_model_options(
 def load_chat_model(model_selection: ModelSelection | None, **kwargs) -> BaseChatModel:
     if model_selection is None:
         raise ChatModelLoadError("Model selection is required to load a chat model.")
+    extra_params = provider_extra_params(model_selection)
     return _load_chat_model_cached(
         provider_name=model_selection.provider.provider,
         model_name=model_selection.model_name,
         base_url=model_selection.provider.base_url,
         api_key=model_selection.provider.api_key,
-        options_json=json.dumps({"api_mode": model_selection.api_mode, "thinking": model_selection.thinking.model_dump() if model_selection.thinking else None, "extra_params": model_selection.extra_params}, sort_keys=True),
+        options_json=json.dumps(
+            {
+                "api_mode": model_selection.api_mode,
+                "thinking": model_selection.thinking.model_dump()
+                if model_selection.thinking
+                else None,
+                "extra_params": extra_params,
+            },
+            sort_keys=True,
+        ),
         **kwargs,
     )
 
@@ -324,7 +336,7 @@ def _load_chat_model_cached(
                 options_kwargs["output_config"] = {**options_kwargs.get("output_config", {}), "effort": value}
             elif kind == "budget" and value is not None:
                 options_kwargs["thinking"] = {"type": "enabled", "budget_tokens": value}
-                options_kwargs["max_tokens"] = thinking["max_tokens"]
+                options_kwargs.setdefault("max_tokens", thinking["max_tokens"])
     options_kwargs.update(kwargs)
 
     try:

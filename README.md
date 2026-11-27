@@ -244,7 +244,10 @@ Backend configuration is documented in `backend/config.example.yaml`:
   tools, retries, LangGraph recursion limits, layered model-context compaction,
   and debugging. The context compaction block is optional and uses validated
   defaults when omitted. Supervisor auto-compaction can follow the current
-  conversation model or use the model selected in Model Settings.
+  conversation model or use the model selected in Model Settings. The starting
+  trigger and target are 80% and 60% of the hard input limit. Summaries receive
+  up to 4,000 generation tokens per request, subject to the remaining budget.
+  [Supervisor context compaction](backend/docs/context-compaction.md)
 
 Frontend and static-hosting runtime settings:
 

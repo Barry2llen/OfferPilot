@@ -1,10 +1,12 @@
 import asyncio
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from dotenv import load_dotenv
+from langchain_core.tools import BaseTool
 from ruamel.yaml import YAML
 
 from db.engine import AsyncDatabaseManager, DatabaseManager
@@ -14,7 +16,7 @@ load_dotenv(Path.cwd() / ".env", override=False)
 
 
 @pytest.fixture
-def workspace_tmp_dir() -> Path:
+def workspace_tmp_dir() -> Iterator[Path]:
     base_dir = Path("dev") / "test-tmp"
     base_dir.mkdir(parents=True, exist_ok=True)
     path = base_dir / uuid4().hex
@@ -64,7 +66,14 @@ def temporary_app_config(
     temporary_sqlite_config: SQLiteDatabaseConfig,
     temporary_resume_upload_dir: Path,
     temporary_chat_file_upload_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Config:
+    async def offline_web_search_tools() -> list[BaseTool]:
+        return []
+
+    monkeypatch.setattr(
+        "agent.mcps.web_search.get_web_search_mcp_tools", offline_web_search_tools
+    )
     return Config(
         database=temporary_sqlite_config,
         resume_upload_dir=str(temporary_resume_upload_dir),
@@ -75,7 +84,7 @@ def temporary_app_config(
 @pytest.fixture
 def temporary_database_manager(
     temporary_sqlite_config: SQLiteDatabaseConfig,
-) -> DatabaseManager:
+) -> Iterator[DatabaseManager]:
     manager = DatabaseManager(temporary_sqlite_config)
     try:
         yield manager
@@ -86,7 +95,7 @@ def temporary_database_manager(
 @pytest.fixture
 def temporary_async_database_manager(
     temporary_sqlite_config: SQLiteDatabaseConfig,
-) -> AsyncDatabaseManager:
+) -> Iterator[AsyncDatabaseManager]:
     manager = AsyncDatabaseManager(temporary_sqlite_config)
     try:
         yield manager

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
@@ -16,6 +16,8 @@ from .models import (
     CompactionResult,
     ContextBudget,
 )
+
+type ToolSchema = BaseTool | dict[str, Any]
 
 
 class Compactor[State: StateLike = BaseAgentState](Protocol):
@@ -37,7 +39,7 @@ class TokenCounter(Protocol):
         *,
         system_prompts: Sequence[BaseMessage],
         messages: Sequence[BaseMessage],
-        tools: Sequence[BaseTool],
+        tools: Sequence[ToolSchema],
     ) -> int: ...
 
 

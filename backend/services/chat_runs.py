@@ -7,10 +7,10 @@ from collections import deque
 from collections.abc import AsyncGenerator, Callable, Sequence
 from dataclasses import dataclass, field
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
-from langchain_core.messages import ToolMessage, messages_from_dict
+from langchain_core.messages import BaseMessage, ToolMessage, messages_from_dict
 from langgraph.graph.message import add_messages
 
 from agent.interactions import (
@@ -477,11 +477,13 @@ class ChatRunManager:
         if not snapshot.values and not messages:
             return
         collected = list(snapshot.values.get("messages", []))
+        checkpoint_states = [snapshot.values]
         # Supervisor has one nested model_call graph; its state may not yet be committed to the parent.
         for task in snapshot.tasks:
             child = getattr(task, "state", None)
             if child is not None and hasattr(child, "values"):
                 collected = add_messages(collected, child.values.get("messages", []))
+                checkpoint_states.append(child.values)
         collected = add_messages(collected, list(messages))
         answered = {
             msg.tool_call_id
@@ -510,9 +512,25 @@ class ChatRunManager:
                             content="Execution ended. The result is unknown; do not automatically repeat this operation.",
                         )
                     )
+        collected = cast(list[BaseMessage], add_messages(collected, repairs))
+        sidecar = None
+        for state in reversed(checkpoint_states):
+            candidate = state.get("context_compaction")
+            if not isinstance(candidate, dict):
+                continue
+            count = candidate.get("source_message_count")
+            origin = state.get("messages", [])
+            if (
+                type(count) is int
+                and isinstance(origin, list)
+                and 0 < count <= min(len(origin), len(collected))
+                and origin[:count] == collected[:count]
+            ):
+                sidecar = candidate
+                break
         values = {
-            "messages": add_messages(collected, repairs),
-            "context_compaction": None,
+            "messages": collected,
+            "context_compaction": sidecar,
             "context_compaction_error": None,
             "context_compaction_event_pending": False,
         }

@@ -31,8 +31,10 @@ it("keeps the new draft editable and preserves it after the previous submission 
   );
   const input = screen.getByRole("textbox");
   const placeholder = input.getAttribute("placeholder");
-  fireEvent.change(input, { target: { value: "first" } });
+  const original = "  First line\n  `a & b`\n ";
+  fireEvent.change(input, { target: { value: original } });
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(onSend.mock.calls[0]?.[0]).toMatchObject({ prompt: original });
   rerender(
     <ToastProvider>
       <ChatInput

@@ -33,7 +33,7 @@ class ModelLoadErrorEvent(ErrorEvent):
     Event data for model load error events.
     """
 
-    model: ModelSelection
+    model: ModelSelection | None
 
 
 class ToolCallErrorEvent(ErrorEvent):

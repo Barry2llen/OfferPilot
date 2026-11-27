@@ -126,6 +126,26 @@ MESSAGES: dict[str, dict[Locale, str]] = {
         "zh-CN": "上下文压缩失败：{detail}",
         "en-US": "Context compaction failed: {detail}",
     },
+    "contextInputTooLarge": {
+        "zh-CN": "保留用户原文、系统指令和所需证据后，输入仍超出模型可用容量。",
+        "en-US": "The input exceeds the model's available capacity after retaining the original user text, system instructions, and required evidence.",
+    },
+    "contextBudgetInvalid": {
+        "zh-CN": "模型上下文预算无效，请检查窗口、输出上限、预留和压缩水位。",
+        "en-US": "The model context budget is invalid. Check the window, output limit, reserve, and compaction watermarks.",
+    },
+    "contextToolExchangeInvalid": {
+        "zh-CN": "历史工具调用与结果无法正确配对，模型请求已停止。",
+        "en-US": "The model request stopped because historical tool calls and results could not be matched.",
+    },
+    "contextSummaryCapacity": {
+        "zh-CN": "摘要模型的上下文窗口无法容纳这次摘要请求。",
+        "en-US": "The summary request exceeds the summary model's context window.",
+    },
+    "contextSummaryOutputLimit": {
+        "zh-CN": "无法为摘要模型应用足够的生成额度，请检查压缩配置和摘要模型的输出设置。",
+        "en-US": "A sufficient generation limit could not be applied. Check the compaction and summary model output settings.",
+    },
     "modelRetry": {
         "zh-CN": "模型调用失败，正在重试（第 {attempt}/{max_attempts} 次）。",
         "en-US": "The model call failed; retrying (attempt {attempt}/{max_attempts}).",
@@ -706,10 +726,28 @@ def public_run_error(
     if isinstance(error, TimeoutError):
         return localize_error("User input timed out.", locale)
     if raw.startswith("Context compaction failed:"):
+        reason = _suffix(raw, "Context compaction failed:")
+        key = next(
+            (
+                key for prefix, key in (
+                    ("Model input exceeds the hard limit", "contextInputTooLarge"),
+                    ("Auto-compaction has no eligible history", "contextInputTooLarge"),
+                    ("Required content and the summary wrapper", "contextInputTooLarge"),
+                    ("Auto-compaction produced input above", "contextInputTooLarge"),
+                    ("Invalid model context budget", "contextBudgetInvalid"),
+                    ("Invalid tool exchange", "contextToolExchangeInvalid"),
+                    ("The summary input exceeds", "contextSummaryCapacity"),
+                    ("The summary model output limit", "contextSummaryOutputLimit"),
+                    ("Cannot apply the summary output limit", "contextSummaryOutputLimit"),
+                )
+                if reason.startswith(prefix)
+            ),
+            None,
+        )
         return translate(
             "contextCompactionFailed",
             locale,
-            detail=localize_error(
+            detail=translate(key, locale) if key else localize_error(
                 "Chat execution failed. See server logs for details.", locale
             ),
         )

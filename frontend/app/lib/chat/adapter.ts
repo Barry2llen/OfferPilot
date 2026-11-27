@@ -339,10 +339,13 @@ export function buildStreamBody(
   const formData = new FormData();
   formData.append("selection_id", String(selectionId));
   if (options?.thinkingOverride) formData.append("thinking_override", JSON.stringify(options.thinkingOverride));
-  if (command) formData.append("command", JSON.stringify(command));
-  if (command?.prompt ?? prompt) {
-    formData.append("prompt", command?.prompt ?? prompt);
-  }
+  // JSON keeps the prompt's original line breaks through multipart encoding.
+  const formCommand: AIChatCommand = {
+    type: "prompt",
+    ...command,
+    prompt: command?.prompt ?? prompt,
+  };
+  formData.append("command", JSON.stringify(formCommand));
   if (threadId) formData.append("thread_id", threadId);
   for (const fileId of fileIds) formData.append("file_ids", fileId);
   for (const file of localFiles) formData.append("files", file);

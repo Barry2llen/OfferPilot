@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Callable, Literal
 
 from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 from langgraph._internal._typing import StateLike
+
+from schemas.config.base import input_watermarks
 
 from ..base import (
     BaseAgentState,
@@ -32,13 +34,14 @@ class MessageRef:
 
 @dataclass(frozen=True, slots=True)
 class CompactedMessage:
-    """A traceable model-view message, never written back to graph state."""
+    """A traceable model-view message stored separately from raw history."""
 
     rendered: BaseMessage
     sources: tuple[MessageRef, ...]
     kind: CompactionEntryKind
     layer: str
     protected: bool = False
+    recent: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +49,10 @@ class ContextBudget:
     max_context_tokens: int
     reserved_output_tokens: int
     safety_margin_tokens: int
+    trigger_input_ratio: float = 0.80
+    target_input_ratio: float = 0.60
+    trigger_input_tokens: int = field(init=False)
+    target_input_tokens: int = field(init=False)
 
     @property
     def available_input_tokens(self) -> int:
@@ -62,13 +69,13 @@ class ContextBudget:
             raise ValueError("reserved_output_tokens must be non-negative.")
         if self.safety_margin_tokens < 0:
             raise ValueError("safety_margin_tokens must be non-negative.")
-        if (
-            self.reserved_output_tokens + self.safety_margin_tokens
-            >= self.max_context_tokens
-        ):
-            raise ValueError(
-                "reserved_output_tokens and safety_margin_tokens must leave input capacity."
-            )
+        trigger, target = input_watermarks(
+            self.available_input_tokens,
+            self.trigger_input_ratio,
+            self.target_input_ratio,
+        )
+        object.__setattr__(self, "trigger_input_tokens", trigger)
+        object.__setattr__(self, "target_input_tokens", target)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +106,6 @@ class CompactionContext[State: StateLike = BaseAgentState]:
     actions: tuple[CompactionAction, ...] = ()
     applied_layers: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
-    raw_message_count: int = 0
     snapshot: ContextCompactionSnapshot | None = None
 
     @property
@@ -109,12 +115,6 @@ class CompactionContext[State: StateLike = BaseAgentState]:
     @property
     def protected_entries(self) -> tuple[CompactedMessage, ...]:
         return tuple(entry for entry in self.entries if entry.protected)
-
-    @property
-    def has_new_messages_since_snapshot(self) -> bool:
-        if self.snapshot is None:
-            return True
-        return self.raw_message_count > self.snapshot["source_message_count"]
 
     def map_entries(
         self,

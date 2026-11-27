@@ -165,6 +165,18 @@ describe("chat stream adapter", () => {
     expect(form).toBeInstanceOf(FormData);
     expect((form as FormData).get("thinking_override")).toBe('{"value":"high"}');
   });
+  it("preserves surrounding whitespace and line endings when an attachment is present", async () => {
+    const prompt = "  先比较岗位\n禁止编造经历\n`A&B`  ";
+    const body = buildStreamBody(1, prompt, null, undefined, { fileIds: ["notes"] });
+    expect(body).toBeInstanceOf(FormData);
+    const request = new Request("https://example.invalid", {
+      method: "POST",
+      body: body as FormData,
+    });
+    const form = await request.formData();
+    expect(JSON.parse(String(form.get("command")))).toEqual({ type: "prompt", prompt });
+    expect(form.getAll("file_ids")).toEqual(["notes"]);
+  });
   it("preserves a provider-default override for JSON and attachment submissions", () => {
     const override = { value: null };
     const json = buildStreamBody(1, "hello", "thread", undefined, { thinkingOverride: override });

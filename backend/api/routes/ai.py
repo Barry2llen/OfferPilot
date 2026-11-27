@@ -174,7 +174,7 @@ async def _parse_multipart_ai_chat_payload(
     form = await request.form()
     payload_data: dict[str, Any] = {
         "selection_id": form.get("selection_id"),
-        "prompt": _none_if_blank(form.get("prompt")),
+        "prompt": form.get("prompt"),
         "thread_id": _none_if_blank(form.get("thread_id")),
         "file_ids": _form_list(form, "file_ids"),
     }
@@ -530,6 +530,7 @@ async def get_chat_file_raw(
         "Requests wait in the conversation FIFO, including behind runs awaiting human input. "
         "A missing key is generated; an empty key or one longer than 128 characters returns 422. "
         "Reusing a key with a different submission locale returns 409. "
+        "Supervisor checks the prepared model input against the configured hard limit when compaction is enabled. "
         "Runs needing human input fail with 502; use the interactive endpoint instead."
     ),
     response_description="Returns the AI response and the conversation thread ID.",
@@ -551,7 +552,7 @@ async def get_chat_file_raw(
             example="Uploaded chat file is empty.",
         ),
         502: _error_response(
-            "The model could not be loaded or called.",
+            "The model could not be loaded or called, or a safe model input could not be prepared.",
             example="Model call failed after 3 retries.",
         ),
     },
@@ -635,11 +636,8 @@ async def _submit_chat_run(request: Request, *, interactive=True):
                 except ValueError as error:
                     raise HTTPException(422, str(error)) from error
             service = _build_chat_file_service(request, session)
-            prompt = (
-                (payload.command.prompt if payload.command else None)
-                or payload.prompt
-                or ""
-            )
+            command_prompt = payload.command.prompt if payload.command else None
+            prompt = command_prompt if command_prompt is not None else (payload.prompt or "")
             try:
                 prepared = service.prepare_prompt(
                     thread_id=thread_id,
@@ -711,7 +709,7 @@ _RUN_BODY = {
                         },
                         "prompt": {
                             "type": "string",
-                            "description": "User message; optional with attachments.",
+                            "description": "User text, preserved verbatim. Optional with attachments.",
                         },
                         "thread_id": {
                             "type": "string",
@@ -726,6 +724,15 @@ _RUN_BODY = {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "Previously uploaded attachment IDs.",
+                        },
+                        "command": {
+                            "type": "string",
+                            "description": "JSON-encoded prompt command. Embed the original prompt here to preserve line endings in multipart requests.",
+                            "example": '{"type":"prompt","prompt":"Compare roles first."}',
+                        } if media == "multipart/form-data" else {
+                            "type": "object",
+                            "description": "Prompt command with a type and optional prompt. The command prompt takes precedence when provided.",
+                            "example": {"type": "prompt", "prompt": "Compare roles first."},
                         },
                         **(
                             {
@@ -845,8 +852,16 @@ async def cancel_chat_run(request: Request, run_id: str):
     "/chat/stream",
     openapi_extra=_RUN_BODY,
     summary="Start and subscribe to a chat run",
-    description="Compatibility entry point for prompt submissions. Execution survives SSE disconnection. Answers use the separate run input endpoint; legacy query/retry commands return 410.",
-    response_description="SSE events including thread, token, reasoning, tool_start/progress/end/error, input_required/resolved, run_status, snapshot, final and error. Analysis progress identifies its record and tool_call_id.",
+    description=(
+        "Compatibility entry point for prompt submissions. Execution survives SSE disconnection. "
+        "When enabled, Supervisor compacts its model view and requests input when a safe request cannot be prepared. "
+        "Answers use the separate run input endpoint. Legacy query/retry commands return 410."
+    ),
+    response_description=(
+        "SSE events include thread, token, reasoning, tool_start/progress/end/error, input_required/resolved, "
+        "run_status, snapshot, final and error. The context_compaction event reports summary attempts, "
+        "accepted summaries and failures. Analysis progress identifies its record and tool_call_id."
+    ),
     responses=_RUN_ERRORS,
 )
 async def chat_stream(request: Request):

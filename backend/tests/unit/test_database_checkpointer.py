@@ -250,6 +250,12 @@ def test_checkpoint_repository_lists_latest_checkpoint_per_thread(
         first_checkpoint["channel_versions"],
     )
     checkpointer.put(
+        make_config("thread-other"),
+        other_thread_checkpoint,
+        {"source": "input", "step": -1, "run_id": "run-other", "parents": {}},
+        other_thread_checkpoint["channel_versions"],
+    )
+    checkpointer.put(
         first_config,
         second_checkpoint,
         {
@@ -259,12 +265,6 @@ def test_checkpoint_repository_lists_latest_checkpoint_per_thread(
             "parents": {"": first_checkpoint["id"]},
         },
         second_checkpoint["channel_versions"],
-    )
-    checkpointer.put(
-        make_config("thread-other"),
-        other_thread_checkpoint,
-        {"source": "input", "step": -1, "run_id": "run-other", "parents": {}},
-        other_thread_checkpoint["channel_versions"],
     )
 
     with temporary_database_manager.session_scope() as session:

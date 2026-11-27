@@ -1,36 +1,42 @@
 import asyncio
 from copy import copy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from time import perf_counter
-from typing import override
+from typing import Annotated, cast, override
 from uuid import uuid4
 
 from langchain.tools import BaseTool, ToolRuntime
-from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import AIMessage, BaseMessage, ToolCall, ToolMessage
+from langchain_core.runnables import Runnable, RunnableConfig
+from langgraph.channels import UntrackedValue
+from langgraph.config import get_config
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
+from langgraph.types import Command
 
 from agent.interactions import InteractionContext, ask_user, interaction_context
 from exceptions import AgentStateError, ModelCallExecutionError
 from exceptions.agent import ModelRequestConfigurationError, is_model_bad_request
 from schemas.config.base import Config
+from schemas.model_selection import ModelSelection
 from utils.custom_events import _adispatch_custom_event_safely
-from utils.json import jsonify
 from utils.logger import logger
 from utils.message_content import extract_message_reasoning
 from utils.tool_outputs import ANALYSIS_TOOL_NAMES, is_tool_output_error
 
 from ..base import BaseAgentState, BaseGraph, InputRequest
 from ..compaction import (
+    ApproximateTokenCounter,
     CompactionRequest,
     Compactor,
     ContextBudgetPolicy,
     ContextCompactionError,
     DefaultContextBudgetPolicy,
-    model_messages_for_state,
+    PipelineCompactor,
 )
+from ..compaction.protection import message_groups, tool_call_names
 from ..events import ModelCallErrorEvent, ModelLoadErrorEvent, ToolCallErrorEvent
 from ..models import load_chat_model
 from ..prompts import (
@@ -52,6 +58,17 @@ def _record_reasoning_duration(message: BaseMessage, duration_ms: int) -> bool:
 
     additional_kwargs["reasoning_duration_ms"] = duration_ms
     return True
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedModelCall:
+    selection: ModelSelection
+    tools: tuple[BaseTool, ...]
+    messages: tuple[BaseMessage, ...]
+
+
+class _PreparedState(BaseAgentState, total=False):
+    prepared_model_call: Annotated[_PreparedModelCall | None, UntrackedValue]
 
 
 class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
@@ -136,6 +153,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         super().__init__(*args, config=config, **kwargs)
         self.tools = normalize_tools(tools)
         self.compactor = compactor
+        self.token_counter = (
+            compactor.token_counter
+            if isinstance(compactor, PipelineCompactor)
+            else ApproximateTokenCounter()
+        )
         self.context_budget_policy = (
             context_budget_policy
             if context_budget_policy is not None
@@ -146,7 +168,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         self.system_prompts = prompts if callable(prompts) else lambda runtime: prompts
 
     @staticmethod
-    def _resolve_model_selection(state: State):
+    def _resolve_model_selection(state: State) -> ModelSelection | None:
         model_selection = state.get("model")
         if callable(model_selection):
             return model_selection(state=state)
@@ -170,59 +192,82 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 logger.exception("Failed to read model configuration")
                 await ask_user(InputRequest(type="error", message=str(error)))
 
-    async def _prepare_context_node(self, state: State) -> State:
+    async def _prepare_context_node(self, state: State) -> _PreparedState:
         """Prepare and checkpoint the Supervisor model view before inference."""
 
-        if self.compactor is None:
-            return {
-                "context_compaction_error": None,
-                "context_compaction_event_pending": False,
-            }  # type: ignore[return-value]
-
+        assert self.compactor is not None
         state = await self._refresh_model_selection(state)
         try:
-            model_selection = self._resolve_model_selection(state)
-            tools = await resolve_tools(self.tools, self.get_runtime(state))
-            system_prompts = self.system_prompts(self.get_runtime(state))
-            budget = self.context_budget_policy.resolve(model_selection)  # type: ignore[arg-type]
+            selection = self._resolve_model_selection(state)
+            if selection is None:
+                raise ContextCompactionError("Model selection is required.")
+            if isinstance(selection, ModelSelection):
+                selection = selection.model_copy(deep=True)
+            resolved_state = copy(state)
+            resolved_state["model"] = selection
+            runtime = self.get_runtime(resolved_state)
+            tools = tuple(await resolve_tools(self.tools, runtime))
+            system_prompts = tuple(self.system_prompts(runtime))
+            try:
+                budget = self.context_budget_policy.resolve(selection)
+            except ValueError as error:
+                logger.warning("Invalid context compaction budget: {}", error)
+                raise ContextCompactionError(
+                    "Invalid model context budget configuration."
+                ) from error
             result = await self.compactor.acompact(
                 CompactionRequest(
-                    runtime=self.get_runtime(state),
-                    system_prompts=tuple(system_prompts),
-                    tools=tuple(tools),
+                    runtime=runtime,
+                    system_prompts=system_prompts,
+                    tools=tools,
                     budget=budget,
                 )
+            )
+            messages = tuple(result.model_messages)
+            message_groups(messages)
+            tokens = await self.token_counter.acount(
+                system_prompts=system_prompts, messages=messages, tools=tools
+            )
+            if tokens > budget.available_input_tokens:
+                raise ContextCompactionError(
+                    "Model input exceeds the hard limit with required content preserved."
+                )
+            prepared = _PreparedModelCall(
+                selection, tools, (*system_prompts, *messages)
             )
         except ContextCompactionError as error:
             message = f"Context compaction failed: {error}"
             logger.error(message)
-            update: dict[str, object] = {
+            update: _PreparedState = {
                 "context_compaction_error": message,
                 "context_compaction_event_pending": False,
+                "prepared_model_call": None,
             }
             if error.partial_result is not None:
                 update["context_compaction"] = error.partial_result.build_snapshot()
-            return update  # type: ignore[return-value]
+            return update
         except Exception as error:
-            message = f"Context compaction failed: {error}"
+            message = f"Context compaction failed: Could not prepare the model request ({type(error).__name__})."
             logger.error(message)
             return {
                 "context_compaction_error": message,
                 "context_compaction_event_pending": False,
-            }  # type: ignore[return-value]
+                "prepared_model_call": None,
+            }
 
-        update: dict[str, object] = {
+        update = {
             "context_compaction_error": None,
             "context_compaction_event_pending": result.auto_compacted_this_run,
+            "prepared_model_call": prepared,
         }
         if result.should_persist_snapshot:
             update["context_compaction"] = result.build_snapshot()
 
         logger.debug(
             lambda: (
-                "Context compaction completed: "
+                "Model input verified: "
                 f"original_tokens={result.original_tokens}, "
-                f"compacted_tokens={result.compacted_tokens}, "
+                f"compacted_tokens={tokens}, "
                 f"available_input_tokens={budget.available_input_tokens}, "
                 f"applied_layers={result.applied_layers}, "
                 f"original_messages={len(state.get('messages', []))}, "
@@ -230,18 +275,22 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             )
         )
         if result.warnings:
-            logger.warning(f"Context compaction warnings: {result.warnings}")
-        return update  # type: ignore[return-value]
+            logger.debug(f"Context compaction diagnostics: {result.warnings}")
+        return update
 
-    async def _context_compaction_complete_node(self, state: State) -> State:
-        if state.get("context_compaction_event_pending"):
+    async def _context_compaction_complete_node(
+        self, state: _PreparedState
+    ) -> _PreparedState:
+        if state.get("context_compaction_event_pending") and state.get(
+            "prepared_model_call"
+        ):
             await _adispatch_custom_event_safely(
                 "on_context_compaction",
                 {"phase": "completed"},
             )
-        return {"context_compaction_event_pending": False}  # type: ignore[return-value]
+        return {"context_compaction_event_pending": False}
 
-    async def _context_compaction_error_node(self, state: State) -> State:
+    async def _context_compaction_error_node(self, state: State) -> BaseAgentState:
         message = str(
             state.get("context_compaction_error") or "Context compaction failed."
         )
@@ -257,8 +306,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
                 max_attempts=1,
             ),
         )
+        context = interaction_context.get()
+        if context is not None and not context.interactive:
+            raise ModelCallExecutionError(message)
         await ask_user(InputRequest(type="error", message=message))
-        return {"context_compaction_error": None}  # type: ignore[return-value]
+        return {"context_compaction_error": None}
 
     @staticmethod
     def _route_after_context_compaction(state: State) -> str:
@@ -269,8 +321,10 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     async def _tool_node(
         self,
         state: State,
-        runtime: Runtime[InteractionContext | None],
+        runtime: Runtime[InteractionContext | None] | Runtime[None],
         config: RunnableConfig | None = None,
+        *,
+        prepared_tools: tuple[BaseTool, ...] | None = None,
     ) -> State:
         """
         Tool node. This node is responsible for calling the tool and getting the response.
@@ -294,7 +348,11 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             return state
 
         try:
-            tools = await resolve_tools(self.tools, self.get_runtime(state))
+            tools = (
+                prepared_tools
+                if prepared_tools is not None
+                else await resolve_tools(self.tools, self.get_runtime(state))
+            )
         except Exception as e:
             logger.error(f"Error resolving tools: {e}")
             results = [
@@ -420,93 +478,118 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             await asyncio.gather(*tasks, return_exceptions=True)
         return {"messages": list(results)}  # type: ignore
 
-    async def _model_call_node(self, state: State) -> State:
-        """
-        Model call node. This node is responsible for calling the model and getting the response.
-        It switchs the model based on the state.model and calls the model with the state.messages.
-        """
+    async def _report_model_load_error(
+        self, error: Exception, selection: ModelSelection | None
+    ) -> None:
+        message = f"Error loading model:\n{error}"
+        logger.error(message)
+        await _adispatch_custom_event_safely(
+            "on_model_load_error",
+            ModelLoadErrorEvent(error=message, model=selection),
+        )
+        await ask_user(InputRequest(type="error", message=message))
 
-        while True:
-            state = await self._refresh_model_selection(state)
-            model_selection = self._resolve_model_selection(state)
+    async def _invoke_model(
+        self,
+        model: Runnable[LanguageModelInput, AIMessage],
+        model_input: list[BaseMessage],
+    ) -> AIMessage | None:
+        max_retries = self.config.model_call_retry_attempts
+        for attempt in range(1, max_retries + 1):
             try:
-                tools = await resolve_tools(self.tools, self.get_runtime(state))
-                system_prompts = self.system_prompts(self.get_runtime(state))
-                model = load_chat_model(model_selection).bind_tools(tools)
-
-                break
-            except Exception as e:
-                msg = f"Error loading model:\n{e}"
-                logger.error(msg)
-
+                started_at = perf_counter()
+                response = await model.ainvoke(model_input)
+            except Exception as error:
                 await _adispatch_custom_event_safely(
-                    "on_model_load_error",
-                    ModelLoadErrorEvent(
-                        error=msg,
-                        model=model_selection,  # type: ignore
+                    "on_model_call_error",
+                    ModelCallErrorEvent(
+                        error=str(error), attempt=attempt, max_attempts=max_retries
                     ),
                 )
-
-                await ask_user(InputRequest(type="error", message=msg))
-
+                logger.error(
+                    "Model call failed on attempt {}/{} ({}).",
+                    attempt,
+                    max_retries,
+                    type(error).__name__,
+                )
+                if is_model_bad_request(error):
+                    raise ModelRequestConfigurationError(
+                        str(getattr(error, "message", error))
+                    ) from error
                 continue
 
-        model_input = [
-            *system_prompts,
-            *(
-                model_messages_for_state(state)
-                if self.compactor is not None
-                else state.get("messages", [])
-            ),
-        ]
-
-        logger.debug(
-            lambda: (
-                f"Calling model {getattr(model_selection, 'name', 'unknown')} with input messages:\n{jsonify(model_input)}"
-            )
-        )
-
-        while True:
-            max_retries = self.config.model_call_retry_attempts
-            for _ in range(max_retries):
-                try:
-                    started_at = perf_counter()
-
-                    response = await model.ainvoke(model_input)
-
-                    duration_ms = max(0, round((perf_counter() - started_at) * 1000))
-                    if _record_reasoning_duration(response, duration_ms):
-                        await _adispatch_custom_event_safely(
-                            "on_reasoning_done",
-                            {"duration_ms": duration_ms},
-                        )
-                    context = interaction_context.get()
-                    if context and context.source == "supervisor":
-                        context.messages.append(response)
-                    return {"messages": [response]}  # type: ignore
-                except Exception as e:
-                    await _adispatch_custom_event_safely(
-                        "on_model_call_error",
-                        ModelCallErrorEvent(
-                            error=str(e), attempt=_ + 1, max_attempts=max_retries
-                        ),
-                    )
-                    logger.error(
-                        f"Error calling model, retries in progress {_ + 1}/{max_retries}:\n{e}"
-                    )
-                    if is_model_bad_request(e):
-                        raise ModelRequestConfigurationError(str(getattr(e, "message", e))) from e
-
-            logger.error(f"Model call failed after {max_retries} retries.")
-
-            await ask_user(
-                InputRequest(
-                    type="error",
-                    message=f"Model call failed after {max_retries} retries.",
+            duration_ms = max(0, round((perf_counter() - started_at) * 1000))
+            if _record_reasoning_duration(response, duration_ms):
+                await _adispatch_custom_event_safely(
+                    "on_reasoning_done", {"duration_ms": duration_ms}
                 )
-            )
+            context = interaction_context.get()
+            if context and context.source == "supervisor":
+                context.messages.append(response)
+            return response
 
-            continue
+        message = f"Model call failed after {max_retries} retries."
+        logger.error(message)
+        await ask_user(InputRequest(type="error", message=message))
+        return None
+
+    async def _model_call_node(self, state: State) -> State:
+        """Call the model through the original path when compaction is disabled."""
+        while True:
+            state = await self._refresh_model_selection(state)
+            selection = self._resolve_model_selection(state)
+            try:
+                tools = await resolve_tools(self.tools, self.get_runtime(state))
+                prompts = self.system_prompts(self.get_runtime(state))
+                model = load_chat_model(selection).bind_tools(tools)
+                break
+            except Exception as error:
+                await self._report_model_load_error(error, selection)
+
+        model_input = [*prompts, *state.get("messages", [])]
+        while True:
+            response = await self._invoke_model(model, model_input)
+            if response is not None:
+                return cast(State, {"messages": [response]})
+
+    async def _compacted_model_node(self, state: _PreparedState) -> Command:
+        prepared = state.get("prepared_model_call")
+        if prepared is None:
+            # Checkpoint restore drops runtime-only values and requires a fresh budget check.
+            return Command(goto="compact")
+        try:
+            model = load_chat_model(prepared.selection).bind_tools(list(prepared.tools))
+        except Exception as error:
+            await self._report_model_load_error(error, prepared.selection)
+            return Command(goto="compact")
+
+        response = await self._invoke_model(model, list(prepared.messages))
+        if response is None:
+            return Command(goto="compact")
+        try:
+            calls = tool_call_names(response) if isinstance(response, AIMessage) else {}
+        except ContextCompactionError as error:
+            raise ModelCallExecutionError(
+                f"Context compaction failed: {error}"
+            ) from error
+        return Command(update={"messages": [response]}, goto="tool" if calls else END)
+
+    async def _compacted_tool_node(
+        self,
+        state: _PreparedState,
+        runtime: Runtime[None],
+    ) -> State:
+        prepared = state.get("prepared_model_call")
+        resolved_state = cast(State, state)
+        if prepared is not None:
+            resolved_state = copy(resolved_state)
+            resolved_state["model"] = prepared.selection
+        return await self._tool_node(
+            resolved_state,
+            runtime,
+            get_config(),
+            prepared_tools=prepared.tools if prepared is not None else None,
+        )
 
     def _dicide_next_action(self, state: State) -> str:
         """
@@ -566,9 +649,16 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
     def get_graph(self) -> StateGraph[BaseAgentState]:
 
         graph = StateGraph(BaseAgentState)
-        graph.add_node("model", self._model_call_node)
-        graph.add_node("tool", self._tool_node)  # type: ignore
         if self.compactor is not None:
+            graph.add_node(
+                "model",
+                self._compacted_model_node,
+                input_schema=_PreparedState,
+                destinations=("compact", "tool", END),
+            )
+            graph.add_node(
+                "tool", self._compacted_tool_node, input_schema=_PreparedState
+            )
             graph.add_node("compact", self._prepare_context_node)
             graph.add_node(
                 "compaction_complete", self._context_compaction_complete_node
@@ -587,10 +677,12 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             graph.add_edge("compaction_complete", "model")
             graph.add_edge("compaction_error", "compact")
         else:
+            graph.add_node("model", self._model_call_node)
+            graph.add_node("tool", self._tool_node)  # type: ignore
             graph.add_edge(START, "model")
-        graph.add_conditional_edges(
-            "model", self._dicide_next_action, {"tool": "tool", "end": END}
-        )
+            graph.add_conditional_edges(
+                "model", self._dicide_next_action, {"tool": "tool", "end": END}
+            )
         next_model_node = "compact" if self.compactor is not None else "model"
         graph.add_conditional_edges(
             "tool",

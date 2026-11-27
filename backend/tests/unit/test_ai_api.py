@@ -211,7 +211,7 @@ def test_ai_chat_endpoint_invokes_supervisor_and_persists_checkpoint(
             "/ai/chat",
             json={
                 "selection_id": selection_id,
-                "prompt": "hello",
+                "prompt": "  hello\n`x = 'a&b'`  ",
                 "thread_id": "thread-ai",
             },
         )
@@ -223,7 +223,7 @@ def test_ai_chat_endpoint_invokes_supervisor_and_persists_checkpoint(
         "content": "AI response",
     }
     assert seen[0][0]["model"].id == selection_id
-    assert seen[0][0]["messages"][0].content == "hello"
+    assert seen[0][0]["messages"][0].content == "  hello\n`x = 'a&b'`  "
     assert seen[0][1] == {
         "configurable": {"thread_id": "thread-ai"},
         "recursion_limit": 100,
@@ -1002,9 +1002,11 @@ def test_ai_chat_history_delete_endpoint_returns_404_for_missing_thread(
     assert response.json()["detail"] == "Chat history not found: missing-thread"
 
 
+@pytest.mark.parametrize("encode_prompt", [False, True])
 def test_ai_chat_stream_endpoint_accepts_multipart_text_file_and_lists_chat_files(
     temporary_app_config: Config,
     workspace_tmp_dir: Path,
+    encode_prompt: bool,
 ) -> None:
     app = create_app(temporary_app_config)
     seen_states: list[dict] = []
@@ -1030,14 +1032,16 @@ def test_ai_chat_stream_endpoint_accepts_multipart_text_file_and_lists_chat_file
 
         _install_agent(client, FakeSupervisorAgent())
 
+        prompt = "  请总结附件\n禁止编造经历  "
+        form = {"selection_id": str(selection_id), "thread_id": "thread-text-file"}
+        if encode_prompt:
+            form["command"] = json.dumps({"type": "prompt", "prompt": prompt})
+        else:
+            form["prompt"] = prompt
         with file_path.open("rb") as uploaded:
             response = client.post(
                 "/ai/chat/stream",
-                data={
-                    "selection_id": str(selection_id),
-                    "prompt": "请总结附件",
-                    "thread_id": "thread-text-file",
-                },
+                data=form,
                 files={"files": ("notes.md", uploaded, "text/markdown")},
             )
 
@@ -1054,13 +1058,14 @@ def test_ai_chat_stream_endpoint_accepts_multipart_text_file_and_lists_chat_file
     assert '"injection_mode": "text"' in _payload_text(response)
 
     human_message = seen_states[0]["messages"][0]
-    assert human_message.additional_kwargs["display_content"] == "请总结附件"
+    assert human_message.additional_kwargs["display_content"] == prompt
     assert (
         human_message.additional_kwargs["attachments"][0]["original_filename"]
         == "notes.md"
     )
     assert isinstance(human_message.content, list)
     assert "notes.md" in human_message.content[0]["text"]
+    assert human_message.content[0]["text"].startswith(prompt)
     assert "alpha" in human_message.content[1]["text"]
 
 
