@@ -6,14 +6,22 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Sequence
 from dataclasses import dataclass, field
+from itertools import chain
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
-from langchain_core.messages import ToolMessage, messages_from_dict
-from langgraph.graph.message import add_messages
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    RemoveMessage,
+    ToolMessage,
+    messages_from_dict,
+)
+from langgraph.graph.message import REMOVE_ALL_MESSAGES, add_messages
 
-from agent.async_tools import AsyncToolRun
+from agent.async_tools import ASYNC_TOOL_BATCH_ID, AsyncToolRun
 from agent.interactions import (
     InteractionBroker,
     InteractionContext,
@@ -47,6 +55,47 @@ from utils.tool_outputs import (
 )
 
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
+
+
+def _merge_checkpoint_messages(
+    left: Sequence[BaseMessage], right: Sequence[BaseMessage]
+) -> list[BaseMessage]:
+    return cast(list[BaseMessage], add_messages([*left], [*right]))
+
+
+def _restore_background_tool_order(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Repair checkpoints that put background exchanges before foreground repairs."""
+    pending: set[str | None] = set()
+    background_start: int | None = None
+    insertions: dict[int, list[ToolMessage]] = {}
+    moved: set[int] = set()
+
+    for index, message in enumerate(messages):
+        if isinstance(message, AIMessage):
+            if ASYNC_TOOL_BATCH_ID in message.additional_kwargs:
+                if pending and background_start is None:
+                    background_start = index
+            else:
+                pending = {call["id"] for call in message.tool_calls}
+                background_start = None
+        elif isinstance(message, HumanMessage):
+            pending.clear()
+            background_start = None
+        elif isinstance(message, ToolMessage) and message.tool_call_id in pending:
+            pending.remove(message.tool_call_id)
+            if background_start is not None:
+                insertions.setdefault(background_start, []).append(message)
+                moved.add(index)
+
+    if not moved:
+        return messages
+
+    restored: list[BaseMessage] = []
+    for index, message in enumerate(messages):
+        restored.extend(insertions.get(index, ()))
+        if index not in moved:
+            restored.append(message)
+    return restored
 
 
 def apply_thinking_override(
@@ -391,6 +440,8 @@ class ChatRunManager:
             event in {"token", "reasoning"}
             and run.projection
             and run.projection[-1]["event"] == event
+            and run.projection[-1]["data"].get("model_call_id")
+            == data.get("model_call_id")
         ):
             run.projection[-1]["data"]["content"] += data.get("content", "")
         elif event == "tool_progress":
@@ -470,33 +521,46 @@ class ChatRunManager:
                 raise ValueError(f"Model selection not found: {selection_id}")
             return selection
 
-    async def _close_checkpoint(self, tid: str, messages: Sequence = ()) -> None:
+    async def _close_checkpoint(
+        self,
+        tid: str,
+        messages: Sequence[BaseMessage] = (),
+        *,
+        background_messages: Sequence[BaseMessage] = (),
+    ) -> None:
         config = {"configurable": {"thread_id": tid}}
         snapshot = await self.agent.aget_state(config, subgraphs=True)
-        if not snapshot.next and not messages:
-            return
-        if not snapshot.values and not messages:
-            return
+        needs_finalization = bool(
+            messages or background_messages or (snapshot.next and snapshot.values)
+        )
         collected = list(snapshot.values.get("messages", []))
-        # Supervisor has one nested model_call graph; its state may not yet be committed to the parent.
-        for task in snapshot.tasks:
-            child = getattr(task, "state", None)
-            if child is not None and hasattr(child, "values"):
-                collected = add_messages(collected, child.values.get("messages", []))
-        collected = add_messages(collected, list(messages))
+        if needs_finalization:
+            # The Supervisor's child may still have uncommitted messages.
+            for task in snapshot.tasks:
+                child = getattr(task, "state", None)
+                if child is not None and hasattr(child, "values"):
+                    collected = _merge_checkpoint_messages(
+                        collected, child.values.get("messages", [])
+                    )
+            collected = _merge_checkpoint_messages(collected, messages)
+
+        restored = _restore_background_tool_order(collected)
+        order_changed = restored is not collected
+        if not needs_finalization and not order_changed:
+            return
         answered = {
             msg.tool_call_id
-            for msg in collected
+            for msg in restored
             if isinstance(msg, ToolMessage) and msg.content != "[INTERRUPT_TOOL_CALLED]"
         }
         repairs = []
-        for msg in collected:
+        for msg in restored:
             for call in getattr(msg, "tool_calls", []):
                 if call["id"] not in answered:
                     placeholder = next(
                         (
                             m
-                            for m in collected
+                            for m in restored
                             if isinstance(m, ToolMessage)
                             and m.tool_call_id == call["id"]
                         ),
@@ -511,8 +575,15 @@ class ChatRunManager:
                             content="Execution ended. The result is unknown; do not automatically repeat this operation.",
                         )
                     )
+        # Background exchanges must come after the interrupted foreground exchange.
+        updated_messages = _merge_checkpoint_messages(
+            restored, [*repairs, *background_messages]
+        )
+        if order_changed:
+            # The reducer otherwise keeps stored messages at their old positions.
+            updated_messages.insert(0, RemoveMessage(id=REMOVE_ALL_MESSAGES))
         values = {
-            "messages": add_messages(collected, repairs),
+            "messages": updated_messages,
             "context_compaction": None,
             "context_compaction_error": None,
             "context_compaction_event_pending": False,
@@ -561,6 +632,7 @@ class ChatRunManager:
             context.messages.extend(initial)
             await self.publish(rid, "thread", self.describe(run.row))
             final_state = None
+            model_call: dict[str, str] = {}
             async for event in self.agent.astream_events(
                 {"model": selection, "messages": initial},
                 {
@@ -641,31 +713,46 @@ class ChatRunManager:
                                 ),
                             },
                         )
-                    elif name in {"on_context_compaction", "on_reasoning_done"}:
-                        await self.publish(rid, name.removeprefix("on_"), data)
-                elif kind in {"on_chat_model_stream", "on_llm_stream"}:
-                    chunk = data.get("chunk")
-                    text, reasoning = (
-                        _extract_chunk_text(chunk),
-                        _extract_chunk_reasoning(chunk),
-                    )
-                    if text:
-                        await self.publish(rid, "token", {"content": text})
-                    if reasoning:
-                        await self.publish(rid, "reasoning", {"content": reasoning})
+                    elif name == "on_context_compaction":
+                        await self.publish(rid, "context_compaction", data)
+                    elif name == "on_reasoning_done":
+                        await self.publish(rid, "reasoning_done", {**data, **model_call})
+                elif kind in {
+                    "on_chat_model_start",
+                    "on_chat_model_stream",
+                    "on_llm_start",
+                    "on_llm_stream",
+                }:
+                    call_id = event.get("run_id")
+                    model_call = {"model_call_id": call_id} if call_id else {}
+                    if kind in {"on_chat_model_stream", "on_llm_stream"}:
+                        chunk = data.get("chunk")
+                        text = _extract_chunk_text(chunk)
+                        reasoning = _extract_chunk_reasoning(chunk)
+                        if text:
+                            await self.publish(
+                                rid, "token", {"content": text, **model_call}
+                            )
+                        if reasoning:
+                            await self.publish(
+                                rid, "reasoning", {"content": reasoning, **model_call}
+                            )
                 output = _extract_event_output(event)
                 if output is not None:
                     final_state = output
-            sub["final_result"] = _extract_content(
-                final_state.get("messages", []) if final_state else []
-            )
+            final_messages = final_state.get("messages", []) if final_state else []
+            final_result = _extract_content(final_messages)
+            sub["final_result"] = final_result
             await self.publish(
                 rid,
                 "final",
                 {
-                    "content": _extract_content(
-                        final_state.get("messages", []) if final_state else []
-                    )
+                    "content": final_result,
+                    **(
+                        model_call
+                        if final_messages and final_messages[-1].type == "ai"
+                        else {}
+                    ),
                 },
             )
         except asyncio.CancelledError:
@@ -675,11 +762,11 @@ class ChatRunManager:
             status, detail = "failed", public_run_error(error, sub["locale"])
             await self.publish(rid, "error", {"detail": detail})
         finally:
-            context.messages.extend(await async_tools.close())
+            background_messages = await async_tools.close()
             self.broker.cancel_run(rid)
             completed_tools = {
                 message.tool_call_id: message
-                for message in context.messages
+                for message in chain(context.messages, background_messages)
                 if isinstance(message, ToolMessage)
             }
             for tool_id, tool_name in tuple(run.open_tools.items()):
@@ -730,7 +817,9 @@ class ChatRunManager:
                 )
             try:
                 if status != "completed":
-                    await self._close_checkpoint(tid, context.messages)
+                    await self._close_checkpoint(
+                        tid, context.messages, background_messages=background_messages
+                    )
             except Exception:
                 logger.exception(
                     "Checkpoint finalization failed for run {} in thread {}", rid, tid

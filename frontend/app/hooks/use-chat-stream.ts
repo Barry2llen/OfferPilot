@@ -10,6 +10,7 @@ import type {
   PendingInput,
   ConnectionState,
   InputAnswer,
+  ChatStreamEvent,
 } from "@/app/lib/api/types";
 import {
   beginChat,
@@ -21,7 +22,6 @@ import {
 } from "@/app/lib/chat/adapter";
 import type {
   ChatStartOptions,
-  ChatStreamEvent,
   ChatStreamState,
 } from "@/app/lib/chat/types";
 
@@ -31,7 +31,7 @@ import {
   eventSequence,
   isTerminal,
   isRunStatus,
-  isProjectedEvent,
+  isRunEvent,
   mergeRuns,
   pendingInput,
 } from "@/app/lib/chat/run-state";
@@ -266,18 +266,13 @@ export function useChatStream() {
                 setConnectionState("connected");
                 setActionError(null);
                 const id = eventSequence(event.data.event_id);
-                if (
-                  id === null ||
-                  event.data.run_id !== run.run_id ||
-                  event.data.thread_id !== tid
-                )
-                  continue;
+                if (id === null || !isRunEvent(event, run.run_id, tid)) continue;
                 if (
                   event.event === "snapshot" &&
                   (!Array.isArray(event.data.events) ||
                     !event.data.events.every(
                       (item) =>
-                        isProjectedEvent(item, run.run_id, tid) &&
+                        isRunEvent(item, run.run_id, tid) &&
                         Number(item.data.event_id) <= id,
                     ) ||
                     !Array.isArray(event.data.pending_inputs) ||
@@ -318,14 +313,6 @@ export function useChatStream() {
                   (event.event === "snapshot" ||
                     event.event === "run_status") &&
                   !isRunStatus(event.data.status)
-                )
-                  continue;
-                if (
-                  ["tool_start", "tool_progress", "tool_end", "tool_error"].includes(
-                    event.event,
-                  ) &&
-                  (typeof event.data.tool_call_id !== "string" ||
-                    !event.data.tool_call_id)
                 )
                   continue;
                 if (

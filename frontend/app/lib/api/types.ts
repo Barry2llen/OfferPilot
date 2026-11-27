@@ -218,6 +218,12 @@ export type AnalysisResourceType = "resume" | "job_description";
 
 export interface ChatStreamEventData extends Record<string, unknown> {
   background?: boolean;
+  model_call_id?: string;
+}
+
+export interface ChatStreamEvent {
+  event: string;
+  data: ChatStreamEventData;
 }
 
 export interface AnalysisToolResult {

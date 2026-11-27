@@ -7,6 +7,8 @@ and choose when to receive their results. Each call uses a tool already availabl
 to the Supervisor and its normal arguments. The dispatcher returns a scheduling
 receipt with a batch ID and tool call IDs while the calls execute concurrently.
 Unavailable names and recursive dispatch are rejected before launching the batch.
+Anthropic selections with a fixed thinking budget continue to use foreground
+tools because manual extended thinking requires provider-generated thinking blocks.
 
 ```json
 {
@@ -186,7 +188,11 @@ start/end/error carry `tool_call_id`; interaction events also carry an independe
 `request_id`, supporting multiple questions per call and reverse-order answers.
 A snapshot replaces the current display at its watermark, then live events with
 higher IDs are applied. The human `message_id` separates committed history before
-this run from its live projection. Tokens are coalesced in the display snapshot.
+this run from its live projection. `token`, `reasoning`, `reasoning_done`, and
+assistant `final` events can carry `model_call_id` to identify a single model
+invocation. The snapshot coalesces adjacent chunks of the same kind within one
+invocation. Live rendering and snapshot replay use the ID to restart the
+assistant message when a new invocation begins.
 Slow subscribers are detached; replay is bounded by both bytes and event count.
 Terminated in-memory runs expire after the configured retention; persisted status
 and checkpoint history remain available. No credential fields enter run records.
@@ -200,10 +206,13 @@ User input has no default timeout; configured expiry fails the run, never
 substitutes an answer. Waiting runs count against the active-run limit.
 
 The graph's foreground tool batch checkpoints after all its tools finish. During
-termination, the manager merges known completed results, inserts error results
-for unfinished calls, and completes the Supervisor parent node to discard the
-old child continuation. A failed finalization blocks that conversation and fails
-its queue. The next submission must not replay the abandoned tool batch.
+termination, the manager merges known completed results and inserts error
+results for unfinished foreground calls before it appends any remaining
+background exchanges. It then completes the Supervisor parent node to discard
+the old child continuation. A failed finalization blocks that conversation and
+fails its queue. The next submission must not replay the abandoned tool batch.
+When a stored checkpoint has a foreground result after a background exchange,
+the next run restores the result next to its call before invoking the model.
 
 At startup, formerly running/waiting records become interrupted and queued
 records become cancelled. Old checkpoint continuations are not resumed. When

@@ -18,6 +18,7 @@ from agent.tools.async_tools import run_async_tools
 from exceptions import AgentStateError, ModelCallExecutionError
 from exceptions.agent import ModelRequestConfigurationError, is_model_bad_request
 from schemas.config.base import Config
+from schemas.model_selection import ModelSelection
 from utils.custom_events import _adispatch_custom_event_safely
 from utils.json import jsonify
 from utils.logger import logger
@@ -155,11 +156,25 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             return context.async_tools
         return None
 
-    async def _resolve_tools(self, state: State) -> tuple[BaseTool, ...]:
+    async def _resolve_tools(
+        self, state: State, model_selection: ModelSelection | None = None
+    ) -> tuple[BaseTool, ...]:
         tools = await resolve_tools(self.tools, self.get_runtime(state))
-        if self._async_tool_run() is not None and tools:
-            return (*tools, run_async_tools)
-        return tools
+        if not tools or self._async_tool_run() is None:
+            return tools
+
+        selection = model_selection or self._resolve_model_selection(state)
+        if selection is not None and selection.provider.provider.lower() == "anthropic":
+            thinking = selection.thinking
+            # Manual thinking requires a provider-generated thinking block before tool calls.
+            if (
+                thinking is not None
+                and thinking.type == "budget"
+                and thinking.value is not None
+            ):
+                return tools
+
+        return (*tools, run_async_tools)
 
     @staticmethod
     def _resolve_model_selection(state: State):
@@ -198,7 +213,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
         state = await self._refresh_model_selection(state)
         try:
             model_selection = self._resolve_model_selection(state)
-            tools = await self._resolve_tools(state)
+            tools = await self._resolve_tools(state, model_selection)
             system_prompts = self.system_prompts(self.get_runtime(state))
             budget = self.context_budget_policy.resolve(model_selection)  # type: ignore[arg-type]
             result = await self.compactor.acompact(
@@ -503,7 +518,7 @@ class ModelCallGraph[State: BaseAgentState = BaseAgentState](BaseGraph[State]):
             state = await self._refresh_model_selection(state)
             model_selection = self._resolve_model_selection(state)
             try:
-                tools = await self._resolve_tools(state)
+                tools = await self._resolve_tools(state, model_selection)
                 system_prompts = self.system_prompts(self.get_runtime(state))
                 model = load_chat_model(model_selection).bind_tools(tools)
 

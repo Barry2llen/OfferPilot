@@ -20,9 +20,10 @@ async def run_async_tools(
 ) -> str:
     """Start tools in the background and immediately return their batch and call IDs.
 
-    Continue other work or yield while they run. Results, including errors, will
-    arrive as tool messages in this conversation. Choose all if you need the
-    entire batch, or any if you can use individual results as they finish.
+    Use this for independent calls. The receipt contains IDs for tracking the
+    work. Continue other work or yield while waiting for tool results, and do not
+    schedule the same work while it is pending. Choose all if you need the entire
+    batch, or any if you can use individual results as they finish.
     """
     submit = runtime.context.submit_async_tools if runtime.context else None
     if submit is None:

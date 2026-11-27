@@ -201,11 +201,12 @@ describe("chat stream adapter", () => {
     (terminal) => {
       let state = beginChat(createChatState(), "hello", undefined);
       const tool = { tool_name: "work", tool_call_id: "call-a", background: true };
+      const model = { model_call_id: "model-a" };
       for (const [name, data] of [
-        ["token", { content: "Still " }],
+        ["token", { ...model, content: "Still " }],
         ["tool_start", tool],
         [terminal, tool],
-        ["token", { content: "working." }],
+        ["token", { ...model, content: "working." }],
       ] as const) {
         state = reduceChatEvent(state, event(name, data), labels).state;
       }
@@ -215,8 +216,50 @@ describe("chat stream adapter", () => {
       expect(state.toolCalls[0].status).toBe(
         terminal === "tool_end" ? "success" : "error",
       );
+      state = reduceChatEvent(
+        state,
+        event("final", { ...model, content: "Still working." }),
+        labels,
+      ).state;
+      expect(state.messages.filter((message) => message.role === "assistant"))
+        .toMatchObject([{ content: "Still working." }]);
     },
   );
+  it("keeps text, reasoning and reasoning duration with their model call", () => {
+    let state = beginChat(createChatState(), "hello", undefined);
+    const progress = { model_call_id: "progress" };
+    const reply = { model_call_id: "reply" };
+    for (const [name, data] of [
+      ["reasoning", { ...progress, content: "Start analysis." }],
+      ["token", { ...progress, content: "Working." }],
+      ["reasoning_done", { ...progress, duration_ms: 100 }],
+      ["tool_end", { tool_call_id: "work", tool_name: "work", background: true }],
+      ["token", { ...reply, content: "Results." }],
+      ["reasoning", { ...reply, content: "Check the results." }],
+      ["reasoning_done", { ...reply, duration_ms: 200 }],
+      ["final", { ...reply, content: "Results." }],
+    ] as const) {
+      state = reduceChatEvent(state, event(name, data), labels).state;
+    }
+    expect(state.messages.filter((message) => message.role === "assistant"))
+      .toMatchObject([
+        { content: "Working.", reasoning: "Start analysis.", reasoningDurationMs: 100 },
+        { content: "Results.", reasoning: "Check the results.", reasoningDurationMs: 200 },
+      ]);
+  });
+
+  it("shows a final reply even when only an earlier model call streamed text", () => {
+    let state = beginChat(createChatState(), "hello", undefined);
+    state = reduceChatEvent(state, event("token", {
+      content: "Working.", model_call_id: "progress",
+    }), labels).state;
+    state = reduceChatEvent(state, event("final", {
+      content: "Results.", model_call_id: "reply",
+    }), labels).state;
+    expect(state.messages.filter((message) => message.role === "assistant"))
+      .toMatchObject([{ content: "Working." }, { content: "Results." }]);
+  });
+
   it("ignores invalid IDs and duplicate or conflicting terminal tool events", () => {
     let state = beginChat(createChatState(), "hello", undefined);
     const invalid = reduceChatEvent(

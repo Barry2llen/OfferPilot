@@ -1,5 +1,9 @@
-import type { ChatRun, ChatRunStatus, PendingInput } from "@/app/lib/api/types";
-import type { ChatStreamEvent } from "./types";
+import type {
+  ChatRun,
+  ChatRunStatus,
+  ChatStreamEvent,
+  PendingInput,
+} from "@/app/lib/api/types";
 
 export function isTerminal(status: ChatRunStatus): boolean {
   return ["completed", "failed", "cancelled", "interrupted"].includes(status);
@@ -26,7 +30,7 @@ export function eventSequence(value: unknown): number | null {
     : null;
 }
 
-export function isProjectedEvent(
+export function isRunEvent(
   value: unknown,
   runId: string,
   threadId: string,
@@ -43,7 +47,9 @@ export function isProjectedEvent(
   if (
     data.run_id !== runId ||
     data.thread_id !== threadId ||
-    eventSequence(data.event_id) === null
+    eventSequence(data.event_id) === null ||
+    (data.model_call_id !== undefined &&
+      (typeof data.model_call_id !== "string" || !data.model_call_id))
   )
     return false;
   return (

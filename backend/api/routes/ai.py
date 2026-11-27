@@ -799,9 +799,10 @@ async def get_chat_run(request: Request, run_id: str):
     description=(
         "Replay events after the supplied sequence, then follow live events. A snapshot "
         "replaces expired replay history and preserves merged analysis progress, phase "
-        "messages and model retry details per tool call. Background tool events can "
-        "carry background=true and belong to the original run. Disconnecting does not "
-        "cancel execution."
+        "messages and model retry details per tool call. Tokens, reasoning, reasoning "
+        "duration and the final assistant reply can carry model_call_id. Background "
+        "tool events can carry background=true and belong to the original run. "
+        "Disconnecting does not cancel execution."
     ),
     response_description="Sequenced SSE events or a display snapshot.",
     responses=_RUN_ERRORS,
@@ -856,10 +857,12 @@ async def cancel_chat_run(request: Request, run_id: str):
     summary="Start and subscribe to a chat run",
     description="Compatibility entry point for prompt submissions. Execution survives SSE disconnection. Answers use the separate run input endpoint; legacy query/retry commands return 410.",
     response_description=(
-        "SSE events including thread, token, reasoning, tool_start/progress/end/error, "
-        "input_required/resolved, run_status, snapshot, final and error. Background tool "
-        "events can carry background=true. Analysis progress identifies its record and "
-        "tool_call_id."
+        "SSE events including thread, token, reasoning, reasoning_done, "
+        "tool_start/progress/end/error, input_required/resolved, run_status, snapshot, "
+        "final and error. Background tool "
+        "events can carry background=true. Tokens, reasoning, reasoning duration and "
+        "the final assistant reply can carry model_call_id. Analysis progress "
+        "identifies its record and tool_call_id."
     ),
     responses=_RUN_ERRORS,
 )

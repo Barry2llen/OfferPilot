@@ -1,7 +1,8 @@
 import { apiRequest, apiUrl } from "./client";
-import { openSse, type SseEvent, type SseRequestOptions } from "./sse";
+import { openSse, type SseRequestOptions } from "./sse";
 import type {
   ChatRun,
+  ChatStreamEvent,
   InputAnswer,
   AIChatHistoryListResponse,
   AIChatHistoryDetailResponse,
@@ -32,7 +33,7 @@ export const aiChatApi = {
     after: number,
     signal: AbortSignal,
     onOpen?: () => void,
-  ) =>
+  ): AsyncIterable<ChatStreamEvent> =>
     openSse({
       url: apiUrl(`/ai/chat/runs/${runId}/events?after=${after}`),
       method: "GET",
@@ -63,7 +64,7 @@ export const aiChatApi = {
   streamChat: (
     body: AIChatStreamRequest | FormData,
     options: SseRequestOptions = {},
-  ): AsyncIterable<SseEvent> => {
+  ): AsyncIterable<ChatStreamEvent> => {
     return openSse({
       url: apiUrl("/ai/chat/stream"),
       method: "POST",

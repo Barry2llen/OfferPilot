@@ -43,9 +43,6 @@ _system_prompt = PromptComposer(
                 "with file_id or file_ids and do not copy the extracted or OCR text into the tool "
                 "input. For a job description, use jd_text only for text directly pasted by the "
                 "user, and use source_url only for an explicitly provided URL."
-                "\n\nUse run_async_tools for independent calls you want to start in the background. "
-                "A scheduling receipt contains only call IDs. You can continue other work or yield "
-                "and resume when the results arrive. Do not schedule the same work again while it is pending."
             ),
         ),
         PromptFragment(

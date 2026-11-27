@@ -4,7 +4,6 @@ import type {
   AIChatStreamRequest,
   AgentStatus,
   ChatAttachmentRef,
-  ChatStreamEventData,
   QueryChoice,
 } from "@/app/lib/api/types";
 import type { AnalysisResourceType } from "@/app/lib/api/types";
@@ -66,11 +65,6 @@ export interface ChatMessage {
   toolAnalysis?: AnalysisToolProgress;
 }
 
-export interface ChatStreamEvent {
-  event: string;
-  data: ChatStreamEventData;
-}
-
 export interface ChatStreamLabels {
   toolError: string;
   streamError: string;
@@ -94,7 +88,7 @@ export interface ChatStreamState {
   terminal: boolean;
   userMessageId: string | null;
   currentAssistantIndex: number | null;
-  accumulatedText: string;
+  currentAssistantCallId: string | null;
   accumulatedReasoning: string;
   visibleAssistantText: string;
   nextMessageId: number;

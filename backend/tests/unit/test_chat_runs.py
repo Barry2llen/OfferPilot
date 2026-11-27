@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+from contextlib import aclosing
 from time import monotonic
 from types import SimpleNamespace
 from typing import Any, cast
@@ -9,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     HumanMessage,
     ToolMessage,
     message_to_dict,
@@ -20,6 +22,7 @@ from langgraph.graph import END, START, StateGraph
 from sqlalchemy import Table
 
 from agent.agents.supervisor.agent import SupervisorAgent
+from agent.async_tools import ASYNC_TOOL_BATCH_ID
 from agent.base import BaseAgentState
 from agent.checkpointers import DatabaseCheckpointer
 from agent.graphs.model_call import ModelCallGraph
@@ -29,7 +32,10 @@ from agent.interactions import (
     InteractionError,
     ask_user,
 )
+from agent.tools.query import query
 from schemas.config import Config
+from schemas.model_provider import ModelProvider
+from schemas.model_selection import ModelSelection, ThinkingSettings
 from services.chat_runs import ChatRunManager
 
 
@@ -509,6 +515,18 @@ async def submit(manager, prompt="ask", tid="thread", key=None, interactive=True
     )
 
 
+def assert_tool_results_follow_calls(messages):
+    for index, message in enumerate(messages):
+        calls = getattr(message, "tool_calls", [])
+        if calls:
+            following = messages[index + 1 : index + 1 + len(calls)]
+            assert {
+                result.tool_call_id
+                for result in following
+                if isinstance(result, ToolMessage)
+            } == {call["id"] for call in calls}
+
+
 async def test_fifo_wait_cancel_and_failed_run_advance(manager):
     first = await submit(manager)
     second = await submit(manager, "fail")
@@ -832,8 +850,9 @@ async def test_background_tools_wake_the_original_chat_run(
     await manager.shutdown()
 
 
-async def test_cancelling_chat_waits_for_background_tools_without_waking_agent(
-    manager, monkeypatch
+@pytest.mark.parametrize("foreground_query", [False, True])
+async def test_cancelling_chat_repairs_foreground_before_flushing_background_tools(
+    manager, monkeypatch, foreground_query
 ):
     slow_started = asyncio.Event()
     slow_cleaned = asyncio.Event()
@@ -857,8 +876,19 @@ async def test_cancelling_chat_waits_for_background_tools_without_waking_agent(
             return self
 
         async def ainvoke(self, messages):
-            model_inputs.append(messages[-1])
-            if messages[-1].content != "start":
+            last = messages[-1]
+            model_inputs.append(last)
+            if isinstance(last, HumanMessage) and last.content == "next":
+                assert_tool_results_follow_calls(messages)
+                return AIMessage(content="next answer")
+            if last.content != "start":
+                if foreground_query:
+                    request = question()
+                    request.pop("type")
+                    return AIMessage(
+                        content="",
+                        tool_calls=[{"id": "query", "name": "query", "args": request}],
+                    )
                 return AIMessage(content="Continuing.")
             return AIMessage(
                 content="",
@@ -886,14 +916,16 @@ async def test_cancelling_chat_waits_for_background_tools_without_waking_agent(
     manager.agent = SupervisorAgent(
         config=manager.config,
         checkpointer=InMemorySaver(),
-        tools=[background_work],
+        tools=[background_work, query],
     ).get_agent()
     run = await submit(manager, "start")
     rid = run["run_id"]
+    following = await submit(manager, "next")
     await asyncio.wait_for(slow_started.wait(), 5)
     await until(
         lambda: (
             len(model_inputs) == 2
+            and (not foreground_query or manager.broker.list_pending(rid))
             and any(
                 event["event"] == "tool_end"
                 and event["data"].get("tool_name") == "background_work"
@@ -903,7 +935,8 @@ async def test_cancelling_chat_waits_for_background_tools_without_waking_agent(
     )
     assert (await asyncio.wait_for(manager.cancel(rid), 5))["status"] == "cancelled"
     assert slow_cleaned.is_set()
-    assert len(model_inputs) == 2
+    assert await asyncio.wait_for(manager.result(following["run_id"]), 5) == "next answer"
+    assert len(model_inputs) == 3
     assert not any(event["event"] == "final" for event in manager.runs[rid].projection)
     assert not manager.runs[rid].open_tools
     snapshot = await manager.agent.aget_state(
@@ -918,6 +951,179 @@ async def test_cancelling_chat_waits_for_background_tools_without_waking_agent(
     assert outputs == [
         ("success", "already finished"),
         ("error", "Background tool was cancelled."),
+    ]
+    await manager.shutdown()
+
+
+async def test_next_run_repairs_background_tool_order_in_a_stored_checkpoint(
+    manager, monkeypatch, temporary_async_database_manager
+):
+    class Model:
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            assert_tool_results_follow_calls(messages)
+            return AIMessage(content="next answer")
+
+    async def selection(_):
+        return None
+
+    monkeypatch.setattr(manager, "_selection", selection)
+    monkeypatch.setattr("agent.graphs.model_call.load_chat_model", lambda _: Model())
+    agent = SupervisorAgent(
+        config=manager.config,
+        checkpointer=DatabaseCheckpointer(manager.database, temporary_async_database_manager),
+        tools=[],
+    ).get_agent()
+    manager.agent = agent
+    config: RunnableConfig = {"configurable": {"thread_id": "thread"}}
+    history = [
+        HumanMessage(id="previous", content="old request"),
+        AIMessage(
+            id="foreground",
+            content="",
+            tool_calls=[{"id": "query", "name": "query", "args": {}}],
+        ),
+        AIMessage(
+            id="background",
+            content=[],
+            additional_kwargs={ASYNC_TOOL_BATCH_ID: "batch"},
+            tool_calls=[{"id": "slow", "name": "work", "args": {}}],
+        ),
+        ToolMessage(id="slow-result", content="done", tool_call_id="slow"),
+        ToolMessage(id="query-result", content="cancelled", tool_call_id="query", status="error"),
+    ]
+    await agent.aupdate_state(config, {"messages": history}, as_node="model_call")
+
+    run = await submit(manager, "next")
+    assert await asyncio.wait_for(manager.result(run["run_id"]), 5) == "next answer"
+    snapshot = await agent.aget_state(config)
+    assert [message.id for message in snapshot.values["messages"][:5]] == [
+        "previous", "foreground", "query-result", "background", "slow-result"
+    ]
+    await manager.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("thinking", "allows_background"),
+    [
+        pytest.param(
+            ThinkingSettings(type="budget", value=1024, max_tokens=4096),
+            False,
+            id="manual",
+        ),
+        pytest.param(
+            ThinkingSettings(type="budget", max_tokens=4096), True, id="default"
+        ),
+        pytest.param(ThinkingSettings(type="adaptive", value="low"), True, id="adaptive"),
+    ],
+)
+async def test_supervisor_tools_follow_anthropic_thinking_mode(
+    manager, monkeypatch, thinking, allows_background
+):
+    @tool
+    async def foreground_work() -> str:
+        """Return the requested data."""
+        return "data"
+
+    class Model:
+        def bind_tools(self, tools):
+            expected = {"foreground_work"}
+            if allows_background:
+                expected.add("run_async_tools")
+            assert {tool.name for tool in tools} == expected
+            return self
+
+        async def ainvoke(self, messages):
+            if isinstance(messages[-1], HumanMessage):
+                return AIMessage(
+                    content="",
+                    tool_calls=[{"id": "work", "name": "foreground_work", "args": {}}],
+                )
+            assert messages[-1].content == "data"
+            return AIMessage(content="finished")
+
+    async def selection(_):
+        return ModelSelection(
+            id=1,
+            provider=ModelProvider(provider="Anthropic", name="claude"),
+            model_name="claude-sonnet-4-5",
+            thinking=thinking,
+        )
+
+    monkeypatch.setattr(manager, "_selection", selection)
+    monkeypatch.setattr("agent.graphs.model_call.load_chat_model", lambda _: Model())
+    manager.agent = SupervisorAgent(
+        config=manager.config, checkpointer=InMemorySaver(), tools=[foreground_work]
+    ).get_agent()
+    run = await submit(manager, "start")
+    assert await asyncio.wait_for(manager.result(run["run_id"]), 5) == "finished"
+    await manager.shutdown()
+
+
+async def test_live_and_snapshot_events_preserve_model_call_boundaries(
+    manager, monkeypatch
+):
+    async def stream(*args, **kwargs):
+        for call_id, chunks in [
+            (
+                "call-1",
+                [AIMessageChunk(content="Still "), AIMessageChunk(content="working.")],
+            ),
+            ("call-2", [AIMessageChunk(content="Found it.")]),
+            (
+                "call-3",
+                [AIMessageChunk(content="", additional_kwargs={"reasoning_content": "Review."})],
+            ),
+        ]:
+            yield {"event": "on_chat_model_start", "run_id": call_id}
+            for chunk in chunks:
+                yield {
+                    "event": "on_chat_model_stream",
+                    "run_id": call_id,
+                    "data": {"chunk": chunk},
+                }
+        yield {
+            "event": "on_custom_event",
+            "name": "on_reasoning_done",
+            "data": {"duration_ms": 50},
+        }
+        yield {"event": "on_chat_model_start", "run_id": "call-4"}
+        yield {
+            "event": "on_chain_end",
+            "data": {"output": {"messages": [AIMessage(content="Final answer.")]}},
+        }
+
+    monkeypatch.setattr(manager.agent, "astream_events", stream)
+    run = await submit(manager, "start")
+    rid = run["run_id"]
+    assert await manager.result(rid) == "Final answer."
+
+    live = [
+        json.loads(event.split("data: ", 1)[1])
+        for _, event, _ in manager.runs[rid].events
+        if event.startswith("event: token\n")
+    ]
+    assert [(item["model_call_id"], item["content"]) for item in live] == [
+        ("call-1", "Still "),
+        ("call-1", "working."),
+        ("call-2", "Found it."),
+    ]
+
+    async with aclosing(manager.stream(rid)) as replay:
+        snapshot = json.loads((await anext(replay)).split("data: ", 1)[1])
+    events = [(event["event"], event["data"]) for event in snapshot["events"]]
+    assert [
+        (name, data["model_call_id"], data.get("content"))
+        for name, data in events
+        if "model_call_id" in data
+    ] == [
+        ("token", "call-1", "Still working."),
+        ("token", "call-2", "Found it."),
+        ("reasoning", "call-3", "Review."),
+        ("reasoning_done", "call-3", None),
+        ("final", "call-4", "Final answer."),
     ]
     await manager.shutdown()
 

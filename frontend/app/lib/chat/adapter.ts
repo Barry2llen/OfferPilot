@@ -2,6 +2,7 @@ import type {
   AIChatCommand,
   AIChatHistoryMessage,
   ChatAttachmentRef,
+  ChatStreamEvent,
 } from "@/app/lib/api/types";
 import type {
   ChatAttachmentItem,
@@ -10,7 +11,6 @@ import type {
   ChatMessage,
   ChatStartOptions,
   ChatStreamEffect,
-  ChatStreamEvent,
   ChatStreamLabels,
   ChatStreamRequest,
   ChatStreamState,
@@ -109,7 +109,7 @@ export function createChatState(
     terminal: false,
     userMessageId: null,
     currentAssistantIndex: null,
-    accumulatedText: "",
+    currentAssistantCallId: null,
     accumulatedReasoning: "",
     visibleAssistantText: "",
     nextMessageId,
@@ -130,7 +130,7 @@ export function resetChatTransient(state: ChatStreamState): ChatStreamState {
     terminal: false,
     userMessageId: null,
     currentAssistantIndex: null,
-    accumulatedText: "",
+    currentAssistantCallId: null,
     accumulatedReasoning: "",
     visibleAssistantText: "",
   };
@@ -349,16 +349,21 @@ export function buildStreamBody(
   return formData;
 }
 
-function ensureAssistantMessage(state: ChatStreamState): {
-  state: ChatStreamState;
-  index: number;
-} {
-  if (
-    state.currentAssistantIndex !== null &&
-    state.liveMessages[state.currentAssistantIndex]?.role === "assistant"
-  ) {
-    return { state, index: state.currentAssistantIndex };
-  }
+function activeAssistantIndex(
+  state: ChatStreamState,
+  modelCallId: string | null,
+): number | null {
+  return modelCallId === null || modelCallId === state.currentAssistantCallId
+    ? state.currentAssistantIndex
+    : null;
+}
+
+function ensureAssistantMessage(
+  state: ChatStreamState,
+  modelCallId: string | null,
+): { state: ChatStreamState; index: number } {
+  const currentIndex = activeAssistantIndex(state, modelCallId);
+  if (currentIndex !== null) return { state, index: currentIndex };
 
   const messageId = nextMessageId(state, "assistant");
   const message: ChatMessage = {
@@ -369,9 +374,10 @@ function ensureAssistantMessage(state: ChatStreamState): {
   const index = state.liveMessages.length;
   return {
     state: {
-      ...state,
+      ...endAssistantSegment(state),
       liveMessages: [...state.liveMessages, message],
       currentAssistantIndex: index,
+      currentAssistantCallId: modelCallId,
       nextMessageId: messageId.nextMessageId,
     },
     index,
@@ -382,6 +388,7 @@ function endAssistantSegment(state: ChatStreamState): ChatStreamState {
   return {
     ...state,
     currentAssistantIndex: null,
+    currentAssistantCallId: null,
     streamingText: "",
     streamingReasoning: "",
   };
@@ -390,14 +397,11 @@ function endAssistantSegment(state: ChatStreamState): ChatStreamState {
 function commitLiveMessages(state: ChatStreamState): ChatStreamState {
   const completed = cloneMessages(state.liveMessages);
   return {
-    ...state,
+    ...endAssistantSegment(state),
     messages: completed.length
       ? [...state.messages, ...completed]
       : state.messages,
     liveMessages: [],
-    currentAssistantIndex: null,
-    streamingText: "",
-    streamingReasoning: "",
   };
 }
 
@@ -510,6 +514,10 @@ export function reduceChatEvent(
     : [{ type: "accepted" }];
   let next: ChatStreamState = { ...state, accepted: true };
   const data = event.data;
+  const modelCallId =
+    typeof data.model_call_id === "string" && data.model_call_id
+      ? data.model_call_id
+      : null;
 
   switch (event.event) {
     case "thread": {
@@ -579,7 +587,7 @@ export function reduceChatEvent(
     case "token": {
       const token = extractTextContent(data.content ?? data.token ?? "");
       if (!token) break;
-      const ensured = ensureAssistantMessage(next);
+      const ensured = ensureAssistantMessage(next, modelCallId);
       const liveMessages = [...ensured.state.liveMessages];
       const assistantMessage = liveMessages[ensured.index];
       liveMessages[ensured.index] = {
@@ -590,7 +598,6 @@ export function reduceChatEvent(
         ...ensured.state,
         liveMessages,
         streamingText: liveMessages[ensured.index].content,
-        accumulatedText: ensured.state.accumulatedText + token,
         visibleAssistantText: ensured.state.visibleAssistantText + token,
       };
       break;
@@ -599,7 +606,7 @@ export function reduceChatEvent(
     case "reasoning": {
       const reasoning = extractTextContent(data.content);
       if (!reasoning) break;
-      const ensured = ensureAssistantMessage(next);
+      const ensured = ensureAssistantMessage(next, modelCallId);
       const liveMessages = [...ensured.state.liveMessages];
       const assistantMessage = liveMessages[ensured.index];
       const nextReasoning = `${assistantMessage.reasoning ?? ""}${reasoning}`;
@@ -620,8 +627,8 @@ export function reduceChatEvent(
       const durationMs = parseDurationMs(data.duration_ms);
       if (durationMs === undefined) break;
       const assistantIndex =
-        next.currentAssistantIndex ??
-        findLastAssistantMessageIndex(next.liveMessages);
+        activeAssistantIndex(next, modelCallId) ??
+        (modelCallId === null ? findLastAssistantMessageIndex(next.liveMessages) : -1);
       const assistantMessage = next.liveMessages[assistantIndex];
       if (
         assistantIndex >= 0 &&
@@ -819,41 +826,28 @@ export function reduceChatEvent(
         explicitFinalContent ||
         (hasVisibleAssistantContent ? "" : next.visibleAssistantText) ||
         "";
-      const reasoningContent =
-        explicitFinalContent || next.accumulatedText
-          ? next.accumulatedReasoning || undefined
-          : undefined;
-      const lastLiveMessage = next.liveMessages[next.liveMessages.length - 1];
-      const lastMessageHasVisibleAssistantContent =
-        lastLiveMessage?.role === "assistant" &&
-        Boolean(lastLiveMessage.content.trim());
-
-      if (finalContent && !lastMessageHasVisibleAssistantContent) {
-        if (lastLiveMessage?.role === "assistant") {
-          const liveMessages = [...next.liveMessages];
-          const index = liveMessages.length - 1;
-          liveMessages[index] = {
-            ...lastLiveMessage,
-            content: finalContent,
-            reasoning: lastLiveMessage.reasoning || reasoningContent,
-          };
-          next = { ...next, liveMessages };
-        } else {
-          const messageId = nextMessageId(next, "assistant");
-          next = {
-            ...next,
-            liveMessages: [
-              ...next.liveMessages,
-              {
-                id: messageId.id,
-                role: "assistant",
-                content: finalContent,
-                reasoning: reasoningContent,
-              },
-            ],
-            nextMessageId: messageId.nextMessageId,
-          };
-        }
+      const assistantIndex =
+        activeAssistantIndex(next, modelCallId) ??
+        (modelCallId === null ? next.liveMessages.length - 1 : -1);
+      const assistant = next.liveMessages[assistantIndex];
+      if (
+        finalContent &&
+        !(assistant?.role === "assistant" && assistant.content.trim())
+      ) {
+        const target =
+          assistant?.role === "assistant"
+            ? { state: next, index: assistantIndex }
+            : ensureAssistantMessage(next, modelCallId);
+        const liveMessages = [...target.state.liveMessages];
+        const message = liveMessages[target.index];
+        liveMessages[target.index] = {
+          ...message,
+          content: finalContent,
+          reasoning:
+            message.reasoning ||
+            (modelCallId === null ? next.accumulatedReasoning || undefined : undefined),
+        };
+        next = { ...target.state, liveMessages };
       }
 
       next = commitLiveMessages(next);

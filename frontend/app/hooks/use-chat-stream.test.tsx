@@ -102,6 +102,41 @@ afterEach(() => {
 });
 
 describe("run subscription lifecycle", () => {
+  it("continues the matching assistant message after replaying model calls", async () => {
+    vi.mocked(aiChatApi.runEvents).mockImplementation(
+      async function* (_rid, _after, signal) {
+        const ids = { run_id: "r", thread_id: "t" };
+        yield {
+          event: "snapshot",
+          data: {
+            ...ids,
+            event_id: 3,
+            status: "running",
+            pending_inputs: [],
+            events: [
+              { event: "token", data: { ...ids, event_id: 2, model_call_id: "progress", content: "Working." } },
+              { event: "token", data: { ...ids, event_id: 3, model_call_id: "reply", content: "Here are " } },
+            ],
+          },
+        };
+        yield {
+          event: "token",
+          data: { ...ids, event_id: 4, model_call_id: "reply", content: "the results." },
+        };
+        await new Promise<void>((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        );
+      },
+    );
+
+    const { result } = mount();
+    await waitFor(() => {
+      const messages = result.current.chat.liveMessages;
+      expect(messages.filter((message) => message.role === "assistant"))
+        .toMatchObject([{ content: "Working." }, { content: "Here are the results." }]);
+    });
+  });
+
   it.each(["single", "multiple"] as const)("restores every %s option on reconnect and refresh without creating a run", async (selection_mode) => {
     const input: PendingQueryInput = {
       type: "query", request_id: "q", run_id: "r", thread_id: "t", tool_call_id: "call",
