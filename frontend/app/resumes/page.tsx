@@ -13,6 +13,7 @@ import Select from "@/app/components/ui/select";
 import { Skeleton } from "@/app/components/ui/skeleton";
 import type { ResumeListItem } from "@/app/lib/api/types";
 import { useAppContext } from "@/app/lib/context/app-context";
+import { useResumeUpload } from "@/app/lib/context/resume-upload-context";
 import { analysisTaskKey } from "@/app/lib/analysis-events/types";
 
 interface ResumeStats {
@@ -31,6 +32,7 @@ export default function ResumesPage() {
   const {
     state: { analysisEventVersions, analysisTasks },
   } = useAppContext();
+  const { running: uploading } = useResumeUpload();
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -118,7 +120,12 @@ export default function ResumesPage() {
             </Button>
           )}
         </header>
-        <FormDrawer open={uploadOpen} title={t("appearance.upload")} onClose={() => setUploadOpen(false)}>
+        <FormDrawer
+          open={uploadOpen}
+          busy={uploading}
+          title={t("appearance.upload")}
+          onClose={() => setUploadOpen(false)}
+        >
           <ResumeUploader onUploaded={handleUploaded} />
         </FormDrawer>
 

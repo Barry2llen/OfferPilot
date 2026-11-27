@@ -22,8 +22,8 @@ import { plainPreview } from "@/app/lib/chat/preview";
 export default function Home() {
   const { t } = useTranslation();
   const { state } = useAppContext();
-  const initialModel = useRef(state.currentModelSelection);
   const {
+    initializeModelSelection,
     setThreadId,
     setThreadRequiresImageInput,
     setModelSelection,
@@ -52,6 +52,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const desktop = useMediaQuery("(min-width: 1200px)");
   const historySlot = useHistorySlot();
+  const historyInSidebar = desktop && historySlot !== null;
   const [models, setModels] = useState<ModelSelectionResponse[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -61,6 +62,7 @@ export default function Home() {
   const pendingInputRef = useRef<HTMLDivElement>(null);
   // Bumped by "new chat" so the composer clears its draft and takes focus even on an empty new chat.
   const [composerResetSignal, setComposerResetSignal] = useState(0);
+  const resetAfterHistoryClose = useRef(false);
 
   const currentModel = models.find(
     (model) => model.id === state.currentModelSelection,
@@ -82,7 +84,7 @@ export default function Home() {
       .then((data) => {
         if (!mounted) return;
         setModels(data);
-        if (initialModel.current === null && data.length) setModelSelection(data[0].id);
+        if (data.length > 0) initializeModelSelection(data[0].id);
         setModelsLoaded(true);
       })
       .catch(() => {
@@ -97,7 +99,7 @@ export default function Home() {
     return () => {
       mounted = false;
     };
-  }, [setModelSelection]);
+  }, [initializeModelSelection]);
 
   useEffect(() => {
     if (
@@ -149,20 +151,42 @@ export default function Home() {
     [setThreadId, setThreadRequiresImageInput, state.currentThreadId],
   );
 
+  const resetComposer = useCallback(() => {
+    setComposerResetSignal((signal) => signal + 1);
+  }, []);
+
   const handleNewChat = useCallback(() => {
+    if (sidebarOpen && !historyInSidebar) {
+      resetAfterHistoryClose.current = true;
+    } else {
+      resetComposer();
+    }
     setSidebarOpen(false);
     setModelContextWindowWarning(false);
     setThinkingOverride(undefined);
-    setComposerResetSignal((signal) => signal + 1);
     clearMessages();
     setThreadId(null);
     setThreadRequiresImageInput(false);
     setAgentStatus("idle");
-  }, [clearMessages, setAgentStatus, setThreadId, setThreadRequiresImageInput]);
+  }, [
+    sidebarOpen,
+    historyInSidebar,
+    resetComposer,
+    clearMessages,
+    setAgentStatus,
+    setThreadId,
+    setThreadRequiresImageInput,
+  ]);
 
   const handleCloseSidebar = useCallback(() => {
     setSidebarOpen(false);
   }, []);
+
+  const handleHistoryClosed = () => {
+    if (!resetAfterHistoryClose.current) return;
+    resetAfterHistoryClose.current = false;
+    resetComposer();
+  };
 
   const handleToggleSidebar = useCallback(() => {
     setSidebarOpen((open) => !open);
@@ -218,24 +242,28 @@ export default function Home() {
     return firstPrompt ? plainPreview(firstPrompt).slice(0, 80) || null : null;
   }, [messages]);
 
+  const history = (
+    <ChatSidebar
+      onSelectThread={handleSelectThread}
+      onNewChat={handleNewChat}
+      activeThreadId={state.currentThreadId}
+      chatHistoryVersion={state.chatHistoryVersion}
+      onClose={handleCloseSidebar}
+    />
+  );
+
   return (
     <div className="chat-page flex h-full min-h-0">
-      {desktop && historySlot ? createPortal(
-        <ChatSidebar
-          onSelectThread={handleSelectThread}
-          onNewChat={handleNewChat}
-          activeThreadId={state.currentThreadId}
-          chatHistoryVersion={state.chatHistoryVersion}
-          onClose={handleCloseSidebar}
-        />, historySlot) : <FormDrawer open={sidebarOpen} title={t("appearance.history")} onClose={handleCloseSidebar}>
-        <ChatSidebar
-          onSelectThread={handleSelectThread}
-          onNewChat={handleNewChat}
-          activeThreadId={state.currentThreadId}
-          chatHistoryVersion={state.chatHistoryVersion}
-          onClose={handleCloseSidebar}
-        />
-      </FormDrawer>}
+      {historyInSidebar && createPortal(history, historySlot)}
+      {/* Keep the native close event available if the layout changes during the exit animation. */}
+      <FormDrawer
+        open={sidebarOpen && !historyInSidebar}
+        title={t("appearance.history")}
+        onClose={handleCloseSidebar}
+        onAfterClose={handleHistoryClosed}
+      >
+        {history}
+      </FormDrawer>
 
       <div className="flex-1 flex flex-col min-w-0">
         <ChatHeader

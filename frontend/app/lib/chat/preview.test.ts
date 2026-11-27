@@ -18,6 +18,17 @@ describe("plainPreview", () => {
     expect(plainPreview("1. **Fix** layout\n- ~~old~~ new")).toBe("Fix layout old new");
   });
 
+  it("removes table separator rows while preserving hyphens inside text", () => {
+    expect(plainPreview("foo---bar\nName | Role\n:--- | ---:\nLee | Engineer")).toBe(
+      "foo---bar Name Role Lee Engineer",
+    );
+  });
+
+  it("bounds Markdown cleanup to the start of a long preview", () => {
+    const blank = " ".repeat(32_000);
+    expect(plainPreview(`${blank}First line\n${blank}Past the preview`)).toBe("First line");
+  });
+
   it("returns an empty string for missing previews", () => {
     expect(plainPreview(null)).toBe("");
     expect(plainPreview("   ")).toBe("");

@@ -5,7 +5,6 @@ import {
   Route,
   Routes,
 } from "react-router";
-import AppErrorBoundary from "@/app/components/layout/app-error-boundary";
 import AppShell from "@/app/components/layout/app-shell";
 import { ToastProvider } from "@/app/components/ui/toast";
 import { AppProvider } from "@/app/lib/context/app-context";
@@ -32,46 +31,38 @@ export default function AppRouter() {
       <AppProvider>
         <ToastProvider>
           <ResumeUploadProvider>
-            <AppErrorBoundary>
-              <AppShell>
-                <Suspense fallback={<RouteLoading />}>
-                  <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/files" element={<FilesPage />} />
+            <AppShell>
+              <Suspense fallback={<RouteLoading />}>
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/files" element={<FilesPage />} />
+                  <Route
+                    path="/job-descriptions"
+                    element={<JobDescriptionsPage />}
+                  />
+                  <Route
+                    path="/job-descriptions/:id"
+                    element={<JobDescriptionDetailPage />}
+                  />
+                  <Route path="/resumes" element={<ResumesPage />} />
+                  <Route
+                    path="/resumes/:id"
+                    element={<ResumeDetailPage />}
+                  />
+                  <Route path="/settings" element={<SettingsPage />}>
+                    <Route index element={<Navigate to="providers" replace />} />
+                    <Route path="appearance" element={<AppearancePage />} />
+                    <Route path="providers" element={<ProvidersPage />} />
+                    <Route path="advanced" element={<AdvancedSettingsPage />} />
                     <Route
-                      path="/job-descriptions"
-                      element={<JobDescriptionsPage />}
+                      path="selections"
+                      element={<Navigate to="/settings/providers" replace />}
                     />
-                    <Route
-                      path="/job-descriptions/:id"
-                      element={<JobDescriptionDetailPage />}
-                    />
-                    <Route path="/resumes" element={<ResumesPage />} />
-                    <Route
-                      path="/resumes/:id"
-                      element={<ResumeDetailPage />}
-                    />
-                    <Route path="/settings" element={<SettingsPage />}>
-                      <Route
-                        index
-                        element={<Navigate to="providers" replace />}
-                      />
-                      <Route path="appearance" element={<AppearancePage />} />
-                      <Route path="providers" element={<ProvidersPage />} />
-                      <Route
-                        path="advanced"
-                        element={<AdvancedSettingsPage />}
-                      />
-                      <Route
-                        path="selections"
-                        element={<Navigate to="/settings/providers" replace />}
-                      />
-                    </Route>
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
-                </Suspense>
-              </AppShell>
-            </AppErrorBoundary>
+                  </Route>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </AppShell>
           </ResumeUploadProvider>
         </ToastProvider>
       </AppProvider>

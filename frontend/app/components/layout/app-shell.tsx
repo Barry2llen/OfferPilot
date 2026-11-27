@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { MotionConfig } from "motion/react";
+import AppErrorBoundary from "./app-error-boundary";
 import Sidebar from "./sidebar";
 import WindowControls from "./window-controls";
 import { HistorySlotContext } from "@/app/lib/context/layout-context";
@@ -15,8 +16,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => viewport?.removeEventListener("resize", update);
   }, []);
   return <MotionConfig reducedMotion="user"><div className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
-    <Sidebar historyRef={setSlot} width={sidebarWidth} onWidthChange={setSidebarWidth} onWidthCommit={writeSidebarWidth} />
-    <HistorySlotContext value={slot}><main className="app-main">{children}</main></HistorySlotContext>
+    <AppErrorBoundary>
+      <Sidebar historyRef={setSlot} width={sidebarWidth} onWidthChange={setSidebarWidth} onWidthCommit={writeSidebarWidth} />
+      <HistorySlotContext value={slot}><main className="app-main">{children}</main></HistorySlotContext>
+    </AppErrorBoundary>
     <div className="window-drag-region app-region-drag" aria-hidden="true" />
     <WindowControls />
   </div></MotionConfig>;

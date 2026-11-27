@@ -96,7 +96,7 @@ export default function JobDescriptionsPage() {
   const runningRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const { state } = useAppContext();
-  const { setModelSelection } = useAppActions();
+  const { initializeModelSelection, setModelSelection } = useAppActions();
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -117,9 +117,7 @@ export default function JobDescriptionsPage() {
         if (!mounted) return;
         setModels(modelItems);
         setLibraryFiles(fileItems.filter(isImageFile));
-        if (state.currentModelSelection === null && modelItems.length > 0) {
-          setModelSelection(modelItems[0].id);
-        }
+        if (modelItems.length > 0) initializeModelSelection(modelItems[0].id);
       })
       .catch(() => {
         if (!mounted) return;
@@ -133,7 +131,7 @@ export default function JobDescriptionsPage() {
     return () => {
       mounted = false;
     };
-  }, [setModelSelection, state.currentModelSelection]);
+  }, [initializeModelSelection]);
 
   const selectedLibraryFiles = useMemo(() => {
     const selected = new Set(selectedFileIds);

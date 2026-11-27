@@ -35,7 +35,7 @@ export default function ResumeUploader({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
   const { state } = useAppContext();
-  const { setModelSelection } = useAppActions();
+  const { initializeModelSelection, setModelSelection } = useAppActions();
   const { task, running, startUpload } = useResumeUpload();
   const { t } = useTranslation();
   const mountedRef = useRef(true);
@@ -54,9 +54,7 @@ export default function ResumeUploader({
       .then((data) => {
         if (!mounted) return;
         setModels(data);
-        if (state.currentModelSelection === null && data.length > 0) {
-          setModelSelection(data[0].id);
-        }
+        if (data.length > 0) initializeModelSelection(data[0].id);
       })
       .catch(() => {
         if (mounted) setModels([]);
@@ -68,7 +66,7 @@ export default function ResumeUploader({
     return () => {
       mounted = false;
     };
-  }, [setModelSelection, state.currentModelSelection]);
+  }, [initializeModelSelection]);
 
   const handleFile = useCallback(
     async (f: File) => {

@@ -29,7 +29,7 @@ export default class AppErrorBoundary extends Component<
     }
 
     return (
-      <div className="flex min-h-full items-center justify-center bg-surface-primary p-6">
+      <main className="electron-titlebar-safe-top flex min-h-full w-full flex-1 items-center justify-center bg-surface-primary p-6">
         <div className="w-full max-w-lg rounded-2xl border border-error-text/20 bg-surface-primary p-8 text-center shadow-card">
           <h1 className="font-display text-xl font-semibold text-text-primary">
             {i18n.t("app.errorTitle")}
@@ -45,7 +45,7 @@ export default class AppErrorBoundary extends Component<
             {i18n.t("app.reload")}
           </button>
         </div>
-      </div>
+      </main>
     );
   }
 }

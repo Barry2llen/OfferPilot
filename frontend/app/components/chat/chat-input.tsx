@@ -62,7 +62,8 @@ export default function ChatInput({
   trailing,
   resetSignal = 0,
 }: ChatInputProps) {
-  const mobile = useMediaQuery("(max-width: 767px)");
+  const hasTouchInput = useMediaQuery("(pointer: coarse) and (hover: none)");
+  const touchShortcuts = hasTouchInput && !window.offerPilotRuntime?.platform;
   const { addToast } = useToast();
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -185,7 +186,13 @@ export default function ChatInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && !e.shiftKey && (!mobile || e.ctrlKey || e.metaKey)) {
+    if (
+      e.key === "Enter" &&
+      !e.nativeEvent.isComposing &&
+      e.keyCode !== 229 &&
+      !e.shiftKey &&
+      (!touchShortcuts || e.ctrlKey || e.metaKey)
+    ) {
       e.preventDefault();
       handleSend();
     }
@@ -410,7 +417,7 @@ export default function ChatInput({
           </div>
         </div>
         <p className="composer-hint">
-          {noticeMessage ?? t(mobile ? "appearance.mobileKeyboard" : "appearance.keyboard")}
+          {noticeMessage ?? t(touchShortcuts ? "appearance.mobileKeyboard" : "appearance.keyboard")}
         </p>
       </div>
 

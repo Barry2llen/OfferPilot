@@ -149,23 +149,37 @@ it("does not send while an IME composition is being confirmed", async () => {
   expect(onSend).toHaveBeenCalledTimes(1);
 });
 
-it("uses Enter for a new line on mobile and a modifier to send", async () => {
+it.each([
+  { device: "a phone in portrait", narrow: true, touch: true, electron: false, sends: false },
+  { device: "a phone in landscape", narrow: false, touch: true, electron: false, sends: false },
+  { device: "a narrow desktop browser", narrow: true, touch: false, electron: false, sends: true },
+  { device: "a narrow Electron window on a touchscreen", narrow: true, touch: true, electron: true, sends: true },
+])("uses the expected Enter shortcut on $device", async ({ narrow, touch, electron, sends }) => {
   await i18n.changeLanguage("en-US");
-  const original = window.matchMedia;
+  const originalMatchMedia = window.matchMedia;
+  const originalRuntime = window.offerPilotRuntime;
+  window.offerPilotRuntime = electron ? { platform: "win32" } : undefined;
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches: query === "(max-width: 767px)", media: query,
-    addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    matches: (narrow && query === "(max-width: 767px)") || (touch && query === "(pointer: coarse) and (hover: none)"),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   }));
   try {
     const onSend = vi.fn();
     render(<ToastProvider><ChatInput onSend={onSend} onStop={() => {}} isStreaming={false} disabled={false} /></ToastProvider>);
     const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "next step" } });
-    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(true);
-    expect(onSend).not.toHaveBeenCalled();
-    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    expect(fireEvent.keyDown(input, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(!sends);
+    expect(onSend).toHaveBeenCalledTimes(sends ? 1 : 0);
+    if (!sends) fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
     expect(onSend).toHaveBeenCalledTimes(1);
-  } finally { cleanup(); window.matchMedia = original; }
+  } finally {
+    cleanup();
+    window.matchMedia = originalMatchMedia;
+    window.offerPilotRuntime = originalRuntime;
+  }
 });
 
 it("renders trailing controls inside the composer and offers stop and enqueue while streaming", async () => {

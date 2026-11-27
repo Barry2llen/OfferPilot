@@ -443,6 +443,9 @@ body:has(dialog[open]) .app-main { overflow: hidden; }
   z-index: 60;
   background: var(--canvas);
 }
+:root[data-window-controls="custom"] .app-shell:not(:has(> .app-sidebar)) > .window-drag-region {
+  left: 0;
+}
 .window-controls { position: fixed; top: 0; right: 0; z-index: 70; display: flex; height: var(--electron-titlebar-height); background: var(--canvas); }
 .op-modal .window-controls { background: transparent; }
 .window-control { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 100%; color: var(--secondary); transition: background 120ms, color 120ms; }

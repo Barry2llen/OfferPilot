@@ -30,6 +30,8 @@ export interface ModalProps {
   open: boolean;
   title: string;
   onClose: () => void;
+  /** Runs after the native dialog closes and restores focus. */
+  onAfterClose?: () => void;
   children: ReactNode;
   drawer?: boolean;
   busy?: boolean;
@@ -39,7 +41,7 @@ export interface ModalProps {
   footer?: ReactNode;
 }
 
-export default function Modal({ open, title, onClose, children, drawer = false, busy = false, toolbar, footer }: ModalProps) {
+export default function Modal({ open, title, onClose, onAfterClose, children, drawer = false, busy = false, toolbar, footer }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const { t } = useTranslation();
@@ -57,6 +59,7 @@ export default function Modal({ open, title, onClose, children, drawer = false, 
   }, [open]);
   return createPortal(
     <dialog ref={ref} tabIndex={-1} onKeyDown={trapFocus} aria-labelledby={titleId} className={`op-modal ${drawer ? "op-drawer" : ""}`}
+      onClose={(event) => { if (event.target === event.currentTarget) onAfterClose?.(); }}
       onCancel={(e) => { e.preventDefault(); e.stopPropagation(); if (!busy) onClose(); }}
       onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="modal-surface">
